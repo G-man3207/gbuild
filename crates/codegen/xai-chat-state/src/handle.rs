@@ -2,11 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use tokio::sync::{mpsc, oneshot};
-use xai_grok_sampling_types::{
+use gbuild_sampling_types::{
     ConversationItem, ConversationRequest, DanglingToolCallReason, SamplingConfig, TokenUsage,
     ToolSpec, TraceContext,
 };
+use tokio::sync::{mpsc, oneshot};
 
 use crate::commands::{ChatStateCommand, RepairHistoryBlocked, StrictAppendAck, StrictAppendError};
 use crate::types::{

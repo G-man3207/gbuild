@@ -2,7 +2,7 @@
 //!
 //! This crate defines the wire format for `x.ai/hooks/*` and `x.ai/plugins/*`
 //! ACP extension methods. It is dependency-free (only `serde`) so both
-//! `xai-grok-shell` and `xai-grok-pager` can depend on it without pulling
+//! `gbuild-shell` and `gbuild-pager` can depend on it without pulling
 //! in domain logic.
 //!
 //! Conversion from domain types (`HookSpec`, `LoadedPlugin`) to these DTOs
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// Plugin scope.
 ///
-/// Maps from `PluginScope` in `xai-grok-agent`. Variant renames:
+/// Maps from `PluginScope` in `gbuild-agent`. Variant renames:
 /// - source `CliOverride` -> DTO `Cli` (matches Display output "cli")
 /// - source `ConfigPath` -> DTO `Config` (matches Display output "config")
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,19 +30,21 @@ pub enum PluginScope {
 
 /// The concrete discovery source a plugin came from.
 ///
-/// Maps from `PluginOrigin` in `xai-grok-agent`. Optional on [`PluginInfo`]
+/// Maps from `PluginOrigin` in `gbuild-agent`. Optional on [`PluginInfo`]
 /// so older shells (which don't send it) deserialize to `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PluginOrigin {
     /// CLI `--plugin-dir`.
     CliOverride,
-    /// Project `.grok/plugins/`.
-    ProjectGrok,
+    /// Project `.gbuild/plugins/`.
+    #[serde(rename = "project_gbuild")]
+    ProjectGBuild,
     /// Project `.claude/plugins/`.
     ProjectClaude,
-    /// `$GROK_HOME/plugins/`.
-    UserGrok,
+    /// `$GBUILD_HOME/plugins/`.
+    #[serde(rename = "user_gbuild")]
+    UserGBuild,
     /// `~/.claude/plugins/`.
     UserClaude,
     /// A compat marketplace clone.
@@ -56,7 +58,7 @@ pub enum PluginOrigin {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         marketplace: Option<String>,
     },
-    /// Grok's install registry (marketplace or direct git/local install).
+    /// gBuild's install registry (marketplace or direct git/local install).
     MarketplaceInstall {
         /// Marketplace source display name (None for direct installs).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,7 +78,7 @@ pub enum PluginOrigin {
 
 /// Hook event type.
 ///
-/// Maps from `HookEventName` in `xai-grok-hooks`. The source type's
+/// Maps from `HookEventName` in `gbuild-hooks`. The source type's
 /// `SubagentEnd` variant (backward-compat alias) is collapsed into
 /// `SubagentStop` during conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,7 +204,7 @@ pub struct HookInfo {
     pub timeout_ms: u64,
     /// Source directory of the hook definition file.
     pub source_dir: String,
-    /// Whether this hook is disabled via ~/.grok/disabled-hooks.
+    /// Whether this hook is disabled via ~/.gbuild/disabled-hooks.
     #[serde(default)]
     pub disabled: bool,
 }
@@ -618,7 +620,7 @@ mod tests {
     #[test]
     fn hooks_action_serde_roundtrip() {
         let action = HooksAction::Add {
-            path: "/home/user/.grok/hooks".into(),
+            path: "/home/user/.gbuild/hooks".into(),
         };
         let json = serde_json::to_string(&action).unwrap();
         let parsed: HooksAction = serde_json::from_str(&json).unwrap();
@@ -707,7 +709,7 @@ mod tests {
             command: Some("check.sh".into()),
             url: None,
             timeout_ms: 5000,
-            source_dir: "/home/user/.grok/hooks".into(),
+            source_dir: "/home/user/.gbuild/hooks".into(),
             disabled: false,
         };
         let json = serde_json::to_string(&hook).unwrap();
@@ -724,7 +726,7 @@ mod tests {
         let plugin = PluginInfo {
             name: "test-plugin".into(),
             id: "user/abc12345/test-plugin".into(),
-            root: "/home/user/.grok/plugins/test-plugin".into(),
+            root: "/home/user/.gbuild/plugins/test-plugin".into(),
             scope: PluginScope::User,
             trusted: true,
             enabled: true,
@@ -739,7 +741,7 @@ mod tests {
             mcp_server_count: 0,
             mcp_status: McpStatus::None,
             marketplace_source: None,
-            origin: Some(PluginOrigin::UserGrok),
+            origin: Some(PluginOrigin::UserGBuild),
             conflict: None,
         };
         let json = serde_json::to_string(&plugin).unwrap();
@@ -756,9 +758,9 @@ mod tests {
     fn plugin_origin_serde_roundtrip_all_variants() {
         for origin in [
             PluginOrigin::CliOverride,
-            PluginOrigin::ProjectGrok,
+            PluginOrigin::ProjectGBuild,
             PluginOrigin::ProjectClaude,
-            PluginOrigin::UserGrok,
+            PluginOrigin::UserGBuild,
             PluginOrigin::UserClaude,
             PluginOrigin::ClaudeMarketplace {
                 marketplace: "mp".into(),
@@ -782,6 +784,14 @@ mod tests {
             let parsed: PluginOrigin = serde_json::from_str(&json).unwrap();
             assert_eq!(origin, parsed, "{json}");
         }
+    }
+
+    #[test]
+    fn plugin_origin_gbuild_wire_names_do_not_split_brand() {
+        let project = serde_json::to_value(PluginOrigin::ProjectGBuild).unwrap();
+        let user = serde_json::to_value(PluginOrigin::UserGBuild).unwrap();
+        assert_eq!(project["type"], "project_gbuild");
+        assert_eq!(user["type"], "user_gbuild");
     }
 
     #[test]

@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// v1.16: Added `team_id` field (OAuth team identity).
 /// v1.17: Added `input_tokens`, `cached_input_tokens`, `output_tokens` to
 ///        TurnResultMetadata for per-component token attribution.
-/// v1.18: Added `shell_version`: the grok-shell agent binary version, distinct
+/// v1.18: Added `shell_version`: the gbuild-shell agent binary version, distinct
 ///        from `client_version` (the UI client's version). They coincide for the
 ///        TUI but differ for embedding clients like grok-desktop.
 /// v1.19: Added `workspace_type`: classifies the working directory as "git",
@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 ///        from metadata.json (prompt content is no longer uploaded in metadata).
 /// v1.24: Prompt metadata updates.
 pub const GCS_SCHEMA_VERSION: &str = "v1.24";
-/// OS-level sandbox state for a trace turn (local `xai-grok-sandbox`, not cloud sandbox).
+/// OS-level sandbox state for a trace turn (local `gbuild-sandbox`, not cloud sandbox).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalSandboxTelemetry {
     /// Resolved profile at process startup (e.g. "off", "workspace", "strict").
@@ -111,11 +111,11 @@ pub struct PromptMetadata {
     /// Current working directory of the session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    /// The agent type / harness name for this session (e.g. "grok-build", "codex").
+    /// The agent type / harness name for this session (e.g. "gbuild", "codex").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
-    /// Version of the grok-shell agent binary that handled this turn
-    /// (`xai_grok_version::VERSION`). Self-reported by the agent, so it reflects
+    /// Version of the gbuild-shell agent binary that handled this turn
+    /// (`gbuild_version::VERSION`). Self-reported by the agent, so it reflects
     /// the binary actually running. Distinct from `client_version`, which is the
     /// UI client's version — for the TUI these coincide, but for embedding clients
     /// like grok-desktop the bundled shell differs from the app version.

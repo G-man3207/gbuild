@@ -787,7 +787,7 @@ impl ToolHarness {
     /// Tools are resolved exclusively from the `LocalRegistry`. Remote
     /// dispatch returns `ToolError::NotFound`. `default_extensions` are
     /// merged into every `ToolCallContext` before dispatch — use this
-    /// to inject `GrokSharedState`, `GrokAgentState`, etc.
+    /// to inject `GBuildSharedState`, `GBuildAgentState`, etc.
     pub fn local_only_with(
         registry: LocalRegistry,
         session: SessionId,

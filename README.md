@@ -36,20 +36,20 @@ Requirements:
   and not currently tested from this tree.
 
 ```sh
-cargo run -p xai-grok-pager-bin --bin gbuild              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --bin gbuild --release  # target/release/gbuild
-cargo check -p xai-grok-pager-bin                         # fast validation
+cargo run -p gbuild-pager-bin --bin gbuild              # build + launch the TUI
+cargo build -p gbuild-pager-bin --bin gbuild --release  # target/release/gbuild
+cargo check -p gbuild-pager-bin                         # fast validation
 ```
 
 The binary artifact is named `gbuild`. The default xAI provider can authenticate
 through the browser, while custom model providers can supply their own endpoint
 and credentials. See the
-[authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
+[authentication guide](crates/codegen/gbuild-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
 
 The user guide ships with the pager crate:
-[`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
+[`crates/codegen/gbuild-pager/docs/user-guide/`](crates/codegen/gbuild-pager/docs/user-guide/)
 — getting started, keyboard shortcuts, slash commands, configuration, theming,
 MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
@@ -57,11 +57,11 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 | Path | Contents |
 |------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `gbuild` binary |
-| `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
-| `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
-| `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |
-| `crates/codegen/xai-grok-workspace` | Host filesystem, VCS, execution, checkpoints |
+| `crates/codegen/gbuild-pager-bin` | Composition-root package; builds the `gbuild` binary |
+| `crates/codegen/gbuild-pager` | The TUI: scrollback, prompt, modals, rendering |
+| `crates/codegen/gbuild-shell` | Agent runtime + leader/stdio/headless entry points |
+| `crates/codegen/gbuild-tools` | Tool implementations (terminal, file edit, search, ...) |
+| `crates/codegen/gbuild-workspace` | Host filesystem, VCS, execution, checkpoints |
 | `crates/codegen/...` | The rest of the CLI crate closure (config, MCP, markdown, sandbox, ...) |
 | `crates/common/`, `crates/build/`, `prod/mc/` | Small shared leaf crates pulled in by the closure |
 | `third_party/` | Vendored upstream source (Mermaid diagram stack) — see below |
@@ -75,7 +75,7 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 ```sh
 cargo check -p <crate>        # always target specific crates; full-workspace builds are slow
-cargo test -p xai-grok-config # per-crate tests
+cargo test -p gbuild-config # per-crate tests
 cargo clippy -p <crate>       # lint config: clippy.toml at the repo root
 cargo fmt --all               # rustfmt.toml at the repo root
 ```
@@ -95,7 +95,7 @@ Third-party and vendored code remains under its original licenses. See:
 - [`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) — crates.io / git dependencies,
   bundled UI themes, and **in-tree source ports** (including openai/codex and
   sst/opencode tool implementations)
-- [`crates/codegen/xai-grok-tools/THIRD_PARTY_NOTICES.md`](crates/codegen/xai-grok-tools/THIRD_PARTY_NOTICES.md)
+- [`crates/codegen/gbuild-tools/THIRD_PARTY_NOTICES.md`](crates/codegen/gbuild-tools/THIRD_PARTY_NOTICES.md)
   — crate-local notice for the codex and opencode ports (license texts +
   Apache §4(b) change notice)
 - [`third_party/NOTICE`](third_party/NOTICE) — vendored Mermaid-stack index

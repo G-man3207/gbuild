@@ -1,0 +1,12 @@
+[package]
+license = "Apache-2.0"
+name = "gbuild-version"
+version = "0.2.112"
+edition.workspace = true
+description = "Lockstepped gBuild CLI version."
+
+[dependencies]
+semver = { workspace = true }
+
+[lints]
+workspace = true

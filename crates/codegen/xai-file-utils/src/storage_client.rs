@@ -14,6 +14,7 @@ use std::fs::File as StdFile;
 // Positional read traits live in different modules per platform; the
 // methods we use (read_at on Unix, seek_read on Windows) have the same
 // signature, so the call site cfg-branches on the method name only.
+use gbuild_auth::AuthCredentialProvider;
 #[cfg(unix)]
 use std::os::unix::fs::FileExt;
 #[cfg(windows)]
@@ -27,7 +28,6 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::bytes::Bytes;
 use tokio_util::io::ReaderStream;
 use xai_circuit_breaker::{BreakerConfig, BreakerOpen, CircuitBreaker, Outcome};
-use xai_grok_auth::AuthCredentialProvider;
 
 use crate::circuit_breaker_observer::TracingObserver;
 
@@ -50,8 +50,8 @@ fn storage_breaker_config() -> BreakerConfig {
 /// Hook invoked by [`StorageClient`] at every 401 response site so that
 /// the embedding application can record auth-attribution telemetry.
 ///
-/// Mirrors the pattern in `xai-grok-sampler::Auth401AttributionCallback`
-/// and `xai-grok-tools::Auth401AttributionCallback`. The shell installs
+/// Mirrors the pattern in `gbuild-sampler::Auth401AttributionCallback`
+/// and `gbuild-tools::Auth401AttributionCallback`. The shell installs
 /// a bridge implementation that wires into
 /// `crate::auth::attribution::record_consumer_401`.
 ///
@@ -374,7 +374,7 @@ impl StaticGrokAuth {
     }
 }
 
-impl xai_grok_auth::HttpAuth for StaticGrokAuth {
+impl gbuild_auth::HttpAuth for StaticGrokAuth {
     fn apply(&self, builder: reqwest::RequestBuilder, _base_url: &str) -> reqwest::RequestBuilder {
         if let Some(ref key) = self.deployment_key {
             builder.header("Authorization", format!("Bearer {}", key))
@@ -458,7 +458,7 @@ impl StorageClient {
     pub fn new(proxy_base_url: &str, user_token: &str) -> Self {
         let creds = StaticGrokAuth::new(Some(user_token.to_owned()));
         let bearer = creds.wire_bearer();
-        let provider = Arc::new(xai_grok_auth::StaticAuthCredentialProvider::new(
+        let provider = Arc::new(gbuild_auth::StaticAuthCredentialProvider::new(
             Box::new(creds),
             bearer,
         ));
@@ -545,16 +545,16 @@ impl StorageClient {
     ///
     /// These become the headers:
     ///   - `x-grok-client-version`
-    ///   - `x-grok-client-identifier` (one of "grok-shell", "grok-pager",
+    ///   - `x-grok-client-identifier` (one of "gbuild-shell", "gbuild-pager",
     ///     "grok-desktop", "grok-extension", "grok-agent-sdk")
     ///
     /// Server-side logs in `cli-chat-proxy` and analytics queries now
     /// surface these values, making it easy to attribute 400/403 errors to
     /// specific client versions and products.
     ///
-    /// Preferred way to construct the client from the Grok shell/pager:
+    /// Preferred way to construct the client from the gBuild shell/pager:
     ///   `build_storage_client_for_proxy(..., client_identifier)`
-    /// (see `xai-grok-shell/src/auth/credential_provider.rs`).
+    /// (see `gbuild-shell/src/auth/credential_provider.rs`).
     ///
     /// Direct callers (tests, load-test binaries, etc.) can use:
     ///   `StorageClient::with_provider(...).with_client_identity(version, identifier)`
@@ -1097,12 +1097,12 @@ impl StorageClient {
     ) -> reqwest_middleware::RequestBuilder {
         // Prefer caller-provided identity (from shell/pager/etc.) so that
         // cli-chat-proxy logs and metrics see the real end-user client
-        // (e.g. "0.1.210-alpha.5", "grok-shell" / "grok-pager").
+        // (e.g. "0.1.210-alpha.5", "gbuild-shell" / "gbuild-pager").
         // Falls back to the library's own version for bins/tests.
         let version = self
             .client_version
             .as_deref()
-            .unwrap_or(xai_grok_version::VERSION);
+            .unwrap_or(gbuild_version::VERSION);
         let mut builder = builder.header("x-grok-client-version", version);
 
         if let Some(id) = &self.client_identifier {
@@ -1978,7 +1978,7 @@ async fn upload_part_streaming(
         let mut request = client
             .post(&url)
             .header("Content-Type", "application/octet-stream")
-            .header("x-grok-client-version", xai_grok_version::VERSION)
+            .header("x-grok-client-version", gbuild_version::VERSION)
             .header("Content-Length", length.to_string());
         for (name, value) in crate::trace_context::trace_context_headers().iter() {
             request = request.header(name.clone(), value.clone());
