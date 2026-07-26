@@ -3300,8 +3300,12 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
         Some(SystemParam::Blocks(system_blocks))
     };
 
+    // Messages has no native `tool_choice = none`. Omitting the tools entirely
+    // is the only representation that preserves the stronger neutral contract.
+    let tools_disabled = matches!(req.tool_choice, Some(ConversationToolChoice::None));
+
     // Build tools
-    let tools: Option<Vec<ToolParam>> = if req.tools.is_empty() {
+    let tools: Option<Vec<ToolParam>> = if tools_disabled || req.tools.is_empty() {
         None
     } else {
         Some(
@@ -3317,12 +3321,16 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
     };
 
     // Build tool_choice
-    let tool_choice: Option<ToolChoiceParam> = req.tool_choice.as_ref().map(|tc| match tc {
-        ConversationToolChoice::Auto => ToolChoiceParam::Auto,
-        ConversationToolChoice::Required => ToolChoiceParam::Any,
-        ConversationToolChoice::Function(name) => ToolChoiceParam::Tool { name: name.clone() },
-        ConversationToolChoice::None => ToolChoiceParam::Auto, // default
-    });
+    let tool_choice: Option<ToolChoiceParam> = if tools_disabled {
+        None
+    } else {
+        req.tool_choice.as_ref().map(|tc| match tc {
+            ConversationToolChoice::Auto => ToolChoiceParam::Auto,
+            ConversationToolChoice::Required => ToolChoiceParam::Any,
+            ConversationToolChoice::Function(name) => ToolChoiceParam::Tool { name: name.clone() },
+            ConversationToolChoice::None => unreachable!("handled above"),
+        })
+    };
 
     let effort = req
         .reasoning_effort
@@ -5047,6 +5055,17 @@ mod tests {
             panic!("Expected Preset tool choice");
         };
         assert_eq!(preset, "none");
+    }
+
+    #[test]
+    fn test_tool_choice_none_omits_messages_tools() {
+        let req = ConversationRequest::from_items(vec![ConversationItem::user("test")])
+            .with_tools(vec![make_test_tool()])
+            .with_tool_choice(ConversationToolChoice::None);
+
+        let messages_req = build_messages_request(&req);
+        assert!(messages_req.tools.is_none());
+        assert!(messages_req.tool_choice.is_none());
     }
 
     #[test]

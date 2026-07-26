@@ -921,22 +921,20 @@ impl AgentBuilder {
                     "tools allowlist named recognized tools that aren't enabled; ignoring them"
                 );
             }
-            if unresolved.is_empty() {
-                tool_config.tools.retain(|tc| {
-                    tool_id_matches(&definition.tools, &tc.id)
-                        || tc.kind.is_some_and(|k| allow_kinds.contains(&k))
-                        || (has_agent_entry && task_deps.contains(&short_tool_name(&tc.id)))
-                        || matches!(tc.kind, Some(ToolKind::SearchTool | ToolKind::UseTool))
-                });
-                tracing::debug!(agent = %definition.name, allowed = ?definition.tools, "tools allowlist applied");
-            } else {
-                tracing::warn!(
-                    agent = %definition.name,
-                    unresolved = ?unresolved,
-                    allowed = ?definition.tools,
-                    "tools allowlist had unmappable entries; keeping full gBuild toolset"
-                );
+            if !unresolved.is_empty() {
+                return Err(AgentBuildError::InvalidConfig(format!(
+                    "agent '{}' tools allowlist contains unknown entries: {}",
+                    definition.name,
+                    unresolved.join(", ")
+                )));
             }
+            tool_config.tools.retain(|tc| {
+                tool_id_matches(&definition.tools, &tc.id)
+                    || tc.kind.is_some_and(|k| allow_kinds.contains(&k))
+                    || (has_agent_entry && task_deps.contains(&short_tool_name(&tc.id)))
+                    || matches!(tc.kind, Some(ToolKind::SearchTool | ToolKind::UseTool))
+            });
+            tracing::debug!(agent = %definition.name, allowed = ?definition.tools, "tools allowlist applied");
         }
         tool_config
             .tools
@@ -1164,16 +1162,13 @@ impl AgentBuilder {
             is_non_interactive: self.is_non_interactive,
             system_prompt_label: self.system_prompt_label,
         };
-        let system_prompt = prompt_context
-            .render(&tool_bridge)
+        let system_prompt = prompt_context.render(&tool_bridge).await?;
+        let renderer = tool_bridge
+            .template_renderer_snapshot()
             .await
-            .unwrap_or_default();
-        if let Some(rendered) = tool_bridge
-            .render_prompt(&definition.description, &prompt_context.placeholders())
-            .await
-        {
-            definition.description = rendered;
-        }
+            .ok_or(AgentBuildError::TemplateRendererUnavailable)?;
+        definition.description =
+            renderer.render_with_extra(&definition.description, &prompt_context.placeholders())?;
         let mut hosted_tools = Vec::new();
         if use_backend_search {
             if web_search_enabled && definition.hosted_tool_allowed("web_search") {
@@ -1709,6 +1704,26 @@ mod tests {
             }
         }
     }
+    #[tokio::test]
+    async fn malformed_prompt_template_rejects_agent_build() {
+        use gbuild_tools::computer::local::LocalTerminalBackend;
+        use gbuild_tools::notification::ToolNotificationHandle;
+        let mut profile = crate::config::AgentDefinition::default_gbuild();
+        profile.prompt_mode = PromptMode::Full;
+        profile.prompt_body = Some("${{ tools.by_kind.read".to_string());
+        let result = AgentBuilder::new(
+            std::env::temp_dir(),
+            Arc::new(LocalTerminalBackend::new()),
+            ToolNotificationHandle::noop(),
+        )
+        .from_definition(profile)
+        .build()
+        .await;
+        assert!(
+            matches!(result, Err(AgentBuildError::TemplateRender(_))),
+            "malformed prompt templates must reject agent construction"
+        );
+    }
     /// The ask_user_question params merge must run after `ensure_plan_mode_tools`:
     /// a profile that does NOT pre-declare the tool still gets the shell-resolved
     /// timeout params on the injected instance. Fails if the merge is ever
@@ -1830,19 +1845,25 @@ mod tests {
             "must not inherit-all: {names:?}"
         );
     }
-    /// An unresolved own-allowlist entry makes step 4 fall back to the full
-    /// toolset; the session clamp (step 4b) must still bind afterward.
+    /// An unresolved own-allowlist entry must reject agent construction instead
+    /// of silently expanding access to the full toolset.
     #[tokio::test]
-    async fn session_clamp_binds_when_own_allowlist_falls_back() {
-        let names = session_clamp_tool_names(
-            vec!["read_file".into(), "bogus_unresolved_xyz".into()],
-            vec!["read_file".into()],
+    async fn unresolved_allowlist_rejects_agent_build() {
+        use gbuild_tools::computer::local::LocalTerminalBackend;
+        use gbuild_tools::notification::ToolNotificationHandle;
+        let mut definition = crate::config::AgentDefinition::default_gbuild();
+        definition.tools = vec!["read_file".into(), "bogus_unresolved_xyz".into()];
+        let result = AgentBuilder::new(
+            std::env::temp_dir(),
+            Arc::new(LocalTerminalBackend::new()),
+            ToolNotificationHandle::noop(),
         )
+        .from_definition(definition)
+        .build()
         .await;
-        assert!(names.iter().any(|n| n == "read_file"), "{names:?}");
         assert!(
-            !names.iter().any(|n| n == "run_terminal_cmd"),
-            "session clamp must bind despite the step-4 full-toolset fallback: {names:?}"
+            matches!(result, Err(AgentBuildError::InvalidConfig(message)) if message.contains("bogus_unresolved_xyz")),
+            "unresolved allowlist entries must fail agent construction"
         );
     }
     #[test]
@@ -2030,26 +2051,25 @@ mod tests {
             assert!(!names.contains(&dropped.to_string()), "got: {names:?}");
         }
     }
-    /// Entries we can't match or map (a typo, a renamed/absent tool) fall back
-    /// to the full toolset rather than crippling the agent.
+    /// Entries we can't match or map (a typo or renamed tool) must not expand
+    /// the configured toolset.
     #[tokio::test]
-    async fn unmappable_allowlist_falls_back_to_full_toolset() {
-        let tools = vec!["Frobnicate".into(), "Wibble".into()];
-        let agent = build_with_tools(tools, vec![]).await;
-        let names: Vec<String> = agent
-            .tool_definitions()
-            .await
-            .iter()
-            .map(|d| d.function.name.clone())
-            .collect();
-        assert!(names.contains(&"read_file".to_string()), "got: {names:?}");
+    async fn unmappable_allowlist_rejects_agent_build() {
+        use gbuild_tools::computer::local::LocalTerminalBackend;
+        use gbuild_tools::notification::ToolNotificationHandle;
+        let mut definition = crate::config::AgentDefinition::default_gbuild();
+        definition.tools = vec!["Frobnicate".into(), "Wibble".into()];
+        let result = AgentBuilder::new(
+            std::env::temp_dir(),
+            Arc::new(LocalTerminalBackend::new()),
+            ToolNotificationHandle::noop(),
+        )
+        .from_definition(definition)
+        .build()
+        .await;
         assert!(
-            names.contains(&"search_replace".to_string()),
-            "got: {names:?}"
-        );
-        assert!(
-            names.contains(&"run_terminal_command".to_string()),
-            "got: {names:?}"
+            matches!(result, Err(AgentBuildError::InvalidConfig(message)) if message.contains("Frobnicate") && message.contains("Wibble")),
+            "unmappable allowlist entries must reject agent construction"
         );
     }
     /// End-to-end: an on-disk plugin agent parsed via `from_file_frontmatter_only`

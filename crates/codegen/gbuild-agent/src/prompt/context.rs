@@ -8,6 +8,7 @@
 //! `TemplateRenderer` in `gbuild-tools`. This struct does NOT own a
 //! render engine — it provides placeholders and discovered sections.
 use crate::config::PromptMode;
+use crate::error::AgentBuildError;
 use crate::prompt::agents_md::{self, AgentConfigFile};
 use crate::prompt::template::{apply_patch_template, base_template, subagent_template};
 use serde::de;
@@ -259,17 +260,23 @@ impl PromptContext {
     /// Both the base template AND the `prompt_body` are rendered through
     /// MiniJinja so that `${{ tools.by_kind.* }}` variables resolve
     /// correctly regardless of prompt mode.
-    pub async fn render(&self, tool_bridge: &ToolBridge) -> Option<String> {
-        let renderer = tool_bridge.template_renderer_snapshot().await?;
+    pub async fn render(&self, tool_bridge: &ToolBridge) -> Result<String, AgentBuildError> {
+        let renderer = tool_bridge
+            .template_renderer_snapshot()
+            .await
+            .ok_or(AgentBuildError::TemplateRendererUnavailable)?;
         self.render_with_renderer(&renderer)
     }
     /// Render the full system prompt from a finalized tool-name renderer.
     ///
     /// Hosts that do not own a [`ToolBridge`] use this path so they still
     /// consume the production base-template and prompt-body composition.
-    pub fn render_with_renderer(&self, renderer: &TemplateRenderer) -> Option<String> {
+    pub fn render_with_renderer(
+        &self,
+        renderer: &TemplateRenderer,
+    ) -> Result<String, AgentBuildError> {
         let placeholders = self.placeholders();
-        let render = |template: &str| renderer.render_with_extra(template, &placeholders).ok();
+        let render = |template: &str| renderer.render_with_extra(template, &placeholders);
         let prompt = match self.prompt_mode {
             PromptMode::Extend => {
                 let decrypted;
@@ -291,13 +298,13 @@ impl PromptContext {
                 let mut prompt = render(base)?;
                 if let Some(body) = &self.prompt_body {
                     prompt.push_str("\n\n");
-                    prompt.push_str(&render(body).unwrap_or_else(|| body.clone()));
+                    prompt.push_str(&render(body)?);
                 }
                 prompt
             }
             PromptMode::Full => render(self.prompt_body.as_deref().unwrap_or(""))?,
         };
-        Some(prompt)
+        Ok(prompt)
     }
 }
 #[cfg(test)]

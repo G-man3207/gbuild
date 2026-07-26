@@ -41,7 +41,8 @@ const DEFAULT_CLIENT_IDENTIFIER: &str = "gbuild-shell";
 const AGENT_PRODUCT: &str = "gbuild-shell";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
 
-/// Per-request `x-grok-*` headers. Optional fields are skipped when empty/`None`.
+/// Per-request xAI headers. They are emitted only for first-party xAI origins;
+/// provider-neutral endpoints must never receive conversation or account IDs.
 struct GrokRequestHeaders<'a> {
     conv_id: &'a str,
     req_id: &'a str,
@@ -54,7 +55,14 @@ struct GrokRequestHeaders<'a> {
 }
 
 impl GrokRequestHeaders<'_> {
-    fn apply(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn apply_if_enabled(
+        &self,
+        builder: reqwest::RequestBuilder,
+        enabled: bool,
+    ) -> reqwest::RequestBuilder {
+        if !enabled {
+            return builder;
+        }
         let mut b = builder
             .header("x-grok-conv-id", self.conv_id)
             .header("x-grok-req-id", self.req_id)
@@ -72,6 +80,20 @@ impl GrokRequestHeaders<'_> {
         }
         b
     }
+}
+
+/// Whether a sampling target is an owned xAI origin.
+///
+/// This intentionally excludes custom proxies and loopback URLs. A custom
+/// provider that needs xAI-compatible headers can opt in explicitly through
+/// its own configured headers, but gBuild never leaks identity metadata there.
+fn is_xai_request_origin(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| {
+            host == "x.ai" || host.ends_with(".x.ai") || host == "cli-chat-proxy.grok.com"
+        })
 }
 
 /// Parse the `Retry-After` response header as delta-seconds.
@@ -320,6 +342,8 @@ pub struct SamplingClient {
     bearer_resolver: Option<crate::config::SharedBearerResolver>,
     /// Per-request header injection (OTel traceparent).
     header_injector: Option<crate::config::SharedHeaderInjector>,
+    /// Whether first-party xAI identity and conversation headers may be sent.
+    send_xai_headers: bool,
     /// Endpoint URL builder, resolved once from `base_url` + `query_params`.
     endpoint: EndpointTemplate,
 }
@@ -499,6 +523,7 @@ impl SamplingClient {
     /// pre-computes the default request headers. This does not perform
     /// any network I/O.
     pub fn new(config: SamplerConfig) -> Result<Self> {
+        let send_xai_headers = is_xai_request_origin(&config.base_url);
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(ref api_key) = config.api_key {
@@ -550,32 +575,33 @@ impl SamplingClient {
             &mut headers,
         );
 
-        // Add x-grok-client-version header for version gating at the proxy.
-        if let Some(client_version) = config.client_version.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(client_version)
-        {
-            headers.insert(
-                HeaderName::from_static("x-grok-client-version"),
-                header_value,
-            );
-        }
+        if send_xai_headers {
+            // These headers are an xAI protocol extension, not generic provider
+            // metadata. Do not emit them to custom endpoints.
+            if let Some(client_version) = config.client_version.as_ref()
+                && let Ok(header_value) = HeaderValue::from_str(client_version)
+            {
+                headers.insert(
+                    HeaderName::from_static("x-grok-client-version"),
+                    header_value,
+                );
+            }
 
-        if let Some(deployment_id) = config.deployment_id.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(deployment_id)
-        {
-            headers.insert(
-                HeaderName::from_static("x-grok-deployment-id"),
-                header_value,
-            );
-        }
+            if let Some(deployment_id) = config.deployment_id.as_ref()
+                && let Ok(header_value) = HeaderValue::from_str(deployment_id)
+            {
+                headers.insert(
+                    HeaderName::from_static("x-grok-deployment-id"),
+                    header_value,
+                );
+            }
 
-        if let Some(user_id) = config.user_id.as_ref()
-            && let Ok(header_value) = HeaderValue::from_str(user_id)
-        {
-            headers.insert(HeaderName::from_static("x-grok-user-id"), header_value);
-        }
+            if let Some(user_id) = config.user_id.as_ref()
+                && let Ok(header_value) = HeaderValue::from_str(user_id)
+            {
+                headers.insert(HeaderName::from_static("x-grok-user-id"), header_value);
+            }
 
-        {
             let client_id = config
                 .client_identifier
                 .clone()
@@ -623,6 +649,7 @@ impl SamplingClient {
             has_bearer_resolver = config.bearer_resolver.is_some(),
             has_authorization_header = headers.get(AUTHORIZATION).is_some(),
             has_x_api_key_header = headers.get(HeaderName::from_static("x-api-key")).is_some(),
+            send_xai_headers,
         );
 
         let defaults = ClientDefaults {
@@ -646,6 +673,7 @@ impl SamplingClient {
             attribution_callback: config.attribution_callback,
             bearer_resolver: config.bearer_resolver,
             header_injector: config.header_injector,
+            send_xai_headers,
             endpoint,
         })
     }
@@ -892,7 +920,10 @@ impl SamplingClient {
             user_id: payload.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+            .apply_if_enabled(
+                self.post(self.endpoint("chat/completions")),
+                self.send_xai_headers,
+            )
             .json(&payload);
 
         let response = http_request.send().await.map_err(|e| {
@@ -950,7 +981,10 @@ impl SamplingClient {
             user_id: payload.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+            .apply_if_enabled(
+                self.post(self.endpoint("chat/completions")),
+                self.send_xai_headers,
+            )
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&streaming_request);
 
@@ -1163,7 +1197,7 @@ impl SamplingClient {
         // old raw_output machinery.
         gbuild_sampling_types::patch_reasoning_text_types(&mut request_body);
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+            .apply_if_enabled(self.post(self.endpoint("responses")), self.send_xai_headers)
             .json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1305,7 +1339,7 @@ impl SamplingClient {
             .doom_loop_recovery
             .map(crate::doom_loop::DoomLoopSignalCollector::new);
         let mut http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+            .apply_if_enabled(self.post(self.endpoint("responses")), self.send_xai_headers)
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"));
         if doom_loop.is_some() {
             // Presence opts in; the server ignores the value.
@@ -1502,7 +1536,7 @@ impl SamplingClient {
             user_id: request.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+            .apply_if_enabled(self.post(self.endpoint("messages")), self.send_xai_headers)
             .json(&request.inner);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1609,7 +1643,7 @@ impl SamplingClient {
             user_id: request.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+            .apply_if_enabled(self.post(self.endpoint("messages")), self.send_xai_headers)
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&request.inner);
 
@@ -2168,6 +2202,66 @@ mod tests {
     fn new_with_minimal_config_succeeds() {
         let client = SamplingClient::new(minimal_config()).expect("client should construct");
         assert_eq!(client.api_backend(), ApiBackend::ChatCompletions);
+    }
+
+    #[test]
+    fn custom_provider_does_not_receive_xai_identity_headers() {
+        let mut config = minimal_config();
+        config.client_version = Some("xai-version".to_string());
+        config.deployment_id = Some("deployment-123".to_string());
+        config.user_id = Some("user-456".to_string());
+        config.client_identifier = Some("xai-client".to_string());
+
+        let client = SamplingClient::new(config).expect("client should construct");
+        assert!(!client.send_xai_headers);
+        for name in [
+            "x-grok-client-version",
+            "x-grok-deployment-id",
+            "x-grok-user-id",
+            "x-grok-client-identifier",
+        ] {
+            assert!(client.default_headers.get(name).is_none(), "leaked {name}");
+        }
+
+        let request = GrokRequestHeaders {
+            conv_id: "conversation-1",
+            req_id: "request-1",
+            model_id: "model-1",
+            session_id: "session-1",
+            turn_idx: Some("1"),
+            agent_id: "agent-1",
+            deployment_id: Some("deployment-123"),
+            user_id: Some("user-456"),
+        }
+        .apply_if_enabled(
+            reqwest::Client::new().post("https://example.test/v1/chat"),
+            false,
+        )
+        .build()
+        .expect("request should build");
+        assert!(
+            request
+                .headers()
+                .keys()
+                .all(|name| !name.as_str().starts_with("x-grok-"))
+        );
+    }
+
+    #[test]
+    fn xai_origin_receives_xai_identity_headers() {
+        let mut config = minimal_config();
+        config.base_url = "https://api.x.ai/v1".to_string();
+        config.client_version = Some("xai-version".to_string());
+
+        let client = SamplingClient::new(config).expect("client should construct");
+        assert!(client.send_xai_headers);
+        assert_eq!(
+            client
+                .default_headers
+                .get("x-grok-client-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("xai-version")
+        );
     }
 
     #[test]

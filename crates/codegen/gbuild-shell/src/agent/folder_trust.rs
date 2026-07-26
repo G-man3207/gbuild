@@ -77,8 +77,7 @@ static DECISIONS: LazyLock<Mutex<HashMap<PathBuf, bool>>> =
 /// (grant, store, prompt) could ever lift. Returns whether the folder had been
 /// trusted. Symmetric with [`grant_folder_trust`].
 pub fn revoke_folder_trust(cwd: &Path) -> bool {
-    // Local/dev builds are fully inert: nothing was trusted-via-gate to revoke,
-    // and recording `false` here would make `project_scope_allowed` wrongly gate.
+    // Keep the single inert-mode seam even though production leaves it disabled.
     if folder_trust_inert() {
         return false;
     }
@@ -232,8 +231,8 @@ pub(crate) fn record_for_test(cwd: &Path, allowed: bool) {
 /// an unresolved interactive-but-untrusted workspace resolves **fail-closed**
 /// (untrusted, no prompt) — only the launch dir is ever prompted for.
 pub fn resolve_and_record(cwd: &Path, remote: Option<&RemoteSettings>, allow_prompt: bool) -> bool {
-    // Local/dev builds are fully inert: project scope is always allowed, so skip
-    // the `trusted_folders.toml` read entirely.
+    // Kept as a single test-only escape hatch for callers that need to disable
+    // folder trust explicitly.
     if folder_trust_inert() {
         return true;
     }
@@ -266,8 +265,8 @@ pub fn resolve_and_record(cwd: &Path, remote: Option<&RemoteSettings>, allow_pro
 /// caught). The init-time dedup belongs to the one-shot caller (a `OnceCell` on
 /// `MvpAgent`), NOT to any new shared-cache entry.
 pub fn resolve_launch_dir_trust(cwd: &Path, remote: Option<&RemoteSettings>) -> bool {
-    // Local/dev builds are fully inert: project scope is always allowed, skipping
-    // the store read + repo scan entirely.
+    // Kept as a single test-only escape hatch for callers that need to disable
+    // folder trust explicitly.
     if folder_trust_inert() {
         return true;
     }
@@ -530,7 +529,7 @@ mod tests {
         let tmp = repo_tmp();
         let key = tmp.path().to_path_buf();
         // A fresh, never-recorded key re-resolves fail-closed and is allowed here
-        // (inert local build / no repo configs — never a durable default-open).
+        // (the inert test seam / no repo configs — never a durable default-open).
         assert!(project_scope_allowed(&key));
         record(&workspace_key(&key), false);
         assert!(!project_scope_allowed(&key));
@@ -932,15 +931,16 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn project_scope_allowed_allows_inert_local_build() {
-        let _unset_ver = EnvGuard::unset(gbuild_version::TEST_VERSION_ENV);
+    fn project_scope_allowed_denies_untrusted_repo_with_configs_by_default() {
+        let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("GBUILD_HOME", home.path());
+        let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".gbuild").join("hooks")).unwrap();
         assert!(
-            project_scope_allowed(tmp.path()),
-            "inert gBuild must allow project scope even with configs"
+            !project_scope_allowed(tmp.path()),
+            "untrusted repository hooks must be blocked by default"
         );
     }
 
@@ -1455,8 +1455,6 @@ mod tests {
         // the feature on via env (highest precedence) so the test does not depend
         // on the host's folder-trust config.
         unsafe { std::env::set_var("GBUILD_FOLDER_TRUST", "1") };
-        // The test override engages the otherwise inert trust implementation.
-        unsafe { std::env::set_var(gbuild_version::TEST_VERSION_ENV, "0.0.0-sim") };
         let tmp = repo_tmp();
 
         // Empty repo: nothing to gate => allowed, but left UNRECORDED (provisional).
@@ -1477,7 +1475,6 @@ mod tests {
         );
         assert!(!project_scope_allowed(tmp.path()));
 
-        unsafe { std::env::remove_var(gbuild_version::TEST_VERSION_ENV) };
         unsafe { std::env::remove_var("GBUILD_FOLDER_TRUST") };
     }
 
@@ -1525,10 +1522,10 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn local_build_is_inert_launch_trust_auto_trusts() {
-        let _sim = EnvGuard::unset(gbuild_version::TEST_VERSION_ENV);
+    fn untrusted_launch_blocks_envrc_until_folder_is_trusted() {
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("GBUILD_HOME", home.path());
+        let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".envrc"), "export LOCAL_BUILD_ENVRC=1\n").unwrap();
 
@@ -1537,18 +1534,23 @@ mod tests {
             "the `.envrc` must make this a gating-eligible repo"
         );
         assert!(
-            project_scope_allowed(tmp.path()),
-            "gBuild's inert gate must auto-trust an untrusted repo with .envrc"
+            !project_scope_allowed(tmp.path()),
+            "an untrusted repository must not activate its .envrc"
         );
         assert!(
-            resolve_launch_dir_trust(tmp.path(), None),
-            "gBuild launch-dir verdict must be trusted"
+            !resolve_launch_dir_trust(tmp.path(), None),
+            "an untrusted launch directory must stay gated"
         );
-        let env = gbuild_workspace::envrc::load_envrc_or_empty(tmp.path());
+        let env = gbuild_workspace::envrc::load_envrc_or_empty_when_trusted(tmp.path(), false);
+        assert!(env.is_empty(), "untrusted folders must not load .envrc");
+
+        grant_folder_trust(tmp.path());
+        assert!(project_scope_allowed(tmp.path()));
+        let env = gbuild_workspace::envrc::load_envrc_or_empty_when_trusted(tmp.path(), true);
         assert_eq!(
             env.get("LOCAL_BUILD_ENVRC"),
             Some(&"1".to_string()),
-            "gBuild must load .envrc without a trust grant"
+            "a trusted folder may load its .envrc"
         );
     }
 
@@ -1562,8 +1564,7 @@ mod tests {
         let _env = EnvGuard::set("GBUILD_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".mcp.json"), "{}").unwrap();
-        // Simulate a release-stamped build so the inert local-build gate is off
-        // and the remote `folder_trust_enabled` flag actually engages.
+        // The remote setting exercises the normal folder-trust resolver.
         // GBUILD_FOLDER_TRUST unset: env outranks the remote flag, so an ambient
         // opt-out would otherwise false-fail the Prompt assertion.
         let _sim = EnvGuard::set(gbuild_version::TEST_VERSION_ENV, "0.0.0-sim");
@@ -1579,10 +1580,7 @@ mod tests {
     #[serial_test::serial]
     fn prompt_warranted_false_when_feature_disabled() {
         // The remote kill-switch (folder_trust_enabled = Some(false)) disables the
-        // feature even on a release-stamped build, so no prompt is warranted even
-        // with repo configs present. Simulate a release build so the inert
-        // local-build path is not what's under test; GBUILD_HOME-isolated and
-        // GBUILD_FOLDER_TRUST unset so the kill-switch is the only signal.
+        // feature, so no prompt is warranted even with repo configs present.
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("GBUILD_HOME", home.path());
         let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");

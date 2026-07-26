@@ -9,7 +9,7 @@ pub use gbuild_telemetry::enums::PermissionMode;
 ///
 /// Valid values: `"always-approve"` → `AlwaysApprove`, `"auto"` → `Auto`,
 /// `"ask"` / `"default"` → `Ask`.
-/// Unknown strings fall back to the unrestricted default.
+/// Unknown strings fall back to Ask so a typo cannot broaden tool access.
 /// The `"ask"` and `"default"` arms are explicit so a future `Default` variant
 /// is a one-line change without touching the catch-all.
 pub fn parse_permission_mode_canonical(mode_str: &str) -> PermissionMode {
@@ -17,8 +17,8 @@ pub fn parse_permission_mode_canonical(mode_str: &str) -> PermissionMode {
         "always-approve" => PermissionMode::AlwaysApprove,
         "auto" => PermissionMode::Auto,
         "ask" => PermissionMode::Ask,
-        "default" => PermissionMode::AlwaysApprove,
-        _ => PermissionMode::AlwaysApprove,
+        "default" => PermissionMode::Ask,
+        _ => PermissionMode::Ask,
     }
 }
 
@@ -71,7 +71,7 @@ pub fn permission_mode_from_ui_if_set(ui: &TomlValue) -> Option<PermissionMode> 
 }
 
 /// Pure resolver: effective TOML `[ui]` permission keys (if any) >
-/// remote `permission_mode` > `AlwaysApprove`. CLI is applied above this by the launch
+/// remote `permission_mode` > `Ask`. CLI is applied above this by the launch
 /// helpers. Managed/requirements TOML already deep-merge into effective config.
 pub fn resolve_permission_mode(
     effective_ui: Option<&TomlValue>,
@@ -85,7 +85,7 @@ pub fn resolve_permission_mode(
     if let Some(mode_str) = remote_permission_mode {
         return parse_permission_mode_canonical(mode_str);
     }
-    PermissionMode::AlwaysApprove
+    PermissionMode::Ask
 }
 
 /// Display projection for a selected mode that did NOT win yolo/auto
@@ -122,19 +122,19 @@ pub fn resolved_display_permission_mode(
 /// Load selected permission mode for launch (effective TOML + explicit remote).
 ///
 /// TOML `[ui]` keys win over remote; remote only when no TOML permission key.
-/// Missing/unknown and config load failures use AlwaysApprove.
+/// Missing/unknown and config load failures use Ask.
 ///
 /// Accepts (TOML):
 ///   permission_mode = "always-approve"
 ///   permission_mode = "auto"
 ///   permission_mode = "ask"
-///   permission_mode = "default"         (maps to AlwaysApprove at runtime)
+///   permission_mode = "default"         (maps to Ask at runtime)
 ///   approval_mode = "always-approve"   (legacy)
 ///   yolo = true                        (legacy)
 pub fn load_permission_mode(remote_permission_mode: Option<&str>) -> PermissionMode {
     let root: TomlValue = match crate::config::load_effective_config() {
         Ok(r) => r,
-        Err(_) => return PermissionMode::AlwaysApprove,
+        Err(_) => return PermissionMode::Ask,
     };
     let ui = root.as_table().and_then(|t| t.get("ui"));
     resolve_permission_mode(ui, remote_permission_mode)
@@ -161,14 +161,10 @@ pub fn effective_yolo_for_launch(
     cli_permission_mode: Option<&str>,
     remote_permission_mode: Option<&str>,
 ) -> EffectiveYolo {
-    let _ = remote_permission_mode;
-    // gBuild launches unrestricted unless the user explicitly selects a
-    // different mode on this command line. Disk and remote policy cannot clamp
-    // the harness back into approval mode.
-    let config_yolo = true;
+    let config_yolo = load_permission_mode(remote_permission_mode).is_always_approve();
     resolve_launch_yolo(
         resolve_effective_yolo(cli_always_approve, cli_permission_mode, config_yolo),
-        None,
+        gbuild_workspace::permission::resolution::yolo_disabled_by_policy(),
     )
 }
 
@@ -302,11 +298,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_permission_mode_none_is_unrestricted() {
-        assert_eq!(
-            resolve_permission_mode(None, None),
-            PermissionMode::AlwaysApprove
-        );
+    fn resolve_permission_mode_none_is_ask() {
+        assert_eq!(resolve_permission_mode(None, None), PermissionMode::Ask);
     }
 
     #[test]
@@ -325,7 +318,7 @@ mod tests {
         );
         assert_eq!(
             resolve_permission_mode(None, Some("default")),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
         );
     }
 
@@ -372,15 +365,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_permission_mode_unknown_remote_is_unrestricted() {
+    fn resolve_permission_mode_unknown_remote_is_ask() {
         assert_eq!(
             resolve_permission_mode(None, Some("garbage")),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
         );
-        assert_eq!(
-            resolve_permission_mode(None, Some("")),
-            PermissionMode::AlwaysApprove
-        );
+        assert_eq!(resolve_permission_mode(None, Some("")), PermissionMode::Ask);
     }
 
     #[test]
@@ -394,24 +384,20 @@ mod tests {
             PermissionMode::Auto,
         );
         assert_eq!(parse_permission_mode_canonical("ask"), PermissionMode::Ask,);
-        // gBuild's default is unrestricted.
+        // Default and unknown values must never broaden access.
         assert_eq!(
             parse_permission_mode_canonical("default"),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
         );
-        // Unknown values retain the unrestricted default.
         assert_eq!(
             parse_permission_mode_canonical("garbage"),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
         );
-        assert_eq!(
-            parse_permission_mode_canonical(""),
-            PermissionMode::AlwaysApprove,
-        );
+        assert_eq!(parse_permission_mode_canonical(""), PermissionMode::Ask,);
         // Case sensitivity (no normalization — wire format is exact-match).
         assert_eq!(
             parse_permission_mode_canonical("Always-Approve"),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
             "wire format is case-sensitive; 'Always-Approve' is unknown",
         );
     }
@@ -436,13 +422,13 @@ mod tests {
             ),
             (
                 "[ui]\npermission_mode = \"default\"\n",
-                PermissionMode::AlwaysApprove,
-                "always-approve",
+                PermissionMode::Ask,
+                "ask",
             ),
             (
                 "[ui]\npermission_mode = \"garbage\"\n",
-                PermissionMode::AlwaysApprove,
-                "always-approve",
+                PermissionMode::Ask,
+                "ask",
             ),
             // Legacy keys.
             (
@@ -473,11 +459,11 @@ mod tests {
                 PermissionMode::Ask,
                 "ask",
             ),
-            // No permission keys use gBuild's unrestricted default.
+            // No permission keys use the safe Ask default.
             (
                 "[ui]\ntheme = \"gbuild_night\"\n",
-                PermissionMode::AlwaysApprove,
-                "always-approve",
+                PermissionMode::Ask,
+                "ask",
             ),
         ];
         for (toml_str, expected_mode, expected_canonical) in cases {
@@ -491,10 +477,10 @@ mod tests {
                 "config {toml_str:?} canonical string",
             );
         }
-        // A non-table [ui] value resolves to the unrestricted default.
+        // A non-table [ui] value resolves to the safe default.
         assert_eq!(
             resolve_permission_mode(Some(&TomlValue::String("nope".into())), None),
-            PermissionMode::AlwaysApprove,
+            PermissionMode::Ask,
         );
     }
 

@@ -259,7 +259,7 @@ pub fn render_subagent_system_prompt(
     runtime: &EffectiveRuntimeConfig,
     renderer: &TemplateRenderer,
     working_directory: &Path,
-) -> Option<String> {
+) -> Result<String, gbuild_agent::AgentBuildError> {
     let context = PromptContext {
         prompt_mode: definition.prompt_mode.clone(),
         audience: PromptAudience::Subagent,

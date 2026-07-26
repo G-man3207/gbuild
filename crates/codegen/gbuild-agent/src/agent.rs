@@ -8,6 +8,7 @@ use gbuild_tools::types::definition::ToolDefinition;
 
 use crate::compaction::CompactionPolicy;
 use crate::config::{AgentDefinition, CompletionRequirement, PermissionMode};
+use crate::error::AgentBuildError;
 use crate::prompt::context::PromptContext;
 use crate::system_reminder::ReminderPolicy;
 
@@ -224,19 +225,19 @@ impl Agent {
     /// Re-render the system prompt from current ToolBridge state
     /// (tool name overrides, disabled tools). Called by hosts after
     /// mid-session tool-override updates.
-    pub async fn finalize_prompt(&mut self) {
+    pub async fn finalize_prompt(&mut self) -> Result<(), AgentBuildError> {
         self.prompt_context.build_timestamp_utc = chrono::Utc::now().to_rfc3339();
 
-        self.system_prompt = self
-            .prompt_context
-            .render(&self.tool_bridge)
-            .await
-            .unwrap_or_default();
+        self.system_prompt = self.prompt_context.render(&self.tool_bridge).await?;
+        Ok(())
     }
 
     /// Re-render the system prompt for a different definition, reusing
     /// the existing ToolBridge. Used for mid-session mode switching.
-    pub async fn render_prompt_for_definition(&self, definition: &AgentDefinition) -> String {
+    pub async fn render_prompt_for_definition(
+        &self,
+        definition: &AgentDefinition,
+    ) -> Result<String, AgentBuildError> {
         let mut ctx = self.prompt_context.clone();
         ctx.prompt_mode = definition.prompt_mode.clone();
         ctx.prompt_body = definition.prompt_body.clone();
@@ -248,7 +249,7 @@ impl Agent {
             ctx.agents_md_files.clear();
         }
 
-        ctx.render(&self.tool_bridge).await.unwrap_or_default()
+        ctx.render(&self.tool_bridge).await
     }
 }
 

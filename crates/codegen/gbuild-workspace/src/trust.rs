@@ -492,7 +492,7 @@ impl Drop for ExclusiveLock {
 /// read only once. A no-op when the legacy file is absent/already migrated or no
 /// user gBuild home resolves.
 pub fn migrate_legacy_hook_trust() {
-    // Local/dev builds do NO trust-store I/O: skip the load + legacy-file rename.
+    // Preserve the inert-mode seam: it must not mutate a durable trust store.
     if crate::folder_trust::folder_trust_inert() {
         return;
     }

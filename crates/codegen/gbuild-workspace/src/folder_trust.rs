@@ -117,39 +117,21 @@ pub fn decide_inputs_with_interactive(
 
 /// Whether the whole folder-trust system is inert (auto-trusts everything).
 ///
-/// THE single security short-circuit: every explicit trust auto-grant site calls
-/// this (greppable via `folder_trust_inert`). gBuild never
-/// prompts, never gates repo-local `.envrc`/`.claude`/hooks/plugins/MCP/LSP, and
-/// does `trusted_folders.toml` I/O outside focused tests.
+/// Production gBuild never uses this escape hatch. The function remains as the
+/// single guard for callers and focused test seams, so trust-sensitive startup
+/// behavior cannot acquire a second bypass path.
 pub fn folder_trust_inert() -> bool {
-    is_local_build()
-}
-
-/// gBuild keeps folder trust inert in every normal build. The test-version
-/// override is retained so the upstream trust implementation stays testable.
-fn is_local_build() -> bool {
-    if std::env::var(gbuild_version::TEST_VERSION_ENV).is_ok() {
-        return false;
-    }
-    true
+    false
 }
 
 /// Resolve whether the folder-trust gate is enabled.
 ///
-/// Normal gBuild runs return false because folder trust is inert. Focused tests
-/// can activate the retained resolver, whose precedence is:
+/// Normal gBuild runs enforce folder trust. The resolver's precedence is:
 /// env `GBUILD_FOLDER_TRUST` > `[folder_trust] enabled` (user) > managed >
 /// remote `folder_trust_enabled` > default **true** (on by default; the remote
 /// `folder_trust_enabled` kill-switch or a `[folder_trust] enabled = false`
 /// opt-out turns it back off).
 pub fn feature_enabled(remote: Option<&RemoteSettings>) -> bool {
-    feature_enabled_for_build(remote, is_local_build())
-}
-
-fn feature_enabled_for_build(remote: Option<&RemoteSettings>, is_local_build: bool) -> bool {
-    if is_local_build {
-        return false;
-    }
     fn from_toml(v: Option<&TomlValue>) -> Option<bool> {
         v?.get("folder_trust")?.get("enabled")?.as_bool()
     }
@@ -170,8 +152,8 @@ fn feature_enabled_for_build(remote: Option<&RemoteSettings>, is_local_build: bo
 /// same `~/.gbuild/trusted_folders.toml`. Best-effort; a write failure is logged,
 /// not fatal.
 pub fn grant_folder_trust(cwd: &Path) {
-    // Local/dev builds never gate, so there is nothing to grant: `--trust` is a
-    // no-op and the store is left untouched (the whole feature is inert).
+    // Retain the single inert-mode guard so any test-only escape hatch cannot
+    // accidentally leave durable trust decisions behind.
     if folder_trust_inert() {
         return;
     }
@@ -187,7 +169,7 @@ pub fn grant_folder_trust(cwd: &Path) {
 /// child DENY that poisons a future ancestor `set_trusted` cascade — so that
 /// write stays gated. Symmetric with [`grant_folder_trust`].
 pub fn revoke_folder_trust_store(cwd: &Path) -> bool {
-    // Local/dev builds never wrote the store, so there is nothing to revoke.
+    // Keep this symmetric with grant_folder_trust for the inert-mode seam.
     if folder_trust_inert() {
         return false;
     }
@@ -916,12 +898,8 @@ mod tests {
     // aliased here so the existing `EnvVarGuard::set/unset` call sites are unchanged.
     use crate::TestEnvGuard as EnvVarGuard;
 
-    fn simulate_release_build() -> EnvVarGuard {
-        EnvVarGuard::set(gbuild_version::TEST_VERSION_ENV, Path::new("0.0.0-sim"))
-    }
-
     #[test]
-    fn local_build_ignores_remote_rollout() {
+    fn remote_rollout_enables_gate() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
@@ -931,32 +909,7 @@ mod tests {
             folder_trust_enabled: Some(true),
             ..Default::default()
         };
-        let feature = feature_enabled_for_build(Some(&remote), true);
-        assert!(!feature);
-        let i = DecideInputs {
-            is_interactive: true,
-            ..inputs()
-        };
-        assert_eq!(decide(feature, &i), TrustOutcome::Trusted);
-    }
-
-    #[test]
-    fn release_build_keeps_gate_when_enabled() {
-        // A release-stamped build (is_local_build=false) honors the remote enable,
-        // keeping today's gate. Isolate config so neither on-disk user/managed
-        // config nor an ambient env flag can override it: empty GBUILD_HOME (no
-        // config.toml/managed_config.toml) + GBUILD_FOLDER_TRUST unset. nextest's
-        // process-per-test makes gbuild_home()'s OnceLock pick up the temp dir.
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _flag = EnvVarGuard::unset("GBUILD_FOLDER_TRUST");
-
-        let remote = RemoteSettings {
-            folder_trust_enabled: Some(true),
-            ..Default::default()
-        };
-        let feature = feature_enabled_for_build(Some(&remote), false);
+        let feature = feature_enabled(Some(&remote));
         assert!(feature);
         let i = DecideInputs {
             is_interactive: true,
@@ -966,71 +919,76 @@ mod tests {
     }
 
     #[test]
-    fn local_build_ignores_explicit_env_optin() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _flag = EnvVarGuard::set("GBUILD_FOLDER_TRUST", Path::new("1"));
-
-        assert!(!feature_enabled_for_build(None, true));
-    }
-
-    #[test]
-    fn release_build_defaults_on() {
-        // A release-stamped build with no env/config/managed/remote signal defaults
-        // the feature ON. Empty GBUILD_HOME (no config.toml/managed config) +
-        // GBUILD_FOLDER_TRUST unset so only the default applies.
+    fn remote_rollout_respects_normal_precedence() {
+        // Isolate config so neither on-disk user/managed config nor an ambient env
+        // flag can override the remote setting.
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
         let _flag = EnvVarGuard::unset("GBUILD_FOLDER_TRUST");
 
-        assert!(feature_enabled_for_build(None, false));
+        let remote = RemoteSettings {
+            folder_trust_enabled: Some(true),
+            ..Default::default()
+        };
+        let feature = feature_enabled(Some(&remote));
+        assert!(feature);
+        let i = DecideInputs {
+            is_interactive: true,
+            ..inputs()
+        };
+        assert_eq!(decide(feature, &i), TrustOutcome::Prompt);
     }
 
     #[test]
-    fn is_local_build_honors_test_version_override() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let _sim = EnvVarGuard::set(gbuild_version::TEST_VERSION_ENV, Path::new("0.0.0-sim"));
-            assert!(!is_local_build());
-        }
-        let _unset = EnvVarGuard::unset(gbuild_version::TEST_VERSION_ENV);
-        if option_env!("GBUILD_VERSION").is_none() {
-            assert!(is_local_build());
-        }
-    }
-
-    #[test]
-    fn store_io_is_noop_on_local_build() {
+    fn explicit_env_optin_enables_gate() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _unset = EnvVarGuard::unset(gbuild_version::TEST_VERSION_ENV);
-        if option_env!("GBUILD_VERSION").is_some() {
-            return;
-        }
+        let _flag = EnvVarGuard::set("GBUILD_FOLDER_TRUST", Path::new("1"));
+
+        assert!(feature_enabled(None));
+    }
+
+    #[test]
+    fn feature_defaults_on() {
+        // With no env/config/managed/remote signal, folder trust defaults on.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
+        let _flag = EnvVarGuard::unset("GBUILD_FOLDER_TRUST");
+
+        assert!(feature_enabled(None));
+    }
+
+    #[test]
+    fn folder_trust_is_active_in_normal_builds() {
+        assert!(
+            !folder_trust_inert(),
+            "normal builds must gate repository-controlled startup configuration"
+        );
+    }
+
+    #[test]
+    fn store_io_persists_in_normal_builds() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvVarGuard::set("GBUILD_HOME", home.path());
         let tmp = repo_tmp();
         let key = workspace_key(tmp.path());
 
         grant_folder_trust(tmp.path());
         assert!(
-            !TrustStore::load().is_trusted(&key),
-            "local build grant must remain a no-op"
-        );
-        {
-            let _sim = simulate_release_build();
-            let mut store = TrustStore::load();
-            store.set_trusted(&key).unwrap();
-            assert!(TrustStore::load().is_trusted(&key));
-        }
-        assert!(
-            !revoke_folder_trust_store(tmp.path()),
-            "local build revoke must remain a no-op"
-        );
-        assert!(
             TrustStore::load().is_trusted(&key),
-            "local build revoke must not change the store"
+            "folder trust grants must persist in normal builds"
+        );
+        assert!(
+            revoke_folder_trust_store(tmp.path()),
+            "a persisted grant must be revocable"
+        );
+        assert!(
+            !TrustStore::load().is_trusted(&key),
+            "folder trust revocation must persist"
         );
     }
 
@@ -1043,7 +1001,6 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _env = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _sim = simulate_release_build();
         let tmp = repo_tmp();
         let key = workspace_key(tmp.path());
 
@@ -1072,7 +1029,6 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         let _env = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _sim = simulate_release_build();
         // Distinct git roots so `workspace_key` keeps parent/child as separate
         // keys (the child's own `.git` stops discovery at the child).
         let parent = repo_tmp();

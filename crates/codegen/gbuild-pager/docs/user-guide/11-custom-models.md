@@ -80,7 +80,7 @@ base_url = "https://api.example.com/v1"   # OpenAI-compatible endpoint
 name = "Display Name"                     # Shown in the model picker
 description = "Model description"          # Optional description
 api_key = "sk-..."                        # API key for this provider (optional)
-env_key = "XAI_API_KEY"                   # Env var holding the API key (optional; string or array)
+env_key = "PROVIDER_API_KEY"              # Env var holding the API key (optional; string or array)
 api_backend = "chat_completions"          # "chat_completions", "responses", or "messages"
 temperature = 0.7                         # Sampling temperature
 top_p = 0.95                              # Nucleus sampling parameter
@@ -283,14 +283,14 @@ Point gBuild at a custom OpenAI-compatible `/v1/models` endpoint instead of the 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GBUILD_MODELS_BASE_URL` | Yes | Base URL for inference. gBuild fetches the model list from `{base_url}/models`. |
-| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer`. |
+| `GBUILD_MODELS_API_KEY` | No | Dedicated bearer token for the custom model-list request only. Configure inference credentials per model. |
 | `GBUILD_MODELS_LIST_URL` | No | Override the model-list URL when it differs from `{base_url}/models`. |
 
 ### Setup
 
 ```bash
 export GBUILD_MODELS_BASE_URL="https://api.acme.com/v1"
-export XAI_API_KEY="xai-..."
+export GBUILD_MODELS_API_KEY="catalog-key" # optional; omit for public/local catalogs
 gbuild
 ```
 
@@ -309,7 +309,7 @@ When you use `[endpoints]` with partial model overrides, gBuild inherits the `ba
 
 ### Auth Behavior
 
-When you set `models_base_url`, gBuild uses API key auth (`Authorization: Bearer`) instead of session auth. You do not need `gbuild login` -- the API key is enough.
+Custom model catalogs never use your signed-in xAI session or ambient `XAI_API_KEY`. Set `GBUILD_MODELS_API_KEY` only if the `/models` catalog requires a bearer token; configure inference credentials separately with the model's `api_key`, `env_key`, or `auth_provider`.
 
 ---
 
@@ -405,7 +405,7 @@ Verify the endpoint is reachable:
 
 ```bash
 curl -s https://api.example.com/v1/models \
-  -H "Authorization: Bearer $XAI_API_KEY"
+  -H "Authorization: Bearer $GBUILD_MODELS_API_KEY"
 ```
 
 ### Debug Logging

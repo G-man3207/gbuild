@@ -669,6 +669,9 @@ struct ModelsResponse {
 enum EndpointAuth {
     ApiKey,
     Session,
+    /// Custom model registries are independent providers. They must never
+    /// inherit an ambient xAI API key or signed-in session credential.
+    Custom,
 }
 struct ListModelsEndpoint {
     url: String,
@@ -693,7 +696,7 @@ impl ListModelsEndpoint {
         if endpoints.has_custom_endpoint() {
             Self {
                 url: endpoints.resolve_models_list_url(),
-                auth: EndpointAuth::ApiKey,
+                auth: EndpointAuth::Custom,
             }
         } else if fetch_auth == crate::agent::models::ModelFetchAuth::ApiKey {
             Self {
@@ -708,6 +711,11 @@ impl ListModelsEndpoint {
         }
     }
 }
+
+fn custom_models_api_key_from_env(get_env: impl FnOnce(&str) -> Option<String>) -> Option<String> {
+    get_env("GBUILD_MODELS_API_KEY").filter(|key| !key.trim().is_empty())
+}
+
 /// Fetch models from an OpenAI-compatible `/v1/models` endpoint.
 /// Fetch result: model entries + optional etag from response.
 pub struct FetchModelsResult {
@@ -732,11 +740,17 @@ pub(crate) fn fetch_models_blocking(
                         .ok_or(std::env::VarError::NotPresent)
                 })
                 .map_err(|_| {
-                    BackendError::Auth(
-                        "No API key for custom models endpoint. Set XAI_API_KEY.".into(),
-                    )
+                    BackendError::Auth("No xAI API key for model endpoint. Set XAI_API_KEY.".into())
                 })?;
             request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+        EndpointAuth::Custom => {
+            // Custom registries may opt into authentication with a dedicated
+            // discovery credential. Never fall back to XAI_API_KEY or GrokAuth:
+            // either value can be an ambient first-party credential.
+            if let Some(api_key) = custom_models_api_key_from_env(|key| std::env::var(key).ok()) {
+                request = request.header("Authorization", format!("Bearer {}", api_key));
+            }
         }
         EndpointAuth::Session => {
             let auth = auth.ok_or_else(|| {
@@ -1857,7 +1871,7 @@ mod tests {
     /// INVARIANT: the `/models` fetch URL + auth scheme match the auth mode —
     /// Session/Deployment → cli-chat-proxy (Session auth), never the inference host;
     /// ApiKey → `xai_api_base_url` (ApiKey, public default when unset); a custom
-    /// models endpoint → that URL verbatim.
+    /// models endpoint → that URL verbatim with isolated custom auth.
     #[test]
     #[serial_test::serial]
     fn models_fetch_endpoint_matches_auth_mode() {
@@ -1900,7 +1914,24 @@ mod tests {
         );
         let ep = ListModelsEndpoint::from_endpoints(&custom, ModelFetchAuth::Session);
         assert_eq!(ep.url, "https://models.acme.com/v1/models");
-        assert_eq!(ep.auth, EndpointAuth::ApiKey);
+        assert_eq!(ep.auth, EndpointAuth::Custom);
+    }
+
+    #[test]
+    fn custom_model_registry_uses_dedicated_key_only() {
+        assert_eq!(
+            custom_models_api_key_from_env(|key| match key {
+                "GBUILD_MODELS_API_KEY" => Some("registry-key".to_string()),
+                "XAI_API_KEY" => Some("ambient-xai-key".to_string()),
+                _ => None,
+            }),
+            Some("registry-key".to_string())
+        );
+        assert_eq!(
+            custom_models_api_key_from_env(|_| None),
+            None,
+            "an ambient xAI credential must never authenticate a custom registry"
+        );
     }
     /// REGRESSION: `gbuild setup` must send the deployment key to
     /// the proxy, never the inference endpoint.

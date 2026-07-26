@@ -1772,7 +1772,7 @@ max_completion_tokens = 8192          # Max tokens per response
 context_window = 256000               # Total context window in tokens (for auto-compact)
 ```
 
-**Credential resolution order:** `api_key` → `env_key` → cached `auth_provider` token (terminal: a cache miss resolves to no credential, never the session token) → session token → `XAI_API_KEY`. See [Per-Model Auth Providers](#per-model-auth-providers).
+**Credential resolution order:** `api_key` → `env_key` → cached `auth_provider` token (terminal: a cache miss resolves to no credential, never the session token). First-party xAI origins may then use the signed-in session token or `XAI_API_KEY`; custom origins never receive those ambient credentials. See [Per-Model Auth Providers](#per-model-auth-providers).
 
 The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, gBuild falls back to built-in defaults for known models.
 
@@ -1883,18 +1883,18 @@ Point gBuild at a custom OpenAI-compatible `/v1/models` endpoint instead of the 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GBUILD_MODELS_BASE_URL` | Yes | Base URL for inference / chat completions (e.g. `https://api.acme.com/v1`). The model list is fetched from `{base_url}/models` automatically |
-| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer` to the custom endpoint |
+| `GBUILD_MODELS_API_KEY` | No | Dedicated bearer token for the custom model-list request only. Configure inference credentials with `[model.*].api_key`, `env_key`, or `auth_provider`. |
 | `GBUILD_MODELS_LIST_URL` | No | Override the model list URL if it differs from `{base_url}/models` |
 
 **Setup:**
 
 ```bash
 export GBUILD_MODELS_BASE_URL="https://api.acme.com/v1"
-export XAI_API_KEY="xai-..."
+export GBUILD_MODELS_API_KEY="catalog-key" # optional; omit for public/local catalogs
 gbuild
 ```
 
-gBuild fetches the model list from `{GBUILD_MODELS_BASE_URL}/models` on startup and sends inference requests to `GBUILD_MODELS_BASE_URL`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
+gBuild fetches the model list from `{GBUILD_MODELS_BASE_URL}/models` on startup and sends inference requests to `GBUILD_MODELS_BASE_URL`. The catalog request uses `GBUILD_MODELS_API_KEY` only when set; it never uses your signed-in xAI session or ambient `XAI_API_KEY`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
 
 If your model list endpoint differs from `{base_url}/models`, set `GBUILD_MODELS_LIST_URL` explicitly.
 
@@ -2446,9 +2446,10 @@ The agent persists all session updates automatically. Clients can reconnect and 
 
 | Variable                         | Description                                                                                              |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `XAI_API_KEY`         | API key from [console.x.ai](https://console.x.ai). Used for custom endpoint auth and API key login      |
+| `XAI_API_KEY`         | API key from [console.x.ai](https://console.x.ai). Used for xAI API key login and first-party xAI requests |
 | `GBUILD_CLI_CHAT_PROXY_BASE_URL`  | Override the cli-chat-proxy URL (default: `https://cli-chat-proxy.grok.com/v1`)                          |
 | `GBUILD_MODELS_BASE_URL`          | Custom base URL for inference. Model list auto-fetched from `{base_url}/models` (see [Custom Models Endpoint](#custom-models-endpoint)) |
+| `GBUILD_MODELS_API_KEY`           | Optional dedicated bearer token for a custom `/models` catalog request; never used as an inference credential |
 | `GBUILD_MODELS_LIST_URL`          | Override the model list URL if it differs from `{GBUILD_MODELS_BASE_URL}/models`                                              |
 | `GBUILD_AUTH_PROVIDER_COMMAND`     | External auth binary (alternative to config file). See [External Auth Provider](#external-auth-provider) |
 | `GBUILD_AUTH_TOKEN_TTL`            | Token lifetime in seconds for external auth providers that output bare tokens. See [External Auth Provider](#external-auth-provider) |

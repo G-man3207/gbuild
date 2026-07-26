@@ -106,6 +106,18 @@ impl SessionActor {
             }
         };
         if let Some(ref def) = agent_def {
+            let new_prompt = match self.agent.borrow().render_prompt_for_definition(def).await {
+                Ok(prompt) => prompt,
+                Err(error) => {
+                    tracing::error!(
+                        session_id = %self.session_info.id.0,
+                        agent_name = %def.name,
+                        error = %error,
+                        "Session mode change rejected because its prompt could not be rendered"
+                    );
+                    return;
+                }
+            };
             tracing::info!(
                 session_id = %self.session_info.id.0,
                 agent_name = %def.name,
@@ -120,9 +132,6 @@ impl SessionActor {
                 .update_policies_from_definition(def)
                 .await;
             *self.active_agent_type.lock() = Some(def.name.clone());
-        }
-        if let Some(ref def) = agent_def {
-            let new_prompt = self.agent.borrow().render_prompt_for_definition(def).await;
             let mut conversation = self.chat_state_handle.get_conversation().await;
             for item in conversation.iter_mut() {
                 if let ConversationItem::System(sys) = item {

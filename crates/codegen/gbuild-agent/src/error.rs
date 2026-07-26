@@ -26,10 +26,14 @@ pub enum AgentBuildError {
     #[error("failed to build session runtime: {0}")]
     RuntimeBuild(std::io::Error),
 
-    /// MiniJinja template rendering failed (extend or full mode).
-    /// Includes line numbers and context from the template.
+    /// A prompt template failed to render (extend or full mode).
+    /// Includes the failing template and renderer context.
     #[error("template rendering error: {0}")]
-    MiniJinjaError(#[from] minijinja::Error),
+    TemplateRender(#[from] gbuild_tools::types::template_renderer::TemplateRenderError),
+
+    /// The finalized tool registry did not provide a template renderer.
+    #[error("template renderer unavailable after tool registry finalization")]
+    TemplateRendererUnavailable,
 
     /// Tool registry error (e.g., unsatisfied requirements during finalization).
     #[error("tool error: {0}")]
