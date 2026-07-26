@@ -904,7 +904,7 @@ impl SessionActor {
                 return Ok(Err(ToolLoop::ToolParsingError));
             }
         };
-        let access_kind = AccessKind::from(&tool_input);
+        let access_kind = AccessKind::from_tool_input(&call.function.name, &tool_input);
         let plan_gate = plan_mode_edit_gate(&self.plan_mode.lock(), &tool_input, &access_kind);
         if plan_gate != PlanEditGate::Allow {
             tracing::info_span!(

@@ -44,7 +44,7 @@ pub use model::{
 };
 pub use view::{DiagnosticSnapshot, view};
 
-/// Passive input-device probe for `grok doctor` / `/doctor`.
+/// Passive input-device probe for `gbuild doctor` / `/doctor`.
 ///
 /// Does not open a capture stream (no macOS mic-permission prompt). When
 /// `emit_missing_issue` is true and no device exists, appends an issue finding.
@@ -85,7 +85,7 @@ fn voice_missing_finding(error: String) -> DiagnosticFinding {
         automatic_remediation: None,
         note: Some(
             "Connect or select a microphone in your system sound settings. On Linux, install a \
-             supported audio recorder if none was found on PATH. Then run `/doctor` or `grok \
+             supported audio recorder if none was found on PATH. Then run `/doctor` or `gbuild \
              doctor` again. Doctor can't detect denied macOS microphone access when the system \
              returns silence; follow the message shown when dictation fails."
                 .to_owned(),
@@ -131,7 +131,7 @@ pub enum WarningCategory {
     /// Below truecolor: truecolor themes hidden. Explicit `/doctor` only.
     LimitedColorSupport,
     SandboxProfileConflict,
-    /// The session runs over SSH without `grok wrap` on the local end, so
+    /// The session runs over SSH without `gbuild wrap` on the local end, so
     /// clipboard forwarding and terminal-mode restore on dropped connections
     /// are not guaranteed. Informational recommendation, not a breakage.
     SshWithoutWrap,
@@ -249,7 +249,7 @@ pub(crate) fn collect_startup_warnings_from(
         );
         warning.note = Some(
             "Grok also saves each copy to the backup file shown in the copy message. To copy \
-             directly, run `grok wrap ssh <host>` on your local computer or use a terminal that \
+             directly, run `gbuild wrap ssh <host>` on your local computer or use a terminal that \
              supports OSC 52. You can also use `/copy <file>` or `/minimal`."
                 .to_owned(),
         );
@@ -446,8 +446,8 @@ fn sandbox_profile_conflict_warning_from(conflicts: Vec<String>) -> Option<Termi
     })
 }
 
-/// Pure SSH `grok wrap` recommendation — suggests launching the session
-/// through `grok wrap ssh <host>` on the user's local machine, which gives a
+/// Pure SSH `gbuild wrap` recommendation — suggests launching the session
+/// through `gbuild wrap ssh <host>` on the user's local machine, which gives a
 /// remote session reliable clipboard forwarding plus terminal-mode restore
 /// when the connection drops.
 ///
@@ -481,7 +481,7 @@ pub fn ssh_wrap_hint(
     let mut warning = TerminalWarning::new(
         WarningCategory::SshWithoutWrap,
         "Use local SSH wrapping for more reliable clipboard copy and terminal recovery",
-        Some("grok wrap ssh <host>"),
+        Some("gbuild wrap ssh <host>"),
         None,
     );
     warning.note = Some(

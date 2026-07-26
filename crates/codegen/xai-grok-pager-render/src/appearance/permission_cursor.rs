@@ -76,10 +76,8 @@ impl DefaultSelectedPermission {
     }
 
     /// Parse a config.toml / registry value (trimmed, case-insensitive, no
-    /// aliases). The mapping is total — `always_allow_all_sessions` and any
-    /// unrecognised / empty value both resolve to
-    /// [`AlwaysAllowAllSessions`](Self::AlwaysAllowAllSessions), so no `Option`
-    /// has to be threaded through callers.
+    /// aliases). The mapping is total: unrecognised values use the unrestricted
+    /// default.
     pub fn from_config_value(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "allow_once" => Self::AllowOnce,
@@ -151,8 +149,7 @@ thread_local! {
 /// 1. `GROK_DEFAULT_SELECTED_PERMISSION` env var (headless / agent testing —
 ///    overrides `config.toml` without editing it),
 /// 2. `[ui].default_selected_permission` in the layered effective config,
-/// 3. [`AlwaysAllowAllSessions`](DefaultSelectedPermission::AlwaysAllowAllSessions)
-///    (the effective default).
+/// 3. [`AlwaysAllowAllSessions`](DefaultSelectedPermission::AlwaysAllowAllSessions).
 ///
 /// Unrecognised / empty values at any layer fall through to the next.
 pub fn load_default_selected_permission() -> DefaultSelectedPermission {
@@ -223,10 +220,8 @@ pub fn set_last_used_permission(kind: DefaultSelectedPermission) {
 ///
 /// 1. the sticky last-used kind (once the user has confirmed any prompt),
 /// 2. the configured `[ui].default_selected_permission`,
-/// 3. the global "Always allow on all sessions" (enable-always-approve) row,
-///    matched by identity via `is_enable_always_approve_option` — not by list
-///    position, so the intent lives in the code rather than the option order,
-/// 4. index 0 (clients that don't get the YOLO row prepended).
+/// 3. the global "Always allow on all sessions" row,
+/// 4. index 0 if the requested row is unavailable.
 ///
 /// The YOLO row is skipped while a concrete target kind is in play, so a
 /// configured / sticky preselection never lands on it.
@@ -388,8 +383,6 @@ mod tests {
                 ),
                 opt("reject-once", acp::PermissionOptionKind::RejectOnce),
             ];
-            // No sticky + default config → the enable-always-approve row,
-            // matched by identity (index 1), not the first AllowOnce (index 0).
             assert_eq!(resolve_initial_cursor(&options), 1);
         })
         .join()

@@ -1,15 +1,15 @@
 # Permissions and safety
 
-Control what Grok can access and do: permission modes, allow/ask/deny rules, hooks, and the optional OS-level sandbox.
+Control what gBuild can access and do: permission modes, allow/ask/deny rules, hooks, and the optional OS-level sandbox.
 
-- **Modes** set how often Grok asks for approval (always-approve, auto, ask, and related).
+- **Modes** set how often gBuild asks for approval (always-approve, auto, ask, and related).
 - **Rules** set which tools are allowed, asked about, or blocked within that baseline.
 
 ---
 
 ## Permission modes
 
-When Grok edits a file, runs a command, or calls an external tool, it may pause for approval. Permission modes control how often that happens.
+When gBuild edits a file, runs a command, or calls an external tool, it may pause for approval. Permission modes control how often that happens.
 
 Modes set a baseline. Allow, ask, and deny [rules](#configuring-permissions) still apply on top of any mode.
 
@@ -21,9 +21,9 @@ Modes set a baseline. Allow, ask, and deny [rules](#configuring-permissions) sti
 | Scripts, SDKs, CI, agent servers | Always-approve; add [deny rules](#configuring-permissions) or hooks for hard limits |
 
 ```bash
-grok -p "Run the tests" --always-approve
-grok agent --always-approve stdio
-grok agent --always-approve serve --bind 127.0.0.1:2419 --secret <token>
+gbuild -p "Run the tests" --always-approve
+gbuild agent --always-approve stdio
+gbuild agent --always-approve serve --bind 127.0.0.1:2419 --secret <token>
 ```
 
 ACP clients can set `"_meta": { "yoloMode": true }` on `session/new`. See [Agent mode](15-agent-mode.md#automation-and-sdks).
@@ -48,9 +48,9 @@ ACP clients can set `"_meta": { "yoloMode": true }` on `session/new`. See [Agent
 **CLI:**
 
 ```bash
-grok --always-approve -p "Run the test suite"
-grok --permission-mode auto
-grok agent --always-approve serve --bind 127.0.0.1:2419 --secret <token>
+gbuild --always-approve -p "Run the test suite"
+gbuild --permission-mode auto
+gbuild agent --always-approve serve --bind 127.0.0.1:2419 --secret <token>
 ```
 
 **Config:**
@@ -90,14 +90,14 @@ deny = [
 ```
 
 ```bash
-grok -p "Deploy the service" --always-approve --deny 'Bash(rm -rf *)'
+gbuild -p "Deploy the service" --always-approve --deny 'Bash(rm -rf *)'
 ```
 
 Deny always wins over allow and over always-approve’s normal pass-through. See [Configuring permissions](#configuring-permissions).
 
 ### Auto mode
 
-Reduces interactive prompts by checking many tool calls before they run. Routine local work often proceeds; other calls may be blocked or escalated. In non-interactive sessions, a blocked call fails and is reported to the model (for example `Auto mode blocked this action …`). Behavior is the same for `grok -p`, `agent stdio`, and `agent serve`.
+Reduces interactive prompts by checking many tool calls before they run. Routine local work often proceeds; other calls may be blocked or escalated. In non-interactive sessions, a blocked call fails and is reported to the model (for example `Auto mode blocked this action …`). Behavior is the same for `gbuild -p`, `agent stdio`, and `agent serve`.
 
 For automation that must run tools without interactive approval, use always-approve (and deny rules if you need hard blocks) rather than auto alone.
 
@@ -112,7 +112,7 @@ disable_bypass_permissions_mode = true
 
 Do not use `permission_mode` for this lock; that key is a switchable default. The legacy `[ui] yolo = false` key in `requirements.toml` also disables always-approve for compatibility.
 
-Grok can still load Claude-style permission **rules** from managed settings; always-approve is locked with `requirements.toml` as shown above.
+gBuild can still load Claude-style permission **rules** from managed settings; always-approve is locked with `requirements.toml` as shown above.
 
 ---
 
@@ -178,7 +178,7 @@ These checks apply per segment. In a command like `ls && rm -rf /`, the `ls` seg
 
 ## Configuring Permissions
 
-Grok reads permission rules from three compatible sources. Rules from all sources are merged into one set; a rule's effect depends on its action (`deny` > `ask` > `allow`), not on which file it came from.
+gBuild reads permission rules from three compatible sources. Rules from all sources are merged into one set; a rule's effect depends on its action (`deny` > `ask` > `allow`), not on which file it came from.
 
 ### Where Permission Rules Live (Scopes)
 
@@ -189,13 +189,13 @@ Permission rules can be global (all projects), project-scoped (one repository), 
 | Global (all projects) | `~/.grok/config.toml` | No |
 | Project (committed) | `<project>/.grok/config.toml` | Yes (commit it) |
 | Project (personal) | `<project>/.claude/settings.local.json` | No (gitignore it) |
-| Interactive grants | Stored internally by Grok, per project | No |
+| Interactive grants | Stored internally by gBuild, per project | No |
 
 Notes on scoping:
 
-- Grok discovers a `.grok/config.toml` at every directory level from the repository root down to your working directory, so a subdirectory can add rules on top of the repo root's.
+- gBuild discovers a `.grok/config.toml` at every directory level from the repository root down to your working directory, so a subdirectory can add rules on top of the repo root's.
 - Rules from all scopes are merged into one rule set; `deny` > `ask` > `allow` applies across scopes, so a global `deny` cannot be overridden by a project `allow`.
-- Grok has no native `config.local.toml`. For personal, uncommitted rules in a project, use `.claude/settings.local.json`; Grok reads it directly (see [Claude Code Compatibility](#3-claude-code-compatibility-claudesettingsjson)).
+- gBuild has no native `config.local.toml`. For personal, uncommitted rules in a project, use `.claude/settings.local.json`; gBuild reads it directly (see [Claude Code Compatibility](#3-claude-code-compatibility-claudesettingsjson)).
 - Interactive "Always allow" decisions are stored outside the repository, scoped to the project (see [Interactive Approvals](#interactive-approvals-and-where-they-persist)).
 
 To stop prompts for a specific command in one project, add a narrow allow rule to that project's `.grok/config.toml` (or `.claude/settings.json`):
@@ -210,7 +210,7 @@ This approves only the listed commands. Always-approve mode, by contrast, approv
 ### 1. CLI Flags
 
 ```bash
-grok -p "Review the API changes" \
+gbuild -p "Review the API changes" \
   --allow 'Bash(git *)' \
   --allow 'Bash(gh *)' \
   --allow 'Read' \
@@ -251,7 +251,7 @@ Because `deny` always wins, you cannot combine these `allow` rules with a catch-
 
 Rules from the global `~/.grok/config.toml` and every project `.grok/config.toml` (from the repo root down to your working directory) are merged into one rule set, alongside any `.claude/settings.json` rules.
 
-Managed configuration deployed by your organization also contributes `[permission]` rules: the system `/etc/grok/managed_config.toml`, and a user-level copy that Grok maintains automatically at `~/.grok/managed_config.toml`. Managed rules merge like rules from any other source, with two properties specific to managed `allow` rules: your own `deny` and `ask` rules win over a managed `allow` (severity ordering), and a catch-all managed `allow` is ignored when always-approve is locked off. For rules that users cannot edit away, use the root-owned system `/etc/grok/requirements.toml`.
+Managed configuration deployed by your organization also contributes `[permission]` rules: the system `/etc/grok/managed_config.toml`, and a user-level copy that gBuild maintains automatically at `~/.grok/managed_config.toml`. Managed rules merge like rules from any other source, with two properties specific to managed `allow` rules: your own `deny` and `ask` rules win over a managed `allow` (severity ordering), and a catch-all managed `allow` is ignored when always-approve is locked off. For rules that users cannot edit away, use the root-owned system `/etc/grok/requirements.toml`.
 
 Permission rules from every source are read once, when a session starts. Changes apply to the next session.
 
@@ -274,7 +274,7 @@ allow = [
 
 ### 3. Claude Code Compatibility (`.claude/settings.json`)
 
-Grok reads `~/.claude/settings.json` and `~/.claude/settings.local.json`, plus the project-level `<project>/.claude/settings.json` and `settings.local.json` (walking up to the repo root). The native `.grok` source for permission rules is `config.toml`, described in the section above.
+gBuild reads `~/.claude/settings.json` and `~/.claude/settings.local.json`, plus the project-level `<project>/.claude/settings.json` and `settings.local.json` (walking up to the repo root). The native `.grok` source for permission rules is `config.toml`, described in the section above.
 
 Example:
 
@@ -295,7 +295,7 @@ Example:
 }
 ```
 
-Supported `defaultMode` values include `default`, `auto`, `acceptEdits`, `bypassPermissions`, `dontAsk`, and `plan`. Grok reads `defaultMode` from its canonical location under `permissions`; a top-level `defaultMode` is also accepted when the nested key is absent.
+Supported `defaultMode` values include `default`, `auto`, `acceptEdits`, `bypassPermissions`, `dontAsk`, and `plan`. gBuild reads `defaultMode` from its canonical location under `permissions`; a top-level `defaultMode` is also accepted when the nested key is absent.
 
 `permissions.allow`, `permissions.deny`, and `permissions.ask` entries are translated into native rules and then matched with the semantics in the [Rule Matching Reference](#rule-matching-reference). Translation notes:
 
@@ -322,7 +322,7 @@ Matching is case-sensitive. Leading whitespace in the command is trimmed before 
 
 A trailing `:*` suffix on a Bash rule is stripped to a plain prefix: `Bash(git commit:*)` becomes prefix `git commit`. Because prefixes have no word boundary, a `deny` written as `Bash(sed:*)` also blocks commands such as `sed-custom`.
 
-**Chained commands.** Grok parses each command like a shell and splits it on `&&`, `||`, `;`, `|`, and newlines. The rule actions treat segments differently:
+**Chained commands.** gBuild parses each command like a shell and splits it on `&&`, `||`, `;`, `|`, and newlines. The rule actions treat segments differently:
 
 - `deny` and `ask` rules are checked against every segment, and against the whole string. One denied segment rejects the entire command.
 - `allow` rules are checked against the whole command string only. `Bash(git *)` therefore auto-approves `git status && rm -rf /`, because the full string starts with `git `. Pair narrow allow rules with `deny` rules for the patterns you want to block.
@@ -349,7 +349,7 @@ Path patterns are globs matched against the path string the tool was called with
 
 ### MCP Rules
 
-`MCPTool(...)` patterns match the full Grok tool name in `server__tool` form, with glob support: `MCPTool(linear__*)` matches every tool from the `linear` server. Grok tool names carry no `mcp__` prefix, so a rule written as `mcp__server__tool` never matches an MCP call; write `MCPTool(server__tool)` instead.
+`MCPTool(...)` patterns match the full gBuild tool name in `server__tool` form, with glob support: `MCPTool(linear__*)` matches every tool from the `linear` server. gBuild tool names carry no `mcp__` prefix, so a rule written as `mcp__server__tool` never matches an MCP call; write `MCPTool(server__tool)` instead.
 
 ### WebFetch Rules
 
@@ -397,7 +397,7 @@ The remembered prefix is limited to a short form of the command: read-only comma
 
 ### Persistence Is Per Project
 
-Interactive grants are stored in Grok's own state directory under your home directory, scoped to the directory you launched Grok from. A grant made in one project never applies in another, grants are not written into the repository, and they are not meant to be hand-edited.
+Interactive grants are stored in gBuild's own state directory under your home directory, scoped to the directory you launched gBuild from. A grant made in one project never applies in another, grants are not written into the repository, and they are not meant to be hand-edited.
 
 Interactive grants are personal, per-machine state. For an allowlist you can review in code review and share with teammates, use declarative rules in the project's `.grok/config.toml` instead.
 
@@ -483,7 +483,7 @@ For hook installation, the JSON format, the trust model for project hooks, and o
 ### Headless git and gh Only (CI and Automation)
 
 ```bash
-grok -p "Implement the feature using only git and GitHub CLI" \
+gbuild -p "Implement the feature using only git and GitHub CLI" \
   --allow 'Read' \
   --allow 'Grep' \
   --allow 'Bash(git *)' \

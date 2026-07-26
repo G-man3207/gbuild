@@ -3,8 +3,8 @@
 //! cross-version eviction with real processes.
 //!
 //! Binaries are resolved per role:
-//! - `GROK_BINARY_LEADER` — the binary that elects the initial leader.
-//! - `GROK_BINARY_CLIENT` — the second client.
+//! - `GBUILD_BINARY_LEADER` — the binary that elects the initial leader.
+//! - `GBUILD_BINARY_CLIENT` — the second client.
 //!
 //! These ignored tests require two pre-built binaries.
 
@@ -30,7 +30,7 @@ fn skew_binaries() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let new = client_binary();
     if old == new {
         eprintln!(
-            "SKIP: GROK_BINARY_LEADER/GROK_BINARY_CLIENT resolve to the same binary ({})",
+            "SKIP: GBUILD_BINARY_LEADER/GBUILD_BINARY_CLIENT resolve to the same binary ({})",
             old.display()
         );
         return None;
@@ -158,7 +158,7 @@ async fn new_client_evicts_old_leader_and_sessions_reload() {
 
 /// An old client adopts a directly-owned new leader without triggering a downgrade.
 #[tokio::test]
-#[ignore = "two-binary version-skew test; set GROK_BINARY_LEADER/GROK_BINARY_CLIENT and run with --ignored"]
+#[ignore = "two-binary version-skew test; set GBUILD_BINARY_LEADER/GBUILD_BINARY_CLIENT and run with --ignored"]
 async fn old_client_adopts_new_leader_and_still_functions() {
     let Some((old_bin, new_bin)) = skew_binaries() else {
         return;

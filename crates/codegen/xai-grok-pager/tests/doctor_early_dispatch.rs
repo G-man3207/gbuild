@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::process::{Command, Stdio};
 
 fn pager_binary() -> Result<std::path::PathBuf, String> {
-    for key in ["PAGER_BINARY", "CARGO_BIN_EXE_xai-grok-pager"] {
+    for key in ["PAGER_BINARY", "CARGO_BIN_EXE_gbuild"] {
         if let Some(value) = std::env::var_os(key) {
             let path = std::path::PathBuf::from(value);
             if path.exists() {
@@ -10,7 +10,7 @@ fn pager_binary() -> Result<std::path::PathBuf, String> {
             }
         }
     }
-    Err("PAGER_BINARY/CARGO_BIN_EXE_xai-grok-pager not set".to_owned())
+    Err("PAGER_BINARY/CARGO_BIN_EXE_gbuild not set".to_owned())
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn doctor_json_bypasses_unrelated_startup_state() {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout is one JSON document");
     assert_eq!(json["schemaVersion"], "1");
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("Grok Doctor"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("gBuild Doctor"));
 
     let after = directory_entries(&grok_home);
     assert_eq!(after, before, "doctor must not create startup artifacts");

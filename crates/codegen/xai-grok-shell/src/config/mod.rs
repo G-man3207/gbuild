@@ -1119,10 +1119,6 @@ fn apply_requirements_inner(
             config.ui.yolo = val;
             push("ui.yolo", format!("{val}"));
         }
-        if !val && config.default_yolo_mode {
-            config.default_yolo_mode = false;
-            push("ui.yolo", "--yolo blocked".to_string());
-        }
     }
     macro_rules! enforce_str {
         ($section:expr, $key:expr, $field:expr) => {

@@ -26,7 +26,7 @@ use xai_grok_pager_pty_harness::{
 
 const ROWS: u16 = 50;
 const COLS: u16 = 120;
-const BANNER_TITLE: &str = "Help improve Grok";
+const BANNER_TITLE: &str = "Help improve gBuild";
 const CUSTOMIZE: &str = "[Customize in settings]";
 const ACCEPT: &str = "[Accept]";
 const ACK: &str = "BANNERACK";

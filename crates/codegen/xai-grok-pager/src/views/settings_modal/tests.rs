@@ -5759,7 +5759,7 @@ fn tip_line_has_blank_row_above() {
     let mut tip_y: Option<u16> = None;
     for y in 0..area.height {
         let txt = buf_row_text(&buf, y, area.x, area.width);
-        if txt.contains("Tip") && txt.contains("Ask Grok") {
+        if txt.contains("Tip") && txt.contains("Ask gBuild") {
             tip_y = Some(y);
             break;
         }

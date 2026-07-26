@@ -1882,25 +1882,12 @@ pub(crate) fn execute(
                 });
         }
         Effect::FetchChangelog => {
-            tasks
-                .spawn(async move {
-                    let changelog = tokio::task::spawn_blocking(|| {
-                            xai_grok_shell::util::changelog::ChangelogManager::new()
-                                .fetch()
-                        })
-                        .await
-                        .unwrap_or_else(|e| {
-                            tracing::warn!(error = %e, "changelog fetch task failed");
-                            xai_grok_shell::util::changelog::Changelog {
-                                markdown: None,
-                                entries: None,
-                            }
-                        });
-                    TaskResult::ChangelogFetched {
-                        markdown: changelog.markdown,
-                        entries: changelog.entries.unwrap_or_default(),
-                    }
-                });
+            tasks.spawn(async move {
+                TaskResult::ChangelogFetched {
+                    markdown: None,
+                    entries: Vec::new(),
+                }
+            });
         }
         Effect::PersistAnnouncementsHidden { hidden_ids } => {
             tasks
@@ -4552,7 +4539,7 @@ fn format_auth_lines(is_api_key_auth: bool, api_key_env_set: bool) -> String {
             "  Auth method: API key\n"
         };
         return format!(
-            "{method}  Manage account and credits: console.x.ai\n  Run `grok login` to use your SuperGrok subscription instead.\n"
+            "{method}  Manage account and credits: console.x.ai\n  Run `gbuild login` to use your SuperGrok subscription instead.\n"
         );
     }
     String::from(

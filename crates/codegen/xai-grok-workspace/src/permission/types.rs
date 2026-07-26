@@ -178,6 +178,104 @@ pub enum AccessKind {
     WebFetch(String),
     WebSearch(String),
 }
+
+impl AccessKind {
+    /// Classify a parsed tool call for permission handling. Runtime-registered
+    /// tools use `Dynamic`, so their wire name is required to distinguish known
+    /// read/edit/bash shapes. Anything we cannot prove safe is routed through
+    /// the always-prompt MCP permission class instead of being treated as read.
+    pub fn from_tool_input(tool_name: &str, input: &xai_grok_tools::types::ToolInput) -> Self {
+        use xai_grok_tools::types::ToolInput;
+
+        let prompt = || AccessKind::MCPTool {
+            name: tool_name.to_owned(),
+            input: serde_json::to_value(input).unwrap_or(serde_json::Value::Null),
+        };
+
+        match input {
+            ToolInput::ReadFile(r) => AccessKind::Read(Some(r.path.clone())),
+            ToolInput::ListDir(l) => AccessKind::Read(Some(l.target_directory.clone())),
+            ToolInput::Grep(g) => AccessKind::Grep {
+                path: g.path.clone(),
+                glob: g.glob.clone(),
+            },
+            ToolInput::TodoWrite(_)
+            | ToolInput::TaskOutput(_)
+            | ToolInput::WaitTasks(_)
+            | ToolInput::Skill(_)
+            | ToolInput::SearchTool(_)
+            | ToolInput::EnterPlanMode(_)
+            | ToolInput::ExitPlanMode(_)
+            | ToolInput::AskUserQuestion(_)
+            | ToolInput::SchedulerList(_)
+            | ToolInput::UpdateGoal(_) => AccessKind::Read(None),
+            ToolInput::KillTask(_)
+            | ToolInput::Task(_)
+            | ToolInput::ImageGen(_)
+            | ToolInput::ImageEdit(_)
+            | ToolInput::ImageToVideo(_)
+            | ToolInput::ReferenceToVideo(_)
+            | ToolInput::Lsp(_)
+            | ToolInput::SchedulerCreate(_)
+            | ToolInput::SchedulerDelete(_)
+            | ToolInput::Workflow(_) => prompt(),
+            ToolInput::WebSearch(ws) => AccessKind::WebSearch(ws.query.clone()),
+            ToolInput::SearchReplace(search_replace) => {
+                AccessKind::Edit(search_replace.file_path.to_string())
+            }
+            ToolInput::ApplyPatch(_) => AccessKind::Edit("apply_patch".to_string()),
+            ToolInput::HashlineEdit(he) => AccessKind::Edit(he.file_path.to_string()),
+            ToolInput::Write(w) => AccessKind::Edit(w.file_path.clone()),
+            ToolInput::Bash(bash) => AccessKind::Bash(bash.command.to_string()),
+            ToolInput::Monitor(m) => AccessKind::Bash(m.command.clone()),
+            ToolInput::MCPTool(mcp) => AccessKind::MCPTool {
+                name: mcp.tool_name.to_string(),
+                input: mcp.tool_input.clone(),
+            },
+            ToolInput::UseTool(u) => AccessKind::MCPTool {
+                name: u.tool_name.clone(),
+                input: u.tool_input.clone(),
+            },
+            ToolInput::WebFetch(wf) => AccessKind::WebFetch(wf.url.clone()),
+            ToolInput::CodexListDir(input) => AccessKind::Read(Some(input.dir_path.clone())),
+            ToolInput::CodexGrepFiles(input) => AccessKind::Grep {
+                path: input.path.clone(),
+                glob: input.include.clone(),
+            },
+            ToolInput::CodexReadFile(input) => AccessKind::Read(Some(input.file_path.clone())),
+            ToolInput::MemorySearch(_) => AccessKind::Read(None),
+            ToolInput::MemoryGet(input) => AccessKind::Read(Some(input.path.clone())),
+            ToolInput::Dynamic(value) => {
+                classify_dynamic_tool(tool_name, value).unwrap_or_else(prompt)
+            }
+        }
+    }
+}
+
+fn classify_dynamic_tool(tool_name: &str, input: &serde_json::Value) -> Option<AccessKind> {
+    let string = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| input.get(*key).and_then(serde_json::Value::as_str))
+            .map(str::to_owned)
+    };
+
+    match tool_name {
+        "edit" | "write" => string(&["filePath", "file_path", "path"]).map(AccessKind::Edit),
+        "bash" => string(&["command"]).map(AccessKind::Bash),
+        "read" | "read_file" => Some(AccessKind::Read(string(&["filePath", "file_path", "path"]))),
+        "glob" | "list_dir" => Some(AccessKind::Read(string(&[
+            "path",
+            "target_directory",
+            "dir_path",
+        ]))),
+        "grep" | "grep_files" => Some(AccessKind::Grep {
+            path: string(&["path"]),
+            glob: string(&["glob", "include"]),
+        }),
+        "todowrite" | "todo_write" | "skill" => Some(AccessKind::Read(None)),
+        _ => None,
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Allow,
@@ -267,41 +365,7 @@ pub enum PermissionCommand {
 }
 impl From<&xai_grok_tools::types::ToolInput> for AccessKind {
     fn from(input: &xai_grok_tools::types::ToolInput) -> Self {
-        use xai_grok_tools::types::ToolInput;
-        match input {
-            ToolInput::ReadFile(r) => AccessKind::Read(Some(r.path.clone())),
-            ToolInput::ListDir(l) => AccessKind::Read(Some(l.target_directory.clone())),
-            ToolInput::Grep(g) => AccessKind::Grep {
-                path: g.path.clone(),
-                glob: g.glob.clone(),
-            },
-            ToolInput::TodoWrite(_)
-            | ToolInput::TaskOutput(_)
-            | ToolInput::WaitTasks(_)
-            | ToolInput::KillTask(_)
-            | ToolInput::Skill(_) => AccessKind::Read(None),
-            ToolInput::WebSearch(ws) => AccessKind::WebSearch(ws.query.clone()),
-            ToolInput::SearchReplace(search_replace) => {
-                AccessKind::Edit(search_replace.file_path.to_string())
-            }
-            ToolInput::ApplyPatch(_) => AccessKind::Edit("apply_patch".to_string()),
-            ToolInput::HashlineEdit(he) => AccessKind::Edit(he.file_path.to_string()),
-            ToolInput::Write(w) => AccessKind::Edit(w.file_path.clone()),
-            ToolInput::Bash(bash) => AccessKind::Bash(bash.command.to_string()),
-            ToolInput::Monitor(m) => AccessKind::Bash(m.command.clone()),
-            ToolInput::MCPTool(mcp) => AccessKind::MCPTool {
-                name: mcp.tool_name.to_string(),
-                input: mcp.tool_input.clone(),
-            },
-            ToolInput::UseTool(u) => AccessKind::MCPTool {
-                name: u.tool_name.clone(),
-                input: u.tool_input.clone(),
-            },
-            ToolInput::WebFetch(wf) => AccessKind::WebFetch(wf.url.clone()),
-            ToolInput::Dynamic(_) => AccessKind::Read(None),
-            #[allow(unreachable_patterns)]
-            _ => AccessKind::Read(None),
-        }
+        AccessKind::from_tool_input("dynamic", input)
     }
 }
 /// Permission policy configuration (duplicated from util/config.rs for Phase 1 move independence; identical).
@@ -664,6 +728,30 @@ mod tests {
         assert!(
             matches!(access, AccessKind::Edit(ref p) if p == "/tmp/secret.txt"),
             "Write should produce AccessKind::Edit with the file path, got {access:?}"
+        );
+    }
+    #[test]
+    fn dynamic_edit_uses_wire_name_and_maps_to_edit_access() {
+        use xai_grok_tools::types::ToolInput;
+        let input = ToolInput::Dynamic(serde_json::json!({
+            "filePath": "/tmp/owned.txt",
+            "oldString": "before",
+            "newString": "after"
+        }));
+        let access = AccessKind::from_tool_input("edit", &input);
+        assert!(
+            matches!(access, AccessKind::Edit(ref path) if path == "/tmp/owned.txt"),
+            "known dynamic edit must retain its real path, got {access:?}"
+        );
+    }
+    #[test]
+    fn unknown_dynamic_tool_fails_closed_to_prompted_access() {
+        use xai_grok_tools::types::ToolInput;
+        let input = ToolInput::Dynamic(serde_json::json!({"action": "mutate"}));
+        let access = AccessKind::from_tool_input("runtime_mutator", &input);
+        assert!(
+            matches!(access, AccessKind::MCPTool { ref name, .. } if name == "runtime_mutator"),
+            "unknown dynamic tools must never be classified as safe reads, got {access:?}"
         );
     }
     #[test]

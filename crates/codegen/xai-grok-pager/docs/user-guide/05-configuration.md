@@ -1,6 +1,6 @@
 # Configuration
 
-Grok reads settings from config files, environment variables, and CLI flags. This page covers the common options.
+gBuild reads settings from config files, environment variables, and CLI flags. This page covers the common options.
 
 ---
 
@@ -18,7 +18,7 @@ Settings resolve highest-priority first:
 
 ## config.toml (main configuration)
 
-Location: `~/.grok/config.toml`. If the file is missing, Grok uses its built-in defaults, so you only need to set the values you want to override.
+Location: `~/.grok/config.toml`. If the file is missing, gBuild uses its built-in defaults, so you only need to set the values you want to override.
 
 ### General settings
 
@@ -94,7 +94,7 @@ To switch the prompt to vim-style editing:
 simple_mode = false
 ```
 
-You can also flip it from the settings pane (`/settings` → **Disable vim input mode**); Grok writes your choice to `[ui] simple_mode`. `simple_mode` and `vim_mode` are independent — one governs the prompt editor, the other governs scrollback navigation. See [Keyboard Shortcuts](03-keyboard-shortcuts.md) for the full binding reference.
+You can also flip it from the settings pane (`/settings` → **Disable vim input mode**); gBuild writes your choice to `[ui] simple_mode`. `simple_mode` and `vim_mode` are independent — one governs the prompt editor, the other governs scrollback navigation. See [Keyboard Shortcuts](03-keyboard-shortcuts.md) for the full binding reference.
 
 #### Default selected permission
 
@@ -127,11 +127,11 @@ You can also override this with `GROK_DEFAULT_SELECTED_PERMISSION`, which is han
 | `false` (default) | Bare-letter and `Shift+letter` keys (`j`/`k`, `h`/`l`, `g`/`G`, `y`/`Y`, `o`/`O`, `r`, `x`, `e`/`E`, `H`/`L`, plus `i`) are suppressed in the scrollback: pressing one focuses the prompt and types the character. Arrows, `Tab`, `Space`, `PageUp`/`PageDown`, and every `Ctrl+letter` shortcut still navigate. `Esc` is **not** a scrollback key — it cancels a running turn, and while idle follows the clear / rewind policy (see [Keyboard Shortcuts](03-keyboard-shortcuts.md#escape)). |
 | `true` | All vim-style scrollback bindings are active, exactly as listed in [Keyboard Shortcuts](03-keyboard-shortcuts.md). Mid-turn `Esc` is swallowed in this mode (`Ctrl+C` cancels); minimal mode keeps Esc-cancel regardless. |
 
-Toggle it at runtime with `/vim-mode`, or from `/settings` → **Vim scrollback navigation**. Grok writes the change to `[ui] vim_mode` immediately and applies it to every future pager session, including new agents and subagents in the same process. There's no per-session override — `config.toml` is the source of truth on next launch. `vim_mode` is independent of `simple_mode`.
+Toggle it at runtime with `/vim-mode`, or from `/settings` → **Vim scrollback navigation**. gBuild writes the change to `[ui] vim_mode` immediately and applies it to every future pager session, including new agents and subagents in the same process. There's no per-session override — `config.toml` is the source of truth on next launch. `vim_mode` is independent of `simple_mode`.
 
 #### Screen mode
 
-`[ui] screen_mode` is the **default render mode** for plain `grok` launches. Set it from `/settings` → **Default screen mode** (restart required) or edit `config.toml` by hand — both write the file. CLI flags (`--minimal` / `--fullscreen`) and slash commands (`/minimal` / `/fullscreen`) are session-scoped and do **not** write this key; after a slash switch, the reverse command returns you for that session only.
+`[ui] screen_mode` is the **default render mode** for plain `gbuild` launches. Set it from `/settings` → **Default screen mode** (restart required) or edit `config.toml` by hand — both write the file. CLI flags (`--minimal` / `--fullscreen`) and slash commands (`/minimal` / `/fullscreen`) are session-scoped and do **not** write this key; after a slash switch, the reverse command returns you for that session only.
 
 | Value | Behavior |
 |-------|----------|
@@ -225,7 +225,7 @@ query_params = { api-version = "2026-07-22" } # query params appended to every r
 env_http_headers = { "X-Tenant" = "TENANT_TOKEN" }    # request headers from env vars, resolved at client build
 ```
 
-Credential resolution: `api_key` > `env_key` > signed-in session token > `XAI_API_KEY`. See [Custom Models](11-custom-models.md#request-query-parameters) for `query_params` and `env_http_headers`, and [Sandbox Mode](18-sandbox.md#shell-environment-policy) for `[shell_environment_policy]`, which restricts the environment variables tool subprocesses inherit.
+Credential resolution: explicit model/provider credentials first, then signed-in session or `XAI_API_KEY` credentials only for HTTPS xAI origins. See [Custom Models](11-custom-models.md#request-query-parameters) for `query_params` and `env_http_headers`, and [Sandbox Mode](18-sandbox.md#shell-environment-policy) for `[shell_environment_policy]`, which restricts the environment variables tool subprocesses inherit.
 
 To override a built-in model, use its name as the section key and set only the fields you need:
 
@@ -359,7 +359,7 @@ For Claude and Cursor, `rules` and `agents` are independent: turning off named i
 
 Each cell can be set via environment variable or `config.toml`; see the environment-variables reference for the names. Resolution: env var > config.toml > default (on).
 
-`grok inspect` reports cells that still need session-start resolution as `?` until a value is available; cells with an explicit env or TOML value use that value. Affected discovery entries report `compatibilityStatus: "unresolved"` in JSON and `[compat unresolved]` in human output.
+`gbuild inspect` reports cells that still need session-start resolution as `?` until a value is available; cells with an explicit env or TOML value use that value. Affected discovery entries report `compatibilityStatus: "unresolved"` in JSON and `[compat unresolved]` in human output.
 
 ### Plugins
 
@@ -371,7 +371,7 @@ disabled = ["user/a1b2c3d4/noisy-plugin"]
 
 ### Hints
 
-`[hints]` holds small persisted UI preferences — mostly "stop asking me" opt-outs. Grok writes these for you when you pick a "don't ask again" option in the TUI, but you can edit or delete them by hand; removing a key restores the default.
+`[hints]` holds small persisted UI preferences — mostly "stop asking me" opt-outs. gBuild writes these for you when you pick a "don't ask again" option in the TUI, but you can edit or delete them by hand; removing a key restores the default.
 
 `[hints]` is read from the **effective config merge**, with the usual precedence: system managed → user `managed_config.toml` → user `config.toml` → user `requirements.toml` → system `requirements.toml`, higher layers winning. The TUI only ever **writes** opt-outs to your user `~/.grok/config.toml`.
 
@@ -385,7 +385,7 @@ fork_worktree_mode = "ask"             # /fork worktree prompt: "ask" | "always"
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `project_picker_disabled` | bool | `false` | When `true`, skips the picker that asks you to choose a project directory on the first prompt when Grok launches from a non-project directory (home, Desktop, Downloads, `/tmp`). Set automatically when you choose **"Don't ask me again"** in that picker. Teams can pin it in `managed_config.toml` or `requirements.toml`. |
+| `project_picker_disabled` | bool | `false` | When `true`, skips the picker that asks you to choose a project directory on the first prompt when gBuild launches from a non-project directory (home, Desktop, Downloads, `/tmp`). Set automatically when you choose **"Don't ask me again"** in that picker. Teams can pin it in `managed_config.toml` or `requirements.toml`. |
 | `memory_modal_fullscreen` | bool | `false` | Remembers whether the memory modal was last opened fullscreen. |
 | `new_session_worktree_mode` | string | `"never"` | Worktree prompt for `/new`: `ask` shows the popup, `always` creates a worktree, `never` skips it. |
 | `fork_worktree_mode` | string | `"ask"` | Worktree prompt for `/fork`: `ask`, `always`, or `never`. |
@@ -417,7 +417,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | `sleep_prevention` | bool | `true` | Keep the display awake while the agent works (macOS/Linux). |
 | `progress_bar` | bool | `true` | Show a progress indicator in the terminal tab (OSC 9;4). |
 | `title.enabled` | bool | `true` | Set the terminal title to reflect agent state. |
-| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `grok`. |
+| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `gbuild`. |
 
 #### Terminal support matrix
 
@@ -435,7 +435,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | Grok Desktop | None (native) | N/A | N/A |
 | Unknown | BEL | No | No |
 
-With `method = "auto"`, Grok detects the terminal brand and picks the best protocol. Set `method` explicitly to override that.
+With `method = "auto"`, gBuild detects the terminal brand and picks the best protocol. Set `method` explicitly to override that.
 
 #### Notification hooks
 
@@ -444,7 +444,7 @@ Run your own commands when events fire. Hooks receive `$GROK_EVENT`, `$GROK_MESS
 ```toml
 # macOS native notification
 [[ui.notifications.hooks]]
-command = "terminal-notifier -title 'Grok' -message '$GROK_MESSAGE'"
+command = "terminal-notifier -title 'gBuild' -message '$GROK_MESSAGE'"
 events = ["turn_complete", "approval_required"]
 only_unfocused = true
 timeout_secs = 10
@@ -500,7 +500,7 @@ mixpanel_enabled = false                                  # disable Mixpanel pro
 trace_upload = false                                      # disable session/trace uploads (inherits the telemetry toggle when unset)
 ```
 
-Set these only to point telemetry at your own infrastructure or to switch parts off. The built-in endpoint and credentials are managed by Grok — leave them unset to use the defaults.
+Set these only to point telemetry at your own infrastructure or to switch parts off. The built-in endpoint and credentials are managed by gBuild — leave them unset to use the defaults.
 
 The same `[telemetry]` table also configures the **external OpenTelemetry stream**, an independent opt-in (it doesn't require the telemetry toggle above) that ships a curated, content-free usage schema to your *own* OTLP collector. Collector auth comes from `OTEL_EXPORTER_OTLP_HEADERS` and is never stored on disk. See [Monitoring & Usage](24-monitoring-usage.md) for the full schema, env vars, and privacy model.
 
@@ -517,38 +517,9 @@ otel_log_tool_details = false                             # content gate (admins
 
 ### Version pinning
 
-Control which versions the CLI may auto-update to and which versions may run. Set
-these in `[cli]`, or in a managed layer for fleet-wide policy. Each has an
-environment override that can only tighten the bound, for CI and testing.
-
-> **Changed:** `minimum_version` no longer blocks startup. It is now a soft
-> anti-downgrade floor for the updater. For a hard floor that prevents old
-> versions from starting, use `required_minimum_version`.
-
-```toml
-[cli]
-minimum_version = "0.2.109"          # updater won't downgrade below this
-maximum_version = "0.2.180"          # updater won't install above this
-required_minimum_version = "0.2.100" # refuse to start below this
-required_maximum_version = "0.2.200" # refuse to start above this
-```
-
-- `minimum_version` (`GROK_MINIMUM_VERSION`) is a soft anti-downgrade floor. The
-  updater skips a target below it and keeps the current version. It never blocks
-  startup.
-- `maximum_version` (`GROK_MAXIMUM_VERSION`) is a soft ceiling. The updater caps
-  its target at it and never installs above it.
-- `required_minimum_version` (`GROK_REQUIRED_MINIMUM_VERSION`) and
-  `required_maximum_version` (`GROK_REQUIRED_MAXIMUM_VERSION`) are hard bounds. If
-  the running version is outside the range, the CLI exits at startup and instructs
-  the user to install an approved version. `grok update` and `grok --version` keep
-  working so an out-of-range install can recover.
-- Bounds resolve across config layers by tightening only: a floor takes the
-  highest value and a ceiling the lowest, so a managed bound can't be loosened,
-  and a user or environment bound can't cancel a managed hard bound. An invalid
-  value is ignored so a bad policy can't block startup.
-- An explicit `grok update --version X` is allowed above the ceiling, to recover
-  from a too-new install, and rejected below the hard floor.
+The inherited version-policy fields remain parseable for configuration
+compatibility, but gBuild does not enforce upstream version bounds and has no
+self-update channel. Build and install the desired source revision explicitly.
 
 ### Enterprise deployment
 
@@ -569,7 +540,7 @@ default = "company-grok"
 [model.company-grok]
 model = "grok-build"
 base_url = "https://grok-proxy.acme.com/"
-name = "Grok Build Latest (Proxy)"
+name = "gBuild Latest (Proxy)"
 context_window = 128000
 
 [features]

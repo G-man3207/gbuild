@@ -1,6 +1,6 @@
 # Coming from Claude, Cursor, or Codex?
 
-Fear not — your settings, rules, and skills come with you. Grok Build
+Fear not — your settings, rules, and skills come with you. gBuild
 reads the same project conventions other agents use, and imports the rest.
 
 ## Picked up automatically
@@ -29,8 +29,8 @@ skills continue a recent session from those tools right here.
 
 ## Check what was discovered
 
-Run **`grok inspect`** in a repo to see every rules file, skill, and MCP
-server Grok picked up, tagged with where it came from. Each compat source
+Run **`gbuild inspect`** in a repo to see every rules file, skill, and MCP
+server gBuild picked up, tagged with where it came from. Each compat source
 can be toggled in `[compat.claude]` / `[compat.cursor]` config sections.
 
 And a few things you might have missed elsewhere: `/btw` asks a side

@@ -6,7 +6,7 @@
 //! the session-tier credential.
 //!
 //! `#[ignore]` (needs a built binary). The CI lifecycle lanes run it against
-//! the release artifact via `GROK_BINARY`; run locally (auto-builds the pager):
+//! the release artifact via `GBUILD_BINARY`; run locally (auto-builds gBuild):
 //! ```bash
 //! cargo test -p xai-grok-shell --test test_auth_provider_e2e -- --ignored
 //! ```

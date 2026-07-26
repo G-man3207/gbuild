@@ -44,7 +44,11 @@ use xai_grok_shell::leader::{
 use xai_grok_shell::leader::{
     ControlPayload, LeaderClient, LeaderEnvUrls, connect_or_spawn, socket_path_for_ws_url,
 };
-use xai_grok_update::{UpdateConfig, auto_update, enforce_version_policy_or_exit};
+use xai_grok_update::{UpdateConfig, auto_update};
+
+/// Self-update remains disabled until this fork has an owned, signed release
+/// channel. The upstream updater downloads and activates xAI-hosted binaries.
+const SELF_UPDATE_ENABLED: bool = false;
 /// Apply headless args to an existing config, only overriding values that are
 /// explicitly set. This allows environment defaults to be preserved when
 /// specific args are not provided.
@@ -88,7 +92,7 @@ fn resolve_agent_profile_path(path: &std::path::Path) -> std::path::PathBuf {
 /// Print startup information for the serve command.
 fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     eprintln!();
-    eprintln!("   Grok agent server starting...");
+    eprintln!("   gBuild agent server starting...");
     eprintln!();
     eprintln!("   Address:  {}:{}", bind_addr.ip(), bind_addr.port());
     eprintln!("   Secret:   {}", secret);
@@ -99,7 +103,7 @@ fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     );
     eprintln!();
 }
-/// Entrypoint tag for `grok -p`; keys the quiet stderr default in `init_tracing_simple`.
+/// Entrypoint tag for `gbuild -p`; keys the quiet stderr default in `init_tracing_simple`.
 const HEADLESS_ENTRYPOINT: &str = "headless";
 /// Initialize simple tracing for non-TUI agent modes.
 fn init_tracing_simple(app_entrypoint: &'static str) {
@@ -147,14 +151,14 @@ fn init_tracing_simple(app_entrypoint: &'static str) {
         ),
     );
 }
-/// `grok setup`: rendering + exit codes only; fetch logic lives in `xai_grok_shell::managed_config`.
+/// `gbuild setup`: rendering + exit codes only; fetch logic lives in `xai_grok_shell::managed_config`.
 /// `json` prints the served configuration instead of installing it.
 async fn run_setup_command(json: bool) {
     use xai_grok_shell::managed_config::{self, SetupOutcome};
     if !managed_config::has_principal() {
         eprintln!("No deployment key or team sign-in found.");
         eprintln!();
-        eprintln!("To install managed configuration, sign in with a team using `grok login`,");
+        eprintln!("To install managed configuration, sign in with a team using `gbuild login`,");
         eprintln!("or set a deployment key:");
         eprintln!();
         if cfg!(unix) {
@@ -162,16 +166,14 @@ async fn run_setup_command(json: bool) {
         } else {
             eprintln!("  $env:GROK_DEPLOYMENT_KEY=\"<your-key>\"");
         }
-        eprintln!("  grok setup");
+        eprintln!("  gbuild setup");
         eprintln!();
         eprintln!("Or add the key to ~/.grok/config.toml:");
         eprintln!();
         eprintln!("  [endpoints]");
         eprintln!("  deployment_key = \"<your-key>\"");
         eprintln!();
-        eprintln!(
-            "If you don't have a deployment key, contact your organization's Grok administrator."
-        );
+        eprintln!("If you don't have a deployment key, contact your deployment administrator.");
         std::process::exit(1);
     }
     if json {
@@ -202,7 +204,7 @@ async fn run_setup_command(json: bool) {
         }
         SetupOutcome::Skipped => {
             eprintln!(
-                "Managed configuration was not applied this run (another process held the apply lock, or the credential changed during the fetch). Run `grok setup` again."
+                "Managed configuration was not applied this run (another process held the apply lock, or the credential changed during the fetch). Run `gbuild setup` again."
             );
         }
         SetupOutcome::Failed(e) => {
@@ -365,10 +367,10 @@ fn ensure_control_caps(reg: &LeaderRegistration) -> Result<&LeaderCapabilities> 
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Leader does not advertise capabilities (legacy version)"))
 }
-/// Env override for the `grok workspace` gate: any truthy value enables the
+/// Env override for the `gbuild workspace` gate: any truthy value enables the
 /// command locally, a falsy one disables it — bypassing the remote settings flag.
 const WORKSPACE_COMMAND_ENV: &str = "GROK_WORKSPACE_COMMAND";
-/// Resolution of the `grok workspace` gate. `Unknown` is kept separate from
+/// Resolution of the `gbuild workspace` gate. `Unknown` is kept separate from
 /// `Disabled` so we don't tell the user the flag is off when the settings were
 /// simply never read (both fail closed, but `Unknown` earns an honest message).
 #[derive(Debug, PartialEq, Eq)]
@@ -426,14 +428,14 @@ async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
         WorkspaceGate::Enabled => {}
         WorkspaceGate::Disabled => {
             anyhow::bail!(
-                "`grok workspace` is not enabled for this account \
+                "`gbuild workspace` is not enabled for this account \
              (gated by a server-side feature flag that is currently off)."
             )
         }
         WorkspaceGate::Unknown => {
             anyhow::bail!(
-                "Could not load your settings for `grok workspace`. Check your \
-             network connection (run `grok login` if you are signed out), then \
+                "Could not load your settings for `gbuild workspace`. Check your \
+             network connection (run `gbuild login` if you are signed out), then \
              try again."
             )
         }
@@ -489,7 +491,7 @@ async fn connect_workspace_control(
     .map_err(|e| {
         anyhow::anyhow!(
             "no running leader for this environment ({e}). \
-             Start a grok session, or run `grok workspace start`."
+             Start a gBuild session, or run `gbuild workspace start`."
         )
     })
 }
@@ -529,14 +531,14 @@ async fn workspace_start(
     );
     if !use_leader {
         anyhow::bail!(
-            "`grok workspace` requires leader mode (the workspace is shared via the leader).\n\
+            "`gbuild workspace` requires leader mode (the workspace is shared via the leader).\n\
              Enable it with `[cli] use_leader = true` in ~/.grok/config.toml, or pass --leader."
         );
     }
     ensure_authenticated(
         &agent_config.grok_com_config,
         false,
-        Some("No cached credentials found. Run `grok login` first."),
+        Some("No cached credentials found. Run `gbuild login` first."),
     )
     .await?;
     let env_urls = LeaderEnvUrls::from(&agent_config.grok_com_config);
@@ -998,7 +1000,7 @@ async fn forward_stdio_line_to_leader(
 }
 /// Emitted by both leader guards (server mode and leader-connect) so the two sites
 /// can't drift.
-const PLUGIN_DIR_LEADER_WARNING: &str = "grok: --plugin-dir is ignored in leader mode; run with --no-leader to \
+const PLUGIN_DIR_LEADER_WARNING: &str = "gbuild: --plugin-dir is ignored in leader mode; run with --no-leader to \
      load per-process plugins";
 /// Run the `agent` subcommand, dispatching to the appropriate mode.
 async fn run_agent_command(
@@ -1044,7 +1046,7 @@ async fn run_agent_command(
     let is_leader = matches!(agent_args.mode, Some(AgentCmd::Leader(_)));
     if !is_stdio && !is_leader {
         eprintln!(
-            "Grok Build (pager) - v{}",
+            "gBuild - v{}",
             xai_grok_version::display_version_with_commit(
                 env!("VERSION_WITH_COMMIT"),
                 xai_grok_update::channel_label(),
@@ -1077,7 +1079,7 @@ async fn run_agent_command(
         None,
     );
     if let Some(warning) = launch_yolo.blocked_warning {
-        eprintln!("grok: {warning}");
+        eprintln!("gbuild: {warning}");
     }
     agent_config.default_yolo_mode = launch_yolo.yolo;
     agent_config.default_auto_mode = xai_grok_shell::util::config::effective_auto_for_launch(
@@ -1620,7 +1622,7 @@ fn install_heap_profile_hooks() {
 }
 fn version_text(channel_label: &str) -> String {
     format!(
-        "grok {}\n",
+        "gbuild {}\n",
         xai_grok_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), channel_label,)
     )
 }
@@ -1676,10 +1678,10 @@ fn main() {
     );
     raise_fd_limit();
     if let Err(e) = xai_grok_config::validate_requirements() {
-        eprintln!("Couldn't start Grok: {e}");
+        eprintln!("Couldn't start gBuild: {e}");
         eprintln!();
         eprintln!(
-            "Update Grok to a version the policy allows, or ask your administrator \
+            "Update gBuild to a version the policy allows, or ask your administrator \
              to fix the managed requirements."
         );
         std::process::exit(2);
@@ -1695,7 +1697,7 @@ fn main() {
     if xai_grok_shell::util::config::load_crash_handler_enabled_sync() {
         let crash_dir = xai_grok_shell::util::grok_home::grok_home().join("crash");
         if let Some(report) = xai_crash_handler::check_previous_crash(&crash_dir) {
-            eprintln!("Grok crashed during your last session.");
+            eprintln!("gBuild crashed during your last session.");
             eprintln!("  Signal:  {}", report.signal_name);
             eprintln!("  Version: {}", report.app_version);
             eprintln!("  Report:  {}", report.report_path.display());
@@ -1825,10 +1827,9 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                     };
                     anyhow::bail!(
                         "top-level {flag} applies to the pager TUI, not the agent subcommand. \
-                         Use `grok-pager agent {flag}` instead."
+                         Use `gbuild agent {flag}` instead."
                     );
                 }
-                enforce_version_policy_or_exit();
                 return run_agent_command(
                     agent_args,
                     args.permission_mode_flag.clone(),
@@ -1992,14 +1993,13 @@ async fn async_main(args: PagerArgs) -> Result<()> {
     if let Some(prompt) = headless_prompt {
         init_tracing_simple(HEADLESS_ENTRYPOINT);
         let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
-        enforce_version_policy_or_exit();
         let launch_yolo = xai_grok_shell::util::config::effective_yolo_for_launch(
             args.yolo,
             args.permission_mode_flag.as_deref(),
             None,
         );
         if let Some(warning) = launch_yolo.blocked_warning {
-            eprintln!("grok: {warning}");
+            eprintln!("gbuild: {warning}");
         }
         let json_schema = args
             .json_schema
@@ -2048,7 +2048,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
         )
         .await;
     }
-    enforce_version_policy_or_exit();
     let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
     type UpdateWaitHandle = tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>;
     let bg_update_wait: std::sync::Arc<tokio::sync::Mutex<Option<UpdateWaitHandle>>> =
@@ -2073,12 +2072,9 @@ async fn async_main(args: PagerArgs) -> Result<()> {
     xai_grok_sandbox::flush();
     match result {
         Ok(true) => {
-            let adopted = bg_update_wait.lock().await.take();
-            if finish_update_on_exit(adopted, &update_config).await {
-                eprintln!("Update installed. Run `grok` to start.");
-            } else {
-                eprintln!("Update did not complete. Run `grok update` to retry.");
-            }
+            eprintln!(
+                "Self-update is disabled until this fork has an owned, signed release channel."
+            );
             Ok(())
         }
         Ok(false) => Ok(()),
@@ -2161,6 +2157,9 @@ fn build_update_config() -> UpdateConfig {
 /// Central gate for auto-update checks; add new suppression rules here,
 /// not at call sites.
 fn should_check_for_updates(no_auto_update_flag: bool) -> bool {
+    if !SELF_UPDATE_ENABLED {
+        return false;
+    }
     if cfg!(debug_assertions) {
         return false;
     }
@@ -2212,45 +2211,14 @@ fn get_channel_switch(alpha: bool, stable: bool, enterprise: bool) -> Option<&'s
 }
 /// Handle `grok-pager update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
 async fn run_update_command(
-    check: bool,
-    json: bool,
-    force_reinstall: bool,
-    version: Option<String>,
-    channel_switch: Option<&str>,
-    base_update_config: &UpdateConfig,
+    _check: bool,
+    _json: bool,
+    _force_reinstall: bool,
+    _version: Option<String>,
+    _channel_switch: Option<&str>,
+    _base_update_config: &UpdateConfig,
 ) -> Result<()> {
-    if json && !check {
-        anyhow::bail!("--json requires --check");
-    }
-    let mut update_config = base_update_config.clone();
-    if check {
-        if version.is_some() {
-            anyhow::bail!("--version cannot be used with --check");
-        }
-        auto_update::apply_channel_switch(channel_switch, &mut update_config).await;
-        let status = auto_update::check_update_status(&update_config).await;
-        auto_update::print_update_status(&status, json)?;
-        return Ok(());
-    }
-    if let Some(ref v) = version
-        && semver::Version::parse(v).is_err()
-    {
-        anyhow::bail!(
-            "'{}' is not a valid version. Expected semver like 0.1.150",
-            v
-        );
-    }
-    let installed = auto_update::run_update(
-        force_reinstall,
-        version.as_deref(),
-        channel_switch,
-        &mut update_config,
-    )
-    .await?;
-    if let Some(installed_version) = installed {
-        signal_leaders_to_relaunch(&installed_version).await;
-    }
-    Ok(())
+    anyhow::bail!("self-update is disabled until this fork has an owned, signed release channel")
 }
 /// After a successful `grok update`, ask any running leader on this machine that
 /// is older than `installed_version` to relaunch onto the new binary (bounded
@@ -2321,6 +2289,12 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
 mod tests {
     use super::*;
     #[test]
+    fn upstream_self_update_is_disabled() {
+        assert!(!SELF_UPDATE_ENABLED);
+        assert!(!should_check_for_updates(false));
+        assert!(!should_check_for_updates(true));
+    }
+    #[test]
     fn version_output_writer_preserves_channel_aware_contract() {
         for (label, expected_suffix) in [
             (" [alpha]", " [alpha]\n"),
@@ -2330,7 +2304,7 @@ mod tests {
             let mut output = Vec::new();
             write_version(&mut output, label).unwrap();
             let output = String::from_utf8(output).unwrap();
-            assert!(output.starts_with("grok "));
+            assert!(output.starts_with("gbuild "));
             assert!(output.contains(env!("VERSION_WITH_COMMIT")));
             assert!(output.ends_with(expected_suffix), "{output:?}");
         }
@@ -2497,30 +2471,30 @@ mod tests {
     }
     #[cfg(unix)]
     #[test]
-    fn is_managed_install_matches_only_the_bin_grok_target() {
+    fn is_managed_install_matches_only_the_bin_gbuild_target() {
         let home =
             std::env::temp_dir().join(format!("grok-pager-managed-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join("bin")).unwrap();
         std::fs::create_dir_all(home.join("downloads")).unwrap();
         assert!(!is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join("gbuild")),
             &home
         ));
         assert!(!is_managed_install(None, &home));
         assert!(!is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join("gbuild")),
             std::path::Path::new("")
         ));
-        let target = home.join("downloads").join("grok-1.2.3");
+        let target = home.join("downloads").join("gbuild-1.2.3");
         std::fs::write(&target, b"binary").unwrap();
-        std::os::unix::fs::symlink(&target, home.join("bin").join("grok")).unwrap();
+        std::os::unix::fs::symlink(&target, home.join("bin").join("gbuild")).unwrap();
         assert!(is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join("gbuild")),
             &home
         ));
         assert!(is_managed_install(Some(target.clone()), &home));
-        let pinned = home.join("bin").join("grok-9.9.9");
+        let pinned = home.join("bin").join("gbuild-9.9.9");
         std::fs::write(&pinned, b"binary").unwrap();
         assert!(!is_managed_install(Some(pinned), &home));
         let _ = std::fs::remove_dir_all(&home);

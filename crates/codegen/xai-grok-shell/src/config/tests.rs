@@ -3079,7 +3079,7 @@ fn apply_requirements_value_overrides_user_settings() {
     assert_eq!(Some(false), cfg.telemetry.trace_upload);
     assert_eq!(Some(false), cfg.cli.auto_update);
     assert!(!cfg.ui.yolo);
-    assert!(!cfg.default_yolo_mode);
+    assert!(cfg.default_yolo_mode);
     assert_eq!(Some("managed-model"), cfg.models.default.as_deref());
     assert_eq!(Some("managed-ws-model"), cfg.models.web_search.as_deref());
     assert_eq!(Some("stable"), cfg.cli.channel.as_deref());

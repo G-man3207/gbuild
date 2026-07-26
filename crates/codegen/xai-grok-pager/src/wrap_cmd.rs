@@ -1,4 +1,4 @@
-//! `grok wrap` — run any command in a local PTY that forwards its clipboard.
+//! `gbuild wrap` — run any command in a local PTY that forwards its clipboard.
 //!
 //! Generalizes the `grok ssh` wrapper: spawns an arbitrary command inside a
 //! local pseudo-terminal, intercepts OSC 52 clipboard escape sequences from
@@ -30,7 +30,7 @@ pub fn run(args: &WrapArgs) -> Result<()> {
     let program = args
         .command
         .first()
-        .ok_or_else(|| anyhow::anyhow!("grok wrap: no command given"))?;
+        .ok_or_else(|| anyhow::anyhow!("gbuild wrap: no command given"))?;
 
     // Unix: derive both spawn plans up front from one env snapshot so the PTY
     // attempt and its fallback route consistently. The wrapped run uses
@@ -62,7 +62,7 @@ pub fn run(args: &WrapArgs) -> Result<()> {
             Err(e) => {
                 // PTY setup failed; keep the chosen route without our PTY so
                 // the command still works (just without clipboard forwarding).
-                eprintln!("grok wrap: wrapped mode failed, running without PTY wrapping: {e}");
+                eprintln!("gbuild wrap: wrapped mode failed, running without PTY wrapping: {e}");
                 exec_command(&fallback.program, &fallback.args)
             }
         }

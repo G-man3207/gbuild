@@ -560,8 +560,8 @@ async fn legacy_auth_hint_on_404_model_not_found() {
                 "hint must mention `grok logout`, got: {msg}"
             );
             assert!(
-                msg.contains("grok login"),
-                "hint must mention `grok login`, got: {msg}"
+                msg.contains("gbuild login"),
+                "hint must mention `gbuild login`, got: {msg}"
             );
             assert!(
                 msg.contains("Version:"),
@@ -629,8 +629,8 @@ async fn legacy_auth_hint_on_401_unauthorized() {
                 "hint must mention `grok logout`, got: {msg}"
             );
             assert!(
-                msg.contains("grok login"),
-                "hint must mention `grok login`, got: {msg}"
+                msg.contains("gbuild login"),
+                "hint must mention `gbuild login`, got: {msg}"
             );
         })
         .await;

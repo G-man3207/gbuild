@@ -1,5 +1,6 @@
 {
     "name": "@xai-official/grok-linux-x64",
+    "private": true,
     "version": "0.2.0-dev",
     "description": "linux-x64 binary for @xai-official/grok. Do not install directly; install @xai-official/grok instead.",
     "license": "Apache-2.0",

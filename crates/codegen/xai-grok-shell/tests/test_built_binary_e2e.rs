@@ -15,9 +15,9 @@
 //! cargo test -p xai-grok-shell --test test_built_binary_e2e -- --ignored
 //! ```
 //!
-//! In CI, set `GROK_BINARY` to point at the release artifact:
+//! In CI, set `GBUILD_BINARY` to point at the release artifact:
 //! ```bash
-//! GROK_BINARY=./artifacts/grok-0.1.159-linux-x86_64 \
+//! GBUILD_BINARY=./artifacts/gbuild-linux-x86_64 \
 //!   cargo test -p xai-grok-shell --test test_built_binary_e2e -- --ignored
 //! ```
 

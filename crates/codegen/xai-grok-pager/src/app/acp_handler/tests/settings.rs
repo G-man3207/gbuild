@@ -588,10 +588,9 @@
         );
     }
 
-    /// Explicit `null` recomputes with remote=None (unlike field omission):
-    /// with no TOML permission key the soft always-approve drops back to Ask.
+    /// Remote soft defaults cannot disable gBuild's unrestricted launch mode.
     #[test]
-    fn permission_mode_explicit_null_clears_soft_always_approve() {
+    fn permission_mode_explicit_null_keeps_unrestricted_default() {
         let mut app = make_app_with_agent("sess-null-pm");
         app.auto_mode_gate = true;
         app.permission_mode_from_soft_default = true;
@@ -599,8 +598,11 @@
         app.default_yolo = true;
 
         super::super::settings::apply_soft_default_permission_mode(&mut app, None, None);
-        assert!(!app.default_yolo, "remote null must disarm a soft always-approve");
-        assert_eq!(app.current_ui.permission_mode.as_deref(), Some("ask"));
+        assert!(app.default_yolo);
+        assert_eq!(
+            app.current_ui.permission_mode.as_deref(),
+            Some("always-approve")
+        );
         assert!(app.permission_mode_from_soft_default);
         assert!(
             app.pending_effects.is_empty(),
@@ -608,9 +610,9 @@
         );
     }
 
-    /// Policy pin and auto gate clamp a soft re-arm to Ask enforcement/display.
+    /// Policy pins and remote Auto cannot clamp gBuild's unrestricted default.
     #[test]
-    fn permission_mode_soft_default_respects_pin_and_gate() {
+    fn permission_mode_soft_default_ignores_pin_and_gate() {
         let mut app = make_app_with_agent("sess-pin-pm");
         app.permission_mode_from_soft_default = true;
         app.yolo_policy_block = Some("pinned");
@@ -620,17 +622,20 @@
             None,
             Some("always-approve"),
         );
-        assert!(!app.default_yolo, "policy pin must block a remote always-approve");
-        assert_eq!(app.current_ui.permission_mode.as_deref(), Some("ask"));
+        assert!(app.default_yolo);
+        assert_eq!(
+            app.current_ui.permission_mode.as_deref(),
+            Some("always-approve")
+        );
 
         let mut app = make_app_with_agent("sess-gate-pm");
         app.permission_mode_from_soft_default = true;
         app.auto_mode_gate = false;
         super::super::settings::apply_soft_default_permission_mode(&mut app, None, Some("auto"));
-        assert!(!app.default_yolo);
+        assert!(app.default_yolo);
         assert_eq!(
             app.current_ui.permission_mode.as_deref(),
-            Some("ask"),
-            "gated-off Auto must display as Ask"
+            Some("always-approve"),
+            "remote Auto must not replace the unrestricted default"
         );
     }

@@ -91,10 +91,13 @@ pub(crate) fn render(
         .fg(link_fg)
         .add_modifier(Modifier::UNDERLINED);
     let gray = Style::default().fg(theme.gray);
-    let title = Span::styled("Help improve Grok", Style::default().fg(theme.text_primary));
+    let title = Span::styled(
+        "Help improve gBuild",
+        Style::default().fg(theme.text_primary),
+    );
     let desc = "Allow your sessions to improve SpaceXAI's models.";
     // Drop trailing spans whole rather than clipping mid-word when narrow.
-    let line1 = if left.width as usize >= "Help improve Grok  ".len() + desc.len() {
+    let line1 = if left.width as usize >= "Help improve gBuild  ".len() + desc.len() {
         Line::from(vec![
             title,
             Span::raw("  "),

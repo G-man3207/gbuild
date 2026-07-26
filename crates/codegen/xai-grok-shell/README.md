@@ -1,4 +1,4 @@
-# Grok
+# gBuild
 
 A terminal-based AI coding assistant and agentic harness.
 
@@ -7,28 +7,28 @@ Use it interactively as a TUI, or integrate it into your own apps via headless m
 ## Quick Start
 
 ```bash
-# Install
-curl -fsSL https://x.ai/cli/install.sh | bash
+# Build from the repository root
+cargo build -p xai-grok-pager-bin --bin gbuild --release
 
 # Interactive TUI
-grok
+gbuild
 
 # Headless (for scripts/automation)
-grok -p "Explain this codebase"
+gbuild -p "Explain this codebase"
 
 # Agent mode (for IDE/app integration)
-grok agent stdio
+gbuild agent stdio
 ```
 
 ## Contents
 
 - [Installation](#installation)
 - [Authentication](#authentication) — browser login, API key, OIDC, external auth providers
-- **Using Grok**
+- **Using gBuild**
   - [Interactive TUI](#interactive-tui) — shortcuts, slash commands, file references
   - [Headless Mode](#headless-mode) — scripting, CI/CD, output formats
   - [Agent Mode](#agent-mode) — stdio, ACP integration
-  - [SSH Passthrough](#ssh-passthrough-grok-ssh) — Apple Terminal clipboard support
+  - [SSH Passthrough](#ssh-passthrough-gbuild-ssh) — Apple Terminal clipboard support
 - **Configuration**
   - [Config File](#configuration) — general settings, telemetry, LSP, enterprise deployment
   - [Custom Models](#custom-models) — BYOK, Ollama, OpenAI, custom endpoints
@@ -44,37 +44,31 @@ grok agent stdio
   - [Memory](#memory) — cross-session knowledge persistence
   - [Sandbox](#sandbox) — OS-level filesystem/network isolation
 - **Reference**
-  - [Introspection (`grok inspect`)](#introspection)
+  - [Introspection (`gbuild inspect`)](#introspection)
   - [Claude Code Compatibility](#claude-code-compatibility)
   - [Built-in Tools](#built-in-tools)
   - [Session Persistence](#session-persistence) — storage layout, resume
   - [File Locations](#file-locations)
   - [Environment Variables](#environment-variables)
   - [Troubleshooting](#troubleshooting)
-- [Building with Grok](#building-with-grok) — headless API, ACP SDK integration
+- [Building with gBuild](#building-with-gbuild) — headless API, ACP SDK integration
 
 ---
 
 ## Installation
 
-```bash
-# Install latest stable
-curl -fsSL https://x.ai/cli/install.sh | bash
+gBuild currently ships from source only. It has no owned binary, npm, or update
+channel.
 
-# Install a specific version
-curl -fsSL https://x.ai/cli/install.sh | bash -s 0.1.42
+```bash
+cargo build -p xai-grok-pager-bin --bin gbuild --release
+install -m 755 target/release/gbuild ~/.local/bin/gbuild
 ```
 
 Verify installation:
 
 ```bash
-grok --version
-```
-
-Update to the latest version:
-
-```bash
-grok update
+gbuild --version
 ```
 
 ---
@@ -83,20 +77,20 @@ grok update
 
 ### Browser Login (Default)
 
-On first launch, Grok opens your browser to authenticate with grok.com:
+On first launch, gBuild opens your browser to authenticate with grok.com:
 
 ```bash
-grok
+gbuild
 ```
 
-Credentials are stored in `~/.grok/auth.json` and persist across sessions. Tokens expire after 7 days; Grok will prompt you to re-authenticate when needed.
+Credentials are stored in `~/.grok/auth.json` and persist across sessions. Tokens expire after 7 days; gBuild will prompt you to re-authenticate when needed.
 
 ### Re-authenticate
 
 To switch accounts or fix authentication issues:
 
 ```bash
-grok login
+gbuild login
 ```
 
 ### API Key
@@ -105,7 +99,7 @@ For CI/CD, automation, or environments without browser access, use an API key fr
 
 ```bash
 export XAI_API_KEY="xai-..."
-grok
+gbuild
 ```
 
 The API key takes precedence over browser credentials.
@@ -139,7 +133,7 @@ Customers typically also override the API endpoint to point at their own proxy:
 export GROK_CLI_CHAT_PROXY_BASE_URL="https://grok-proxy.acme.com/v1"
 ```
 
-**3. Run `grok`.** The CLI discovers endpoints via `{issuer}/.well-known/openid-configuration`, opens the IdP login page, and stores tokens in `~/.grok/auth.json`. The OIDC token is sent as `Authorization: Bearer` to the configured proxy. Tokens auto-refresh silently via the stored `refresh_token`.
+**3. Run `gbuild`.** The CLI discovers endpoints via `{issuer}/.well-known/openid-configuration`, opens the IdP login page, and stores tokens in `~/.grok/auth.json`. The OIDC token is sent as `Authorization: Bearer` to the configured proxy. Tokens auto-refresh silently via the stored `refresh_token`.
 
 **Optional fields:**
 
@@ -152,13 +146,13 @@ export GROK_CLI_CHAT_PROXY_BASE_URL="https://grok-proxy.acme.com/v1"
 
 For environments where browser-based login isn't possible (sandboxed VMs, CI runners, air-gapped networks), delegate authentication to an external binary or script. This is the recommended approach for enterprise deployments where your company runs its own auth infrastructure (SSO, device code flows, certificate auth, etc.).
 
-Grok is provider-agnostic — it doesn't know or care how your binary authenticates. It just runs the command, reads a token from stdout, and stores it. Your binary is a black box that handles the entire auth flow.
+gBuild is provider-agnostic — it doesn't know or care how your binary authenticates. It just runs the command, reads a token from stdout, and stores it. Your binary is a black box that handles the entire auth flow.
 
 #### How It Works
 
 ```
 ┌──────────────┐     sh -c     ┌────────────────────────┐
-│     Grok     │──────────────▶│  your auth binary      │
+│    gBuild    │──────────────▶│  your auth binary      │
 │              │               │                        │
 │  reads       │◀── stdout ────│  prints token          │
 │  auth.json   │               │                        │
@@ -166,11 +160,11 @@ Grok is provider-agnostic — it doesn't know or care how your binary authentica
 └──────────────┘               └────────────────────────┘
 ```
 
-1. Grok runs your command via `sh -c "<command>"`
+1. gBuild runs your command via `sh -c "<command>"`
 2. Your binary does whatever auth flow it needs (SSO login, device code, cert exchange, etc.)
 3. **stderr** → displayed directly to the user (use for login URLs, status messages, progress)
-4. **stdout** → captured by Grok and saved to `~/.grok/auth.json` as the access token
-5. exit 0 → success; exit non-zero → Grok falls through to interactive login
+4. **stdout** → captured by gBuild and saved to `~/.grok/auth.json` as the access token
+5. exit 0 → success; exit non-zero → gBuild falls through to interactive login
 
 #### The stdout / stderr Contract
 
@@ -178,10 +172,10 @@ This is the most important thing to get right:
 
 | Stream | What to print | Who sees it |
 |--------|---------------|-------------|
-| **stdout** | The token — nothing else | Grok (parsed and stored in `auth.json`) |
+| **stdout** | The token — nothing else | gBuild (parsed and stored in `auth.json`) |
 | **stderr** | Login URLs, status messages, errors, progress | The user (displayed in their terminal) |
 
-**Do not print anything to stdout except the token.** No progress messages, no debug output, no "Login successful!" text. Grok reads stdout verbatim and tries to parse it as a token. Any extra text will break parsing.
+**Do not print anything to stdout except the token.** No progress messages, no debug output, no "Login successful!" text. gBuild reads stdout verbatim and tries to parse it as a token. Any extra text will break parsing.
 
 #### stdout Token Format
 
@@ -197,7 +191,7 @@ eyJhbGciOiJSUzI1NiIs...
 {"access_token": "eyJhbGciOi...", "refresh_token": "ref-tok", "expires_in": 3600}
 ```
 
-Use JSON if your tokens expire and you want Grok to automatically re-run the binary before expiry. The `expires_in` field (seconds until expiry) tells Grok when to proactively refresh. Without it, Grok assumes tokens last 30 days.
+Use JSON if your tokens expire and you want gBuild to automatically re-run the binary before expiry. The `expires_in` field (seconds until expiry) tells gBuild when to proactively refresh. Without it, gBuild assumes tokens last 30 days.
 
 #### Minimal Example
 
@@ -209,7 +203,7 @@ echo "Visit: https://sso.acme.com/device-login?code=ABCD-1234" >&2
 
 # ... do the auth flow, get a token ...
 
-# Print ONLY the token to stdout (Grok captures this)
+# Print ONLY the token to stdout (gBuild captures this)
 echo "eyJhbGciOiJSUzI1NiIs..."
 ```
 
@@ -230,11 +224,11 @@ export GROK_AUTH_PROVIDER_LABEL="Acme Corp"   # optional
 export GROK_AUTH_TOKEN_TTL=3600               # optional
 ```
 
-If your binary outputs a bare token string (not JSON with `expires_in`), set `auth_token_ttl` to the token's expected lifetime in seconds. Without it, Grok cannot detect expiry proactively and will only refresh after a 401.
+If your binary outputs a bare token string (not JSON with `expires_in`), set `auth_token_ttl` to the token's expected lifetime in seconds. Without it, gBuild cannot detect expiry proactively and will only refresh after a 401.
 
 The command is run via `sh -c`, so it can be a binary path, a shell script, or a pipeline.
 
-When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** instead of "Login with grok.com". In headless mode (`grok -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
+When `auth_provider_label` is set, the TUI welcome screen shows **"Login with Acme Corp"** instead of "Login with grok.com". In headless mode (`gbuild -p`), the label has no effect — stderr from your binary is printed directly to the terminal.
 
 > **Enterprise setup:** For a complete enterprise `config.toml` combining external auth, corporate proxy, and telemetry settings, see [Enterprise Deployment](#enterprise-deployment) in the Configuration section.
 
@@ -266,7 +260,7 @@ echo "{\"access_token\": \"$TOKEN\", \"expires_in\": 3600}"
 
 #### Example: Auth Binary with Refresh Support
 
-When Grok needs to refresh an expired token, it re-runs your binary with `GROK_AUTH_EXPIRED=1` set in the environment. Your binary can use this to take a faster silent-refresh path:
+When gBuild needs to refresh an expired token, it re-runs your binary with `GROK_AUTH_EXPIRED=1` set in the environment. Your binary can use this to take a faster silent-refresh path:
 
 ```bash
 #!/bin/sh
@@ -288,31 +282,31 @@ fi
 echo "{\"access_token\": \"$TOKEN\", \"expires_in\": 3600}"
 ```
 
-`GROK_AUTH_EXPIRED` is optional — if your binary ignores it, Grok still works. It just runs the same flow for both login and refresh.
+`GROK_AUTH_EXPIRED` is optional — if your binary ignores it, gBuild still works. It just runs the same flow for both login and refresh.
 
 ### Automatic Credential Refresh
 
-Grok supports automatic credential refresh for external auth providers and OIDC. When Grok detects that your token is expired (either locally based on `expires_in`, or when the server returns a 401), it automatically re-runs your `auth_provider_command` to obtain new credentials before retrying the request.
+gBuild supports automatic credential refresh for external auth providers and OIDC. When gBuild detects that your token is expired (either locally based on `expires_in`, or when the server returns a 401), it automatically re-runs your `auth_provider_command` to obtain new credentials before retrying the request.
 
-This is transparent — you don't need to do anything. Grok handles it in the background during your session.
+This is transparent — you don't need to do anything. gBuild handles it in the background during your session.
 
 **When does refresh happen?**
 
-- **Before expiry:** If your binary returned `expires_in` in its JSON output, or you set `auth_token_ttl` in config, Grok re-runs the binary ~5 minutes before the token expires, so you never see an auth error.
-- **On auth error:** If the server rejects a request with 401/403 (e.g. token was revoked or expired), Grok re-runs the binary and retries the request once.
-- **OIDC:** If you're using OIDC and have a `refresh_token`, Grok silently refreshes via your IdP without re-opening the browser.
+- **Before expiry:** If your binary returned `expires_in` in its JSON output, or you set `auth_token_ttl` in config, gBuild re-runs the binary ~5 minutes before the token expires, so you never see an auth error.
+- **On auth error:** If the server rejects a request with 401/403 (e.g. token was revoked or expired), gBuild re-runs the binary and retries the request once.
+- **OIDC:** If you're using OIDC and have a `refresh_token`, gBuild silently refreshes via your IdP without re-opening the browser.
 
 **Tuning the refresh buffer:**
 
 ```bash
-# Grok refreshes tokens 5 minutes before expiry by default.
+# gBuild refreshes tokens 5 minutes before expiry by default.
 # Set to 0 to only refresh on 401. Set higher for very short-lived tokens.
 export GROK_AUTH_EARLY_INVALIDATION_SECS=300
 ```
 
 **Keep in mind:**
-- When using `auth_provider_command`, you don't need to run `grok login` before starting — Grok runs your binary automatically on first launch. You _can_ run `grok login` to explicitly hydrate `auth.json` ahead of time if you prefer.
-- If both OIDC and `auth_provider_command` are configured: at **login** time, Grok tries OIDC silent refresh first (if a `refresh_token` exists), then the external binary, then browser-based login. During a **session**, whichever method is configured is used exclusively — if `auth_provider_command` is set it handles all mid-session refreshes; otherwise OIDC silent refresh is used.
+- When using `auth_provider_command`, you don't need to run `gbuild login` before starting — gBuild runs your binary automatically on first launch. You _can_ run `gbuild login` to explicitly hydrate `auth.json` ahead of time if you prefer.
+- If both OIDC and `auth_provider_command` are configured: at **login** time, gBuild tries OIDC silent refresh first (if a `refresh_token` exists), then the external binary, then browser-based login. During a **session**, whichever method is configured is used exclusively — if `auth_provider_command` is set it handles all mid-session refreshes; otherwise OIDC silent refresh is used.
 - Your binary's stderr output is displayed to the user but interactive stdin is not supported. This works well for browser-based SSO flows where the binary displays a URL and you complete authentication in the browser.
 
 #### Troubleshooting Auth
@@ -320,7 +314,7 @@ export GROK_AUTH_EARLY_INVALIDATION_SECS=300
 Enable debug logging to trace the auth flow:
 
 ```bash
-grok --debug-file /tmp/grok-auth.log -p "hello"
+gbuild --debug-file /tmp/grok-auth.log -p "hello"
 tail -f /tmp/grok-auth.log
 ```
 
@@ -336,7 +330,7 @@ Common log messages:
 
 ### Per-Model Auth Providers
 
-`auth_provider_command` above replaces Grok's *session* auth: it mints the token sent to xAI's backend. If you instead want xAI models on normal xAI login while **other models** route through a gateway (LiteLLM, corporate proxy) whose bearer tokens rotate, use a named auth provider — the rotating-token analogue of a per-model `api_key`/`env_key`.
+`auth_provider_command` above replaces gBuild's *session* auth: it mints the token sent to xAI's backend. If you instead want xAI models on normal xAI login while **other models** route through a gateway (LiteLLM, corporate proxy) whose bearer tokens rotate, use a named auth provider — the rotating-token analogue of a per-model `api_key`/`env_key`.
 
 ```toml
 # ~/.grok/config.toml
@@ -357,12 +351,12 @@ auth_provider = "litellm"
 - Without `args`, the command runs via POSIX `sh -c`, so it can be a binary path, a script, or a pipeline. With `args = ["..."]`, the command runs directly with those arguments and no shell: `command` is a program name resolved via `PATH`, or a path. Use `args` to avoid shell quoting, and on Windows, where there is no `sh`.
 - stdout: a bare token, or JSON `{"access_token": "...", "expires_in": 3600}`.
 - stderr: logged when the command fails; exit 0 = success.
-- `GROK_AUTH_EXPIRED=1` is set whenever Grok re-mints over a token still cached in memory, whether from near-expiry rotation or a rejection. The first mint on a cold cache runs without it.
+- `GROK_AUTH_EXPIRED=1` is set whenever gBuild re-mints over a token still cached in memory, whether from near-expiry rotation or a rejection. The first mint on a cold cache runs without it.
 
 **Token lifecycle:**
 
-- Tokens are cached in memory per provider and shared by every model referencing the provider; nothing is written to disk. The command is a credential helper: it owns durable storage and OAuth2 refresh (keychain, its own dotdir, etc.), exactly like `gcloud auth print-access-token` or a git credential helper. On an in-session re-mint the last credential is handed back via `GROK_AUTH_PROVIDER_ACCESS_TOKEN` (and, when present, `GROK_AUTH_PROVIDER_REFRESH_TOKEN` / `GROK_AUTH_PROVIDER_EXPIRES_AT`), so a refresh-grant command can refresh instead of re-authenticating. The command must be non-interactive and fast; do any interactive login out of band, and Grok re-runs the command on restart to re-mint.
-- Grok runs the command before a chat turn when the token is missing or within about a minute of expiring, and once more after the server rejects a token. A token rejected within 30 seconds of being fetched is not refetched again, so a broken helper surfaces one clear error instead of looping.
+- Tokens are cached in memory per provider and shared by every model referencing the provider; nothing is written to disk. The command is a credential helper: it owns durable storage and OAuth2 refresh (keychain, its own dotdir, etc.), exactly like `gcloud auth print-access-token` or a git credential helper. On an in-session re-mint the last credential is handed back via `GROK_AUTH_PROVIDER_ACCESS_TOKEN` (and, when present, `GROK_AUTH_PROVIDER_REFRESH_TOKEN` / `GROK_AUTH_PROVIDER_EXPIRES_AT`), so a refresh-grant command can refresh instead of re-authenticating. The command must be non-interactive and fast; do any interactive login out of band, and gBuild re-runs the command on restart to re-mint.
+- gBuild runs the command before a chat turn when the token is missing or within about a minute of expiring, and once more after the server rejects a token. A token rejected within 30 seconds of being fetched is not refetched again, so a broken helper surfaces one clear error instead of looping.
 - Token lifetime comes from `expires_in` in the command's JSON output, else `token_ttl_secs`, else the token's own JWT expiry claim. With none of these, tokens are only replaced after the server rejects one.
 - Commands run with a `timeout_secs` bound (default 30, clamped to 1..=600) and are killed on timeout. A turn waits on the run, so keep helpers fast and non-interactive.
 - Active sessions pick up edits or removal of a provider table at the next model switch or new session. Once picked up, an edit invalidates the cached token, so the edited command runs at the next use; removal drops the cached token.
@@ -370,11 +364,11 @@ auth_provider = "litellm"
 
 **Interaction with other credentials:** a literal `api_key`/`env_key` on the model wins over its `auth_provider`. Provider-backed models are BYOK: your xAI session token is never sent to their endpoints, and a failing provider command fails the request rather than falling back to the session token.
 
-**Security:** provider commands execute code, so they are honored only from trusted config layers (`~/.grok/config.toml`, managed config, requirements). A project's `.grok/config.toml` can never define one. Whatever layer sets a model's `base_url` decides where that model's minted token is sent, and `base_url` (unlike the provider table) is not stripped from remote or campaign patches, the same as for a static `env_key`. Keep provider tables and the model `base_url` in layers you trust. The command inherits Grok's environment (so it sees `PATH`, `HOME`, and any other secrets there), but Grok's own first-party credentials (`XAI_API_KEY`, `GROK_DEPLOYMENT_KEY`, and related keys) are removed so a BYOK helper never receives them; write helpers that read only what they need, and prefer the `GROK_AUTH_PROVIDER_*` handback for the prior credential.
+**Security:** provider commands execute code, so they are honored only from trusted config layers (`~/.grok/config.toml`, managed config, requirements). A project's `.grok/config.toml` can never define one. Whatever layer sets a model's `base_url` decides where that model's minted token is sent, and `base_url` (unlike the provider table) is not stripped from remote or campaign patches, the same as for a static `env_key`. Keep provider tables and the model `base_url` in layers you trust. The command inherits gBuild's environment (so it sees `PATH`, `HOME`, and any other secrets there), but gBuild's own first-party credentials (`XAI_API_KEY`, `GROK_DEPLOYMENT_KEY`, and related keys) are removed so a BYOK helper never receives them; write helpers that read only what they need, and prefer the `GROK_AUTH_PROVIDER_*` handback for the prior credential.
 
 ### Using auth.json for API Access
 
-If you've authenticated with `grok login`, you can use the stored credentials to call the CLI chat proxy directly via curl. The proxy requires specific headers that mirror what the grok CLI sends internally:
+If you've authenticated with `gbuild login`, you can use the stored credentials to call the CLI chat proxy directly via curl. The proxy requires specific headers that mirror what the gBuild CLI sends internally:
 
 ```bash
 curl -s -N -X POST "https://cli-chat-proxy.grok.com/v1/chat/completions" \
@@ -393,7 +387,7 @@ curl -s -N -X POST "https://cli-chat-proxy.grok.com/v1/chat/completions" \
 
 | Header                           | Required | Purpose                                                                                                                                                                                   |
 | -------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Authorization: Bearer <token>`  | Yes      | Session token from `~/.grok/auth.json` (set by `grok login`)                                                                                                                              |
+| `Authorization: Bearer <token>`  | Yes      | Session token from `~/.grok/auth.json` (set by `gbuild login`)                                                                                                                              |
 | `X-XAI-Token-Auth: xai-grok-cli` | Yes      | Tells the auth middleware to validate as a CLI session token                                                                                                                              |
 | `x-grok-model-override: <model>` | Yes\*    | The proxy uses this header (not the JSON body) to route to the correct backend. \*Can be omitted for `grok-build` which is on the default route, but always safe to include. |
 
@@ -405,7 +399,7 @@ Most models behind the proxy only support streaming. Always use `"stream": true`
 | --------------------- | -------------- | ------------ |
 | `grok-build`    | ✅ Supported   | ✅ Supported |
 
-> **Note:** `auth.json` tokens expire after 7 days. Run `grok login` to refresh.
+> **Note:** `auth.json` tokens expire after 7 days. Run `gbuild login` to refresh.
 
 ---
 
@@ -416,7 +410,7 @@ The TUI (Terminal User Interface) provides a full interactive coding environment
 ### Launch
 
 ```bash
-grok [OPTIONS]
+gbuild [OPTIONS]
 ```
 
 ### Options
@@ -442,16 +436,16 @@ grok [OPTIONS]
 
 ```bash
 # Start in a specific project
-grok --cwd ~/projects/my-app
+gbuild --cwd ~/projects/my-app
 
 # Start with an initial task
-grok --prompt "Review this codebase and suggest improvements"
+gbuild --prompt "Review this codebase and suggest improvements"
 
 # Add project-specific rules
-grok --rules "Always use TypeScript. Prefer functional components."
+gbuild --rules "Always use TypeScript. Prefer functional components."
 
 # Auto-approve mode for trusted tasks
-grok --always-approve --prompt "Format all files"
+gbuild --always-approve --prompt "Format all files"
 ```
 
 ### Keyboard Shortcuts
@@ -537,7 +531,7 @@ The `!` modifier allows you to attach any file in the project regardless of igno
 
 ## Headless Mode
 
-Run Grok non-interactively from the command line. Use headless mode when you need to:
+Run gBuild non-interactively from the command line. Use headless mode when you need to:
 
 - **Automate tasks** — CI/CD pipelines, pre-commit hooks, cron jobs
 - **Script workflows** — Batch process files, chain with other tools
@@ -549,7 +543,7 @@ Headless mode accepts a single prompt, executes it with full tool access, and re
 ### Basic Usage
 
 ```bash
-grok -p "Your prompt here"
+gbuild -p "Your prompt here"
 ```
 
 ### Options
@@ -593,13 +587,13 @@ Tool names correspond to the internal tool IDs shown below. For quick reference:
 
 ```bash
 # Only allow read-only tools
-grok -p "Explain this codebase" --tools "read_file,grep,list_dir"
+gbuild -p "Explain this codebase" --tools "read_file,grep,list_dir"
 
 # Remove web access and file editing
-grok -p "Review this code" --disallowed-tools "web_search,web_fetch,search_replace"
+gbuild -p "Review this code" --disallowed-tools "web_search,web_fetch,search_replace"
 
 # Remove shell access
-grok -p "Review this code" --disallowed-tools "run_terminal_cmd"
+gbuild -p "Review this code" --disallowed-tools "run_terminal_cmd"
 ```
 
 `--disallowed-tools` also supports special `Agent` entries to control subagent spawning:
@@ -612,10 +606,10 @@ grok -p "Review this code" --disallowed-tools "run_terminal_cmd"
 
 ```bash
 # Allow tools but prevent the agent from spawning any subagents
-grok -p "Fix this bug" --disallowed-tools "Agent"
+gbuild -p "Fix this bug" --disallowed-tools "Agent"
 
 # Block only the explore subagent
-grok -p "Refactor this module" --disallowed-tools "Agent(explore)"
+gbuild -p "Refactor this module" --disallowed-tools "Agent(explore)"
 ```
 
 When `--tools` is set, only the listed tools are available and default tool injection is disabled. When both flags are present, `--disallowed-tools` runs after `--tools` — use this to start from an allowlist and then remove specific entries.
@@ -642,19 +636,19 @@ Glob patterns support `*` (single-level wildcard) and `**` (recursive). A bare p
 
 ```bash
 # Deny all shell commands matching "rm*"
-grok -p "Clean up this project" --deny "Bash(rm*)"
+gbuild -p "Clean up this project" --deny "Bash(rm*)"
 
 # Allow npm commands, deny everything else dangerous
-grok -p "Set up the project" --allow "Bash(npm*)" --deny "Bash(sudo*)"
+gbuild -p "Set up the project" --allow "Bash(npm*)" --deny "Bash(sudo*)"
 
 # Deny edits outside src/
-grok -p "Refactor the code" --deny "Edit(/etc/**)"
+gbuild -p "Refactor the code" --deny "Edit(/etc/**)"
 
 # Allow all bash commands (auto-approve without prompting)
-grok -p "Build the project" --allow "Bash"
+gbuild -p "Build the project" --allow "Bash"
 
 # Combine: allow fetching docs sites, deny other URLs
-grok --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
+gbuild --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
 ```
 
 `--allow` and `--deny` can be repeated to add multiple rules. Deny rules take precedence over allow rules. These flags work in both TUI and headless mode.
@@ -663,26 +657,26 @@ grok --allow "WebFetch(domain:docs.rs)" --deny "WebFetch(*)"
 
 ```bash
 # Simple question
-grok -p "What does this project do?"
+gbuild -p "What does this project do?"
 
 # Use a specific model
-grok -p "Optimize this function" -m grok-build
+gbuild -p "Optimize this function" -m grok-build
 
 # Get JSON output for parsing
-grok -p "List all TODO comments in the codebase" --output-format json
+gbuild -p "List all TODO comments in the codebase" --output-format json
 
 # Streaming JSON for real-time processing
-grok -p "Explain the architecture" --output-format streaming-json
+gbuild -p "Explain the architecture" --output-format streaming-json
 
 # Multi-turn conversation (session ID is returned in JSON output)
-grok -p "Remember: the secret number is 42" --output-format json
-grok -p "What's the secret number?" --resume <sessionId>
+gbuild -p "Remember: the secret number is 42" --output-format json
+gbuild -p "What's the secret number?" --resume <sessionId>
 
 # Resume most recent session
-grok -p "Continue where we left off" -c
+gbuild -p "Continue where we left off" -c
 
 # Run in a different directory
-grok -p "Run the tests" --cwd ~/projects/other-app --always-approve
+gbuild -p "Run the tests" --cwd ~/projects/other-app --always-approve
 ```
 
 ### Scripting with Named Sessions
@@ -691,10 +685,10 @@ For CI and automation, `-s/--session-id` lets you choose your own session ID:
 
 ```bash
 # Start a session namespaced to a PR
-grok -p "Review the changes in this PR" -s "critique-myrepo-pr-123"
+gbuild -p "Review the changes in this PR" -s "critique-myrepo-pr-123"
 
 # Continue in the same session
-grok -p "Now check for security issues" -s "critique-myrepo-pr-123"
+gbuild -p "Now check for security issues" -s "critique-myrepo-pr-123"
 ```
 
 If the session exists it picks up where you left off; if not, a new one is created.
@@ -735,25 +729,25 @@ Here's a summary of the codebase...
 
 ```bash
 # Pipe output to a file
-grok -p "Generate a README" > README.md
+gbuild -p "Generate a README" > README.md
 
 # Parse JSON output with jq
-grok -p "List files" --output-format json | jq -r '.text'
+gbuild -p "List files" --output-format json | jq -r '.text'
 
 # CI/CD: automated code review
-grok -p "Review changes for bugs and security issues." \
+gbuild -p "Review changes for bugs and security issues." \
   --output-format json --always-approve | jq -r '.text' > review.md
 
 # Pipeline: chain with other tools
-git diff --staged | grok -p "Write a concise commit message for these changes"
+git diff --staged | gbuild -p "Write a concise commit message for these changes"
 
 # Batch: process multiple files
 for file in src/*.js; do
-  grok -p "Migrate $file from CommonJS to ES modules." --always-approve
+  gbuild -p "Migrate $file from CommonJS to ES modules." --always-approve
 done
 
 # Pre-commit hook
-grok -p "Review staged changes for obvious bugs. Reply OK if fine, or list issues." \
+gbuild -p "Review staged changes for obvious bugs. Reply OK if fine, or list issues." \
   --always-approve --output-format json | jq -r '.text' | grep -q "^OK" || exit 1
 ```
 
@@ -763,14 +757,14 @@ grok -p "Review staged changes for obvious bugs. Reply OK if fine, or list issue
 
 ## Agent Mode
 
-Run Grok as an ACP (Agent Client Protocol) agent for integration with IDEs, editors, and custom tooling.
+Run gBuild as an ACP (Agent Client Protocol) agent for integration with IDEs, editors, and custom tooling.
 
 ### stdio Transport
 
 For direct integration with ACP clients:
 
 ```bash
-grok agent stdio
+gbuild agent stdio
 ```
 
 Communication happens via JSON-RPC over stdin/stdout. This mode is used by:
@@ -793,7 +787,7 @@ Communication happens via JSON-RPC over stdin/stdout. This mode is used by:
 To expose the agent over the internet (instead of local network), run a WebSocket relay server and have the agent connect to it:
 
 ```bash
-grok agent headless --grok-ws-url wss://your-relay.example.com/ws
+gbuild agent headless --grok-ws-url wss://your-relay.example.com/ws
 ```
 
 The agent connects OUT to your relay, and your web clients connect to the same relay. Useful for building web UIs where browsers can't spawn local processes.
@@ -802,31 +796,31 @@ The agent connects OUT to your relay, and your web clients connect to the same r
 
 ---
 
-## SSH Passthrough (`grok ssh`)
+## SSH Passthrough (`gbuild ssh`)
 
-Use `grok ssh` instead of plain `ssh` when connecting to remote hosts in terminals that lack native support (e.g. Apple Terminal) for local OSC 52 clipboard interception.
+Use `gbuild ssh` instead of plain `ssh` when connecting to remote hosts in terminals that lack native support (e.g. Apple Terminal) for local OSC 52 clipboard interception.
 
 ```bash
 # Basic usage (same args as ssh)
-grok ssh user@host
+gbuild ssh user@host
 
 # With SSH flags
-grok ssh -t user@host
-grok ssh -L 8080:localhost:8080 user@host
+gbuild ssh -t user@host
+gbuild ssh -L 8080:localhost:8080 user@host
 
 # With remote command
-grok ssh user@host -- tmux attach
+gbuild ssh user@host -- tmux attach
 ```
 
-On macOS, if the terminal doesn't natively handle OSC 52, `grok ssh` runs SSH inside a local PTY that intercepts clipboard sequences and writes them to `pbcopy`. Both plain OSC 52 and tmux DCS passthrough are handled. Terminals with native OSC 52 (iTerm2, Ghostty, Kitty, WezTerm, Alacritty) get a plain `ssh` exec with no wrapper.
+On macOS, if the terminal doesn't natively handle OSC 52, `gbuild ssh` runs SSH inside a local PTY that intercepts clipboard sequences and writes them to `pbcopy`. Both plain OSC 52 and tmux DCS passthrough are handled. Terminals with native OSC 52 (iTerm2, Ghostty, Kitty, WezTerm, Alacritty) get a plain `ssh` exec with no wrapper.
 
 This runs entirely locally.
 
 ---
 
-## Building with Grok
+## Building with gBuild
 
-Grok can be used as an OpenAI-compatible chat completion backend. Choose between two integration modes:
+gBuild can be used as an OpenAI-compatible chat completion backend. Choose between two integration modes:
 
 | Mode         | Use Case                                                           |
 | ------------ | ------------------------------------------------------------------ |
@@ -837,7 +831,7 @@ Grok can be used as an OpenAI-compatible chat completion backend. Choose between
 
 ### Headless Mode (Simple Chat Completion)
 
-Use headless mode for simple integrations. Spawns `grok -p` and parses JSON output.
+Use headless mode for simple integrations. Spawns `gbuild -p` and parses JSON output.
 
 #### Python - Headless
 
@@ -854,7 +848,7 @@ class GrokChat:
         self.env = {**os.environ}
 
     def _build_cmd(self, prompt, model, stream):
-        return ["grok", "-p", prompt, "-m", model, "--cwd", self.cwd,
+        return ["gbuild", "-p", prompt, "-m", model, "--cwd", self.cwd,
                 "--output-format", "streaming-json" if stream else "json", "--always-approve"]
 
     async def create(self, messages, model="grok-build", stream=False):
@@ -943,7 +937,7 @@ class GrokChat {
     if (stream) return this.streamResponse(prompt, model);
 
     const { stdout } = await execa(
-      "grok",
+      "gbuild",
       this.buildArgs(prompt, model, false),
     );
     const data = JSON.parse(stdout || '{"text":""}');
@@ -958,7 +952,7 @@ class GrokChat {
   }
 
   async *streamResponse(prompt: string, model: string) {
-    const proc = execa("grok", this.buildArgs(prompt, model, true));
+    const proc = execa("gbuild", this.buildArgs(prompt, model, true));
     for await (const chunk of proc.stdout!) {
       for (const line of chunk.toString().split("\n").filter(Boolean)) {
         const event = JSON.parse(line);
@@ -1012,7 +1006,7 @@ class GrokACPChat:
 
     async def init(self):
         self.proc = await asyncio.create_subprocess_exec(
-            "grok", "agent", "stdio",
+            "gbuild", "agent", "stdio",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE
         )
@@ -1137,7 +1131,7 @@ class GrokACPChat {
   constructor(private cwd = ".") {}
 
   async init() {
-    this.proc = spawn("grok", ["agent", "stdio"]);
+    this.proc = spawn("gbuild", ["agent", "stdio"]);
     this.rl = readline.createInterface({ input: this.proc.stdout! });
 
     // Initialize
@@ -1261,7 +1255,7 @@ for await (const chunk of await client.create(
 
 ### ACP Protocol Reference
 
-Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), a standard for AI agent communication.
+gBuild implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), a standard for AI agent communication.
 
 #### Architecture
 
@@ -1272,7 +1266,7 @@ Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 └──────────────────┬──────────────────────┘
                    │ JSON-RPC over stdio
 ┌──────────────────▼──────────────────────┐
-│           grok agent stdio              │
+│          gbuild agent stdio             │
 │                                         │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │
 │  │ Session │  │  Tools  │  │   MCP   │  │
@@ -1310,7 +1304,7 @@ Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 
 ## Configuration
 
-Grok reads configuration from `~/.grok/config.toml`. If the file doesn't exist, Grok uses sensible defaults. You only need to specify values you want to override.
+gBuild reads configuration from `~/.grok/config.toml`. If the file doesn't exist, gBuild uses sensible defaults. You only need to specify values you want to override.
 
 Each feature section below documents its own config. This section covers the general-purpose settings that don't have their own top-level section.
 
@@ -1373,18 +1367,18 @@ When building from source, defaults can also be baked into the binary at compile
 
 ### LSP Servers
 
-Grok can connect to Language Server Protocol (LSP) servers configured in JSON files. LSP integration gives Grok language-aware code intelligence while it works in your repository.
+gBuild can connect to Language Server Protocol (LSP) servers configured in JSON files. LSP integration gives gBuild language-aware code intelligence while it works in your repository.
 
 LSP support is used in two ways:
 
-- **Passive diagnostics** — after edits, Grok can surface language-server diagnostics such as errors and warnings.
-- **The `lsp` tool** — Grok can actively query the language server for `goToDefinition`, `findReferences`, `hover`, `goToImplementation`, `documentSymbol`, and `workspaceSymbol`.
+- **Passive diagnostics** — after edits, gBuild can surface language-server diagnostics such as errors and warnings.
+- **The `lsp` tool** — gBuild can actively query the language server for `goToDefinition`, `findReferences`, `hover`, `goToImplementation`, `documentSymbol`, and `workspaceSymbol`.
 
 Reference: [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 
 #### Config locations
 
-Grok looks for server definitions in:
+gBuild looks for server definitions in:
 
 - project config: `<repo>/.grok/lsp.json`
 - user config: `~/.grok/lsp.json`
@@ -1401,7 +1395,7 @@ Having an `lsp.json` file is enough for passive diagnostics. The model-visible `
 Enable the tool for one run:
 
 ```bash
-GROK_LSP_TOOLS=1 grok
+GROK_LSP_TOOLS=1 gbuild
 ```
 
 Or enable it in config:
@@ -1411,7 +1405,7 @@ Or enable it in config:
 lsp_tools = true
 ```
 
-If LSP tools are enabled but no usable server config is found, Grok emits a non-fatal warning in logs and continues without the `lsp` tool. If config exists but every server fails to start, the tool may still be present and will fail on first use with a startup error.
+If LSP tools are enabled but no usable server config is found, gBuild emits a non-fatal warning in logs and continues without the `lsp` tool. If config exists but every server fails to start, the tool may still be present and will fail on first use with a startup error.
 
 #### Example `lsp.json`
 
@@ -1453,7 +1447,7 @@ If LSP tools are enabled but no usable server config is found, Grok emits a non-
 
 #### Installing language servers
 
-Grok does not bundle language server binaries. You must install the server yourself and make sure the configured `command` is runnable on your machine.
+gBuild does not bundle language server binaries. You must install the server yourself and make sure the configured `command` is runnable on your machine.
 
 Examples:
 
@@ -1501,21 +1495,21 @@ telemetry = false
 timeout_secs = 120.0
 ```
 
-With this config, `grok` runs your auth binary, stores the token, and routes inference through your corporate proxy. See [Authentication](#authentication) for full auth setup details.
+With this config, `gbuild` runs your auth binary, stores the token, and routes inference through your corporate proxy. See [Authentication](#authentication) for full auth setup details.
 
 ---
 
 ## AGENTS.md
 
-Add project-specific instructions by creating an agent rules file (e.g., `AGENTS.md`). Grok reads these files and appends their contents to the system prompt.
+Add project-specific instructions by creating an agent rules file (e.g., `AGENTS.md`). gBuild reads these files and appends their contents to the system prompt.
 
-Grok scans for agent rules in this order:
+gBuild scans for agent rules in this order:
 
 1. `~/.grok/` (global rules)
 2. If inside a git repo: every directory from the repo root → current working directory (inclusive)
 3. If **not** inside a git repo: only the current working directory
 
-Within each directory, Grok checks for these filenames:
+Within each directory, gBuild checks for these filenames:
 
 - `Agents.md`, `Claude.md`, `AGENT.md`, `AGENTS.md`
 
@@ -1527,11 +1521,11 @@ Ordering matters: files found later (deeper directories) come last, so they effe
 
 ## Skills
 
-Skills are reusable prompt packages that extend Grok with specialized workflows, domain knowledge, and tool integrations. Use them to encode repeatable procedures that would otherwise require re-explaining each session.
+Skills are reusable prompt packages that extend gBuild with specialized workflows, domain knowledge, and tool integrations. Use them to encode repeatable procedures that would otherwise require re-explaining each session.
 
 ### Skill Locations
 
-Grok discovers skills from these directories (in priority order):
+gBuild discovers skills from these directories (in priority order):
 
 | Location                    | Scope | Priority |
 | --------------------------- | ----- | -------- |
@@ -1589,7 +1583,7 @@ Review staged changes and create a commit with a clear, conventional message.
 | Field         | Description                                                                  |
 | ------------- | ---------------------------------------------------------------------------- |
 | `name`        | Skill identifier (lowercase, hyphens, max 64 chars)                          |
-| `description` | What the skill does and when to use it—this is how Grok decides to invoke it |
+| `description` | What the skill does and when to use it—this is how gBuild decides to invoke it |
 
 ### Using Skills
 
@@ -1604,9 +1598,9 @@ Review staged changes and create a commit with a clear, conventional message.
 
 **Slash command shorthand:**
 
-Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this pattern, Grok invokes the corresponding skill.
+Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this pattern, gBuild invokes the corresponding skill.
 
-> **Tip:** The `description` field is critical — it determines when Grok automatically invokes the skill. Be specific about trigger phrases and use cases.
+> **Tip:** The `description` field is critical — it determines when gBuild automatically invokes the skill. Be specific about trigger phrases and use cases.
 
 ---
 
@@ -1614,7 +1608,7 @@ Users can reference skills as `/skill-name` (e.g., `/commit`). When you see this
 
 Agent profiles control the system prompt, toolset, and behavior of a session. A profile is a `.md` file with YAML frontmatter, or a named agent discovered from disk.
 
-Grok discovers agent definitions from `.grok/agents/` (project), `~/.grok/agents/` (user), and built-in agents. Priority (highest wins):
+gBuild discovers agent definitions from `.grok/agents/` (project), `~/.grok/agents/` (user), and built-in agents. Priority (highest wins):
 
 1. `--agent-profile <PATH>` CLI flag
 2. `[agent]` section in `config.toml`
@@ -1629,7 +1623,7 @@ name = "my-custom-agent"             # Discovered by name
 ```
 
 ```bash
-grok --agent-profile ./my-agent.md
+gbuild --agent-profile ./my-agent.md
 # or
 export GROK_AGENT="my-custom-agent"
 ```
@@ -1692,7 +1686,7 @@ Both are also discovered from `.grok/roles/*.toml` and `.grok/personas/*.toml` f
 
 ## Plugins
 
-Plugins extend Grok with additional tools, skills, and MCP servers from external packages.
+Plugins extend gBuild with additional tools, skills, and MCP servers from external packages.
 
 ### Plugin Locations
 
@@ -1719,7 +1713,7 @@ Manage plugins at runtime with `/plugins list`, `/plugins reload`, or `/plugins 
 
 Hooks run project scripts on tool and session lifecycle events (pre/post-tool-use, session start/end). Projects must be explicitly trusted before their hooks execute.
 
-Grok discovers hooks from `.grok/hooks/` in the project directory. Manage them with:
+gBuild discovers hooks from `.grok/hooks/` in the project directory. Manage them with:
 
 ```
 /hooks-list              # show hooks loaded in this session
@@ -1780,7 +1774,7 @@ context_window = 256000               # Total context window in tokens (for auto
 
 **Credential resolution order:** `api_key` → `env_key` → cached `auth_provider` token (terminal: a cache miss resolves to no credential, never the session token) → session token → `XAI_API_KEY`. See [Per-Model Auth Providers](#per-model-auth-providers).
 
-The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, Grok falls back to built-in defaults for known models.
+The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, gBuild falls back to built-in defaults for known models.
 
 ### Overriding Built-in Models
 
@@ -1797,7 +1791,7 @@ temperature = 0.5
 api_key = "sk-custom"
 ```
 
-**How it works:** When you override a built-in model, Grok starts with the default configuration (including the correct `base_url` from your `[endpoints]` setting), then applies only the fields you specify. Unspecified fields inherit from the default.
+**How it works:** When you override a built-in model, gBuild starts with the default configuration (including the correct `base_url` from your `[endpoints]` setting), then applies only the fields you specify. Unspecified fields inherit from the default.
 
 **Priority order:**
 1. Your config (`[model.*]`) — highest priority
@@ -1808,14 +1802,14 @@ api_key = "sk-custom"
 
 > **Overriding with a custom model:** Setting `[models] web_search` alone is not
 > enough if the model isn't already in the catalog (built-in defaults or
-> `grok models` output). You also need a `[model.*]` entry so Grok knows
+> `gbuild models` output). You also need a `[model.*]` entry so gBuild knows
 > how to reach it. Without both, web search is silently disabled.
 >
 > ```toml
 > [models]
 > web_search = "my-custom-model"       # 1. tell web search which model to use
 >
-> [model.my-custom-model]              # 2. tell Grok how to reach it
+> [model.my-custom-model]              # 2. tell gBuild how to reach it
 > model = "my-custom-model"
 > api_backend = "responses"            # required — web search uses the Responses API
 > # base_url, api_key, env_key optional — defaults to cli-chat-proxy
@@ -1866,13 +1860,13 @@ env_key = "OPENAI_API_KEY"
 
 ```bash
 # List available models (including custom)
-grok models
+gbuild models
 
 # Use in TUI via slash command
 /model my-model
 
 # Use in headless mode
-grok -p "Hello" -m my-model
+gbuild -p "Hello" -m my-model
 
 # Set as default
 # In config.toml:
@@ -1882,7 +1876,7 @@ default = "my-model"
 
 ### Custom Models Endpoint
 
-Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the default cli-chat-proxy. Useful when models are served behind a corporate gateway or self-hosted inference stack.
+Point gBuild at a custom OpenAI-compatible `/v1/models` endpoint instead of the default cli-chat-proxy. Useful when models are served behind a corporate gateway or self-hosted inference stack.
 
 **Environment variables:**
 
@@ -1897,10 +1891,10 @@ Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the de
 ```bash
 export GROK_MODELS_BASE_URL="https://api.acme.com/v1"
 export XAI_API_KEY="xai-..."
-grok
+gbuild
 ```
 
-Grok fetches the model list from `{GROK_MODELS_BASE_URL}/models` on startup and sends inference requests to `GROK_MODELS_BASE_URL`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
+gBuild fetches the model list from `{GROK_MODELS_BASE_URL}/models` on startup and sends inference requests to `GROK_MODELS_BASE_URL`. This follows the standard OpenAI-compatible convention used by OpenAI, Anthropic, OpenRouter, Groq, Together.ai, and others.
 
 If your model list endpoint differs from `{base_url}/models`, set `GROK_MODELS_LIST_URL` explicitly.
 
@@ -1917,13 +1911,13 @@ api_key = "my-api-key"
 
 When using `[endpoints]` with partial model overrides, the `base_url` is inherited from the endpoints config — you don't need to specify it in each `[model.*]` section.
 
-**Auth behavior:** When `models_base_url` is set, Grok uses API key auth (`Authorization: Bearer`) instead of session auth. `grok login` is not required — only the API key.
+**Auth behavior:** When `models_base_url` is set, gBuild uses API key auth (`Authorization: Bearer`) instead of session auth. `gbuild login` is not required — only the API key.
 
 ---
 
 ## MCP Servers
 
-Extend Grok's capabilities with [Model Context Protocol](https://modelcontextprotocol.io) servers.
+Extend gBuild's capabilities with [Model Context Protocol](https://modelcontextprotocol.io) servers.
 
 ### Configuration
 
@@ -1943,7 +1937,7 @@ tool_timeouts = { create_issue = 120, search = 30 }  # Per-tool timeout override
 
 ### Project-Scoped MCP Servers
 
-MCP servers can also be configured per-project in `.grok/config.toml`. Grok walks from the current directory up to the git repo root, loading `.grok/config.toml` at each level:
+MCP servers can also be configured per-project in `.grok/config.toml`. gBuild walks from the current directory up to the git repo root, loading `.grok/config.toml` at each level:
 
 | Location                        | Scope             | Priority |
 | ------------------------------- | ----------------- | -------- |
@@ -2042,7 +2036,7 @@ See the [MCP Server Registry](https://github.com/modelcontextprotocol/servers) f
 
 > **Experimental:** requires `--experimental-memory` (or `GROK_MEMORY=1` / `[memory] enabled = true` in config).
 
-Cross-session memory lets Grok remember facts, decisions, code patterns, and debugging workflows across separate sessions in the same project.
+Cross-session memory lets gBuild remember facts, decisions, code patterns, and debugging workflows across separate sessions in the same project.
 
 ### How it works
 
@@ -2059,11 +2053,11 @@ An SQLite index enables fast hybrid search (FTS5 keyword + optional vector KNN) 
 
 ```bash
 # Per-session flag
-grok --experimental-memory
+gbuild --experimental-memory
 
 # Environment variable (persists for the shell session)
 export GROK_MEMORY=1
-grok
+gbuild
 
 # Config file (persists permanently)
 # ~/.grok/config.toml
@@ -2073,7 +2067,7 @@ enabled = true
 
 ### What gets saved automatically
 
-At the end of each session, Grok saves a **structured metadata summary** to the daily session log:
+At the end of each session, gBuild saves a **structured metadata summary** to the daily session log:
 - Message counts (user / assistant / tool)
 - Topics — the first few real user prompts from the session
 - Tool-usage breakdown (e.g., `read_file: 4, search_replace: 3`)
@@ -2111,7 +2105,7 @@ Omit `workspace` or `global` and it defaults to workspace scope.
 
 ### Searching memory
 
-Grok searches memory automatically on the first turn of each session and after compaction. The first-turn injection can be disabled or given its own score threshold under `[memory.initial_injection]`. You can also invoke `memory_search` and `memory_get` directly via the model prompt:
+gBuild searches memory automatically on the first turn of each session and after compaction. The first-turn injection can be disabled or given its own score threshold under `[memory.initial_injection]`. You can also invoke `memory_search` and `memory_get` directly via the model prompt:
 
 ```
 Search memory for "auth middleware patterns"
@@ -2122,13 +2116,13 @@ Read my workspace MEMORY.md
 
 ```bash
 # Open workspace MEMORY.md in $EDITOR / $VISUAL
-grok memory edit
+gbuild memory edit
 
 # Open global MEMORY.md
-grok memory edit --global
+gbuild memory edit --global
 
 # Show memory statistics: file count, chunk count, and index size
-grok memory stats
+gbuild memory stats
 ```
 
 ### Configuration reference
@@ -2149,7 +2143,7 @@ Key options under `[memory]` in `~/.grok/config.toml`:
 
 ### Observability
 
-When first-turn memory injection runs, Grok emits the `grok-shell-memory_injection`
+When first-turn memory injection runs, gBuild emits the `grok-shell-memory_injection`
 telemetry event. It includes:
 - whether the greeting fallback query path was used
 - result counts and top score
@@ -2159,7 +2153,7 @@ telemetry event. It includes:
 
 ## Sandbox
 
-Grok can restrict what the agent process and its spawned commands can access on
+gBuild can restrict what the agent process and its spawned commands can access on
 your filesystem and network using OS-level kernel primitives (Landlock on Linux,
 Seatbelt on macOS). This is off by default.
 
@@ -2167,13 +2161,13 @@ Seatbelt on macOS). This is off by default.
 
 ```bash
 # Run with workspace sandbox (read everywhere, write only to CWD + /tmp)
-grok --sandbox workspace
+gbuild --sandbox workspace
 
 # Read-only mode (agent can read but not write anything)
-grok --sandbox read-only
+gbuild --sandbox read-only
 
 # Maximum isolation (read/write CWD only, no child network)
-grok --sandbox strict
+gbuild --sandbox strict
 ```
 
 ### Built-in Profiles
@@ -2211,12 +2205,12 @@ deny = ["/data/shared-secrets"]
 Use it:
 
 ```bash
-grok --sandbox devbox
+gbuild --sandbox devbox
 ```
 
 ### How It Works
 
-The sandbox is applied to the **entire grok process** at startup using kernel
+The sandbox is applied to the **entire gBuild process** at startup using kernel
 primitives — not per-command wrapping. This means all tool operations are
 covered:
 
@@ -2231,7 +2225,7 @@ model cannot convince the agent to relax restrictions at runtime.
 
 - **Platform support**: Sandbox enforcement uses Landlock on Linux (kernel ≥ 5.13)
   and Seatbelt on macOS. If the sandbox cannot be applied (e.g., unsupported
-  kernel, missing entitlements), Grok logs a warning and continues without
+  kernel, missing entitlements), gBuild logs a warning and continues without
   enforcement.
 
 - **Network restrictions are partial**: Profiles with `restrict_network` block
@@ -2249,11 +2243,11 @@ for telemetry and debugging.
 
 ## Introspection
 
-Use `grok inspect` to see everything Grok discovers in the current directory:
+Use `gbuild inspect` to see everything gBuild discovers in the current directory:
 
 ```bash
-grok inspect          # human-readable output
-grok inspect --json   # machine-readable JSON
+gbuild inspect          # human-readable output
+gbuild inspect --json   # machine-readable JSON
 ```
 
 The output shows all loaded configuration organized by type:
@@ -2273,11 +2267,11 @@ Plugin-provided components appear in their respective sections with a `[plugin: 
 
 ## Claude Code Compatibility
 
-Grok automatically discovers configuration from Claude Code directories alongside native `.grok/` paths. No extra setup is needed.
+gBuild automatically discovers configuration from Claude Code directories alongside native `.grok/` paths. No extra setup is needed.
 
 ### What is picked up
 
-| Component         | Claude Code location                                 | How Grok uses it                 |
+| Component         | Claude Code location                                 | How gBuild uses it               |
 | ----------------- | ---------------------------------------------------- | -------------------------------- |
 | **Skills**        | `.claude/skills/`, `~/.claude/skills/`               | Loaded as skills (same as `.grok/skills/`) |
 | **Agents**        | `.claude/agents/`, `~/.claude/agents/`               | Loaded as subagents              |
@@ -2290,13 +2284,13 @@ Grok automatically discovers configuration from Claude Code directories alongsid
 
 ### Plugin components
 
-Claude Code plugins can provide skills (`skills/`), commands (`commands/`), agents (`agents/`), hooks (`hooks/hooks.json`), MCP servers (`.mcp.json`), and LSP servers (`.lsp.json`). All component types are discovered and used by Grok at runtime.
+Claude Code plugins can provide skills (`skills/`), commands (`commands/`), agents (`agents/`), hooks (`hooks/hooks.json`), MCP servers (`.mcp.json`), and LSP servers (`.lsp.json`). All component types are discovered and used by gBuild at runtime.
 
 ---
 
 ## Built-in Tools
 
-Grok includes these tools by default:
+gBuild includes these tools by default:
 
 | Tool             | Description                                                    |
 | ---------------- | -------------------------------------------------------------- |
@@ -2345,7 +2339,7 @@ When no custom `allowed_domains` is set, the tool permits a default allowlist of
 
 ## Session Persistence
 
-Grok automatically persists conversations to disk. This works across all modes: TUI, headless, and agent stdio.
+gBuild automatically persists conversations to disk. This works across all modes: TUI, headless, and agent stdio.
 
 ### Storage Layout
 
@@ -2382,23 +2376,23 @@ Control session behavior with flags:
 
 ```bash
 # New session each time (default)
-grok -p "Hello"
+gbuild -p "Hello"
 
 # Create or resume a named session
-grok -p "Remember: X=42" -s my-session
-grok -p "What is X?" -s my-session
+gbuild -p "Remember: X=42" -s my-session
+gbuild -p "What is X?" -s my-session
 
 # Resume existing session (errors if not found)
-grok -p "Continue" -r my-session
+gbuild -p "Continue" -r my-session
 
 # Continue most recent session in current directory
-grok -p "What were we doing?" -c
+gbuild -p "What were we doing?" -c
 ```
 
 Session ID is returned in JSON output:
 
 ```bash
-grok -p "Hello" --output-format json | jq -r '.sessionId'
+gbuild -p "Hello" --output-format json | jq -r '.sessionId'
 ```
 
 ### Agent stdio (ACP)
@@ -2478,7 +2472,7 @@ The agent persists all session updates automatically. Clients can reconnect and 
 
 ## Shell Completions
 
-Generate completions for your shell and install them to enable tab completion for `grok` commands and flags.
+Generate completions for your shell and install them to enable tab completion for `gbuild` commands and flags.
 
 **Note:** The paths below are recommended defaults. Some environments do not automatically source the standard locations — you may need to adapt them to your shell framework or distro conventions.
 
@@ -2488,22 +2482,22 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.local/share/bash-completion/completions
-grok completions bash > ~/.local/share/bash-completion/completions/grok
+gbuild completions bash > ~/.local/share/bash-completion/completions/gbuild
 ```
 
 Reload your shell or run `source ~/.bashrc`.
 
-Alternative (Grok-managed location):
+Alternative (gBuild-managed location):
 
 ```bash
 mkdir -p ~/.grok/completions/bash
-grok completions bash > ~/.grok/completions/bash/grok.bash
+gbuild completions bash > ~/.grok/completions/bash/gbuild.bash
 ```
 
 Add to `~/.bashrc`:
 
 ```bash
-[[ -r "$HOME/.grok/completions/bash/grok.bash" ]] && source "$HOME/.grok/completions/bash/grok.bash"
+[[ -r "$HOME/.grok/completions/bash/gbuild.bash" ]] && source "$HOME/.grok/completions/bash/gbuild.bash"
 ```
 
 ### Zsh
@@ -2512,7 +2506,7 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.zsh/completions
-grok completions zsh > ~/.zsh/completions/_grok
+gbuild completions zsh > ~/.zsh/completions/_gbuild
 ```
 
 Add to `~/.zshrc`:
@@ -2523,11 +2517,11 @@ autoload -Uz compinit
 compinit
 ```
 
-Alternative (Grok-managed location):
+Alternative (gBuild-managed location):
 
 ```bash
 mkdir -p ~/.grok/completions/zsh
-grok completions zsh > ~/.grok/completions/zsh/_grok
+gbuild completions zsh > ~/.grok/completions/zsh/_gbuild
 ```
 
 Add to `~/.zshrc`:
@@ -2540,7 +2534,7 @@ compinit
 
 ### After Upgrading
 
-Regenerate completions after upgrading `grok` — the script reflects the CLI of the installed version.
+Regenerate completions after upgrading `gbuild` — the script reflects the CLI of the installed version.
 
 ---
 
@@ -2548,14 +2542,14 @@ Regenerate completions after upgrading `grok` — the script reflects the CLI of
 
 ### Debug logging
 
-Write logs to a file for debugging. The TUI captures stderr, so `RUST_LOG` alone won't produce visible output in production — use `grok --debug` or `GROK_LOG_FILE` instead:
+Write logs to a file for debugging. The TUI captures stderr, so `RUST_LOG` alone won't produce visible output in production — use `gbuild --debug` or `GROK_LOG_FILE` instead:
 
 ```bash
 # Per-session debug log (~/.grok/debug/<sessionId>.txt)
-grok --debug
+gbuild --debug
 
 # Log to a custom path
-GROK_LOG_FILE=/tmp/grok-debug.log grok
+GROK_LOG_FILE=/tmp/grok-debug.log gbuild
 
 # Tail the most-recently-opened session's log in another terminal (Unix symlink)
 tail -f ~/.grok/debug/latest.txt
@@ -2565,17 +2559,17 @@ The `--debug` firehose uses a fixed filter (first-party crates at `debug`) and i
 
 ```bash
 # Debug auth, info for everything else
-GROK_LOG_FILE=/tmp/grok-debug.log RUST_LOG="info,xai_grok_shell::auth=debug" grok
+GROK_LOG_FILE=/tmp/grok-debug.log RUST_LOG="info,xai_grok_shell::auth=debug" gbuild
 ```
 
 ### Authentication fails
 
 ```bash
 # Clear credentials and re-login
-grok login
+gbuild login
 
 # Debug auth issues — check the log for "auth:" entries
-grok --debug-file /tmp/grok-auth.log -p "hello"
+gbuild --debug-file /tmp/grok-auth.log -p "hello"
 grep "auth:" /tmp/grok-auth.log
 ```
 
@@ -2583,7 +2577,7 @@ grep "auth:" /tmp/grok-auth.log
 
 ```bash
 # List available models
-grok models
+gbuild models
 
 # Check config.toml for typos in [model.*] sections
 ```

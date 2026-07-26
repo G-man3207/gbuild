@@ -275,7 +275,7 @@ fn cmd_list(json: bool, available: bool) -> Result<()> {
         }
         println!("{}", serde_json::to_string_pretty(&entries)?);
     } else if repos.is_empty() {
-        println!("No plugins installed. Run `grok plugin install --help` to get started.");
+        println!("No plugins installed. Run `gbuild plugin install --help` to get started.");
     } else {
         for (repo_key, repo) in &repos {
             let mp = repo
@@ -498,7 +498,7 @@ fn cmd_install_marketplace(
                     .unwrap_or(&mref.name);
                 println!(
                     "Plugin \"{}\" is already installed from {}. \
-                     Run `grok plugin update {}` to update it.",
+                     Run `gbuild plugin update {}` to update it.",
                     mref.name, outcome.source_display_name, update_name,
                 );
                 return Ok(());
@@ -607,7 +607,7 @@ fn cmd_enable(name: &str) -> Result<()> {
     if registry.find_plugin(name).is_none() {
         bail!(
             "Plugin \"{name}\" not found.\n\
-               Run `grok plugin list` to see installed plugins."
+               Run `gbuild plugin list` to see installed plugins."
         );
     }
     if let Err(e) = xai_grok_shell::config::remove_disabled_plugin(name) {
@@ -624,7 +624,7 @@ fn cmd_disable(name: &str) -> Result<()> {
     if registry.find_plugin(name).is_none() {
         bail!(
             "Plugin \"{name}\" not found.\n\
-               Run `grok plugin list` to see installed plugins."
+               Run `gbuild plugin list` to see installed plugins."
         );
     }
     if let Err(e) = xai_grok_shell::config::remove_enabled_plugin(name) {
@@ -641,7 +641,7 @@ fn cmd_details(name: &str) -> Result<()> {
     let (repo_key, repo, _) = registry.find_plugin(name).ok_or_else(|| {
         anyhow::anyhow!(
             "Plugin \"{name}\" not found.\n\
-             Run `grok plugin list` to see installed plugins."
+             Run `gbuild plugin list` to see installed plugins."
         )
     })?;
 
@@ -831,7 +831,7 @@ fn marketplace_list(
     } else if sources.is_empty() {
         println!(
             "No marketplace sources configured.\n\
-             Run `grok plugin marketplace add --help` to get started."
+             Run `gbuild plugin marketplace add --help` to get started."
         );
     } else {
         for s in sources {

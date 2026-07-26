@@ -135,7 +135,7 @@ fn allows_filters_by_name_case_insensitively() {
         ..Default::default()
     };
     assert!(!scrub.allows("my_api_key")); // `*KEY*` matches case-insensitively
-    assert!(ShellEnvironmentPolicy::default().allows("MY_API_KEY")); // default allows all
+    assert!(ShellEnvironmentPolicy::default().allows("MY_API_KEY"));
 }
 
 #[test]

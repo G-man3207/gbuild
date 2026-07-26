@@ -20,14 +20,14 @@ Open the session picker to reload a previous session from disk.
 
 ### `/compact [context]`
 
-Compress conversation history to reclaim context-window space. Pass a note to tell Grok what to keep:
+Compress conversation history to reclaim context-window space. Pass a note to tell gBuild what to keep:
 
 ```
 /compact
 /compact keep the auth implementation details
 ```
 
-Grok also auto-compacts once the context window hits 85% (tune it with `[session] auto_compact_threshold_percent`).
+gBuild also auto-compacts once the context window hits 85% (tune it with `[session] auto_compact_threshold_percent`).
 
 ### `/context`
 
@@ -47,7 +47,7 @@ Roll the conversation back to an earlier turn and discard everything after it.
 
 ### `/edit-prompt`
 
-In minimal mode, open an external editor for an empty composer. Grok resolves `$VISUAL`, then `$EDITOR`, then `vi`; command values may include quoted arguments. Saving replaces the draft without sending it, and saving an empty file clears it. The command is hidden outside minimal mode.
+In minimal mode, open an external editor for an empty composer. gBuild resolves `$VISUAL`, then `$EDITOR`, then `vi`; command values may include quoted arguments. Saving replaces the draft without sending it, and saving an empty file clears it. The command is hidden outside minimal mode.
 
 ```
 /edit-prompt
@@ -141,7 +141,7 @@ Toggle vim-style scrollback keys (`j`/`k`, `h`/`l`, `g`/`G`, `y`/`Y`, and so on)
 
 ### `/minimal` and `/fullscreen`
 
-Reopen the current session in the other render mode. `/minimal` (offered while you're in fullscreen) switches to the experimental scrollback-native mode; `/fullscreen` (offered while you're in minimal; alias `/full`) switches back to the standard alt-screen TUI. Both relaunch the pager on the same conversation for this session only — they don't touch `config.toml`, and the relaunch banner reminds you how to switch back. The `--minimal` / `--fullscreen` CLI flags are session-scoped the same way. To make plain `grok` open in a given mode by default, use `/settings` → **Default screen mode** or set `[ui] screen_mode`.
+Reopen the current session in the other render mode. `/minimal` (offered while you're in fullscreen) switches to the experimental scrollback-native mode; `/fullscreen` (offered while you're in minimal; alias `/full`) switches back to the standard alt-screen TUI. Both relaunch the pager on the same conversation for this session only — they don't touch `config.toml`, and the relaunch banner reminds you how to switch back. The `--minimal` / `--fullscreen` CLI flags are session-scoped the same way. To make plain `gbuild` open in a given mode by default, use `/settings` → **Default screen mode** or set `[ui] screen_mode`.
 
 ### `/plan`
 
@@ -238,7 +238,7 @@ Generate a video from a text (or image) description. It plans shots, generates s
 
 ### `/loop [interval] <prompt>`
 
-Run a prompt on a recurring interval. Give the interval as `30m`, `1 hour`, or `every 2 days`; leave it out and Grok will ask.
+Run a prompt on a recurring interval. Give the interval as `30m`, `1 hour`, or `every 2 days`; leave it out and gBuild will ask.
 
 ```
 /loop 30m check deploy status
@@ -253,7 +253,7 @@ Intervals are `Ns` (seconds, minimum 60), `Nm` (minutes), `Nh` (hours), or `Nd` 
 
 ### `/goal`
 
-Set, manage, or check an autonomous goal. Grok works across rounds and only marks the goal complete after an independent evidence review confirms the claim; if that review can't reproduce the result or has no usable evidence, the goal stays active or pauses with concrete gaps.
+Set, manage, or check an autonomous goal. gBuild works across rounds and only marks the goal complete after an independent evidence review confirms the claim; if that review can't reproduce the result or has no usable evidence, the goal stays active or pauses with concrete gaps.
 
 ```
 /goal Migrate the auth module to the new API

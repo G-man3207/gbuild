@@ -1396,6 +1396,9 @@ impl MvpAgent {
     ) -> xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig {
         use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
         let sampling_config = self.sampling_config.borrow();
+        if !crate::util::is_xai_api_bearer_url(&sampling_config.base_url) {
+            return ImageGenConfig::Disabled;
+        }
         let Some(ref api_key) = sampling_config.api_key else {
             return ImageGenConfig::Disabled;
         };
@@ -1440,6 +1443,9 @@ impl MvpAgent {
         use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
         let cfg = self.cfg.borrow();
         if !cfg.resolve_video_gen().value {
+            return VideoGenConfig::Disabled;
+        }
+        if !crate::util::is_xai_api_bearer_url(&self.sampling_config.borrow().base_url) {
             return VideoGenConfig::Disabled;
         }
         let Some(api_key) = self.sampling_config.borrow().api_key.clone() else {
@@ -1603,7 +1609,7 @@ impl MvpAgent {
         if relay_sync_enabled {
             tracing::info!("[grok] Relay sync: ENABLED");
         } else if tui_mode && relay_config_enabled && !has_xai_auth {
-            tracing::info!("[grok] Relay sync: DISABLED (no auth - run 'grok login' first)");
+            tracing::info!("[gBuild] Relay sync: DISABLED (no auth - run 'gbuild login' first)");
         } else if tui_mode && !relay_config_enabled {
             tracing::debug!("Relay sync: DISABLED (not configured in config.toml or env)");
         } else {

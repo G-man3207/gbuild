@@ -81,8 +81,9 @@ fn configured_report_for_terminal(
 fn collect_report_with(
     snapshot: crate::diagnostics::probes::StandaloneDiagnosticSnapshot<'_>,
 ) -> DiagnosticReport {
-    let mut report = crate::diagnostics::view(snapshot.into());
-    crate::diagnostics::apply_voice_probe(&mut report, true);
+    let report = crate::diagnostics::view(snapshot.into());
+    // Voice is disabled until it has service-scoped credentials, so standalone
+    // Doctor should not report microphone availability as a product issue.
     report
 }
 

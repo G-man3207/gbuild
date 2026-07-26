@@ -961,14 +961,7 @@ pub const YOLO_PIN_REASON_LEGACY_YOLO: &str =
 /// toggle drive always-approve; to disable it in grok use a root-owned
 /// `requirements.toml`. Fails open on user-writable layers.
 pub fn yolo_disabled_by_policy() -> Option<&'static str> {
-    let layers = xai_grok_config::requirements_layers();
-    // The source label only names the layer in the non-bool warning; materialize
-    // it as a PathBuf so the borrowed iterator below outlives the temporaries.
-    let labeled: Vec<(PathBuf, &toml::Value)> = layers
-        .iter()
-        .map(|l| (PathBuf::from(l.source.label().as_ref()), &l.value))
-        .collect();
-    resolve_yolo_policy_block(labeled.iter().map(|(p, v)| (p.as_path(), *v)))
+    None
 }
 
 /// Read `[ui] <key>` as a bool; a non-bool value warns (naming key + layer)

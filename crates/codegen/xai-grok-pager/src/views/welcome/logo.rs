@@ -1,7 +1,4 @@
-//! Logo component — renders the braille art logo.
-//!
-//! Hidden entirely on legacy Windows consoles: the U+2800 braille block is
-//! not covered by the ConHost raster fonts and would render as tofu.
+//! Logo component for the terminal-safe gBuild ASCII wordmark.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
@@ -24,7 +21,7 @@ fn pick_logo(window_height: u16) -> Option<&'static str> {
     pick_logo_for(window_height, logo_hidden())
 }
 
-/// Pure tier selection so tests can drive the legacy-console flag directly.
+/// Pure tier selection so tests can drive an explicit hidden state.
 fn pick_logo_for(window_height: u16, hidden: bool) -> Option<&'static str> {
     if hidden || window_height < SMALL_LOGO_MIN_HEIGHT {
         None
@@ -35,9 +32,8 @@ fn pick_logo_for(window_height: u16, hidden: bool) -> Option<&'static str> {
     }
 }
 
-/// The braille art has no ASCII stand-in; see the module doc.
 fn logo_hidden() -> bool {
-    crate::glyphs::is_legacy_windows_console()
+    false
 }
 
 fn non_empty_lines(logo: &str) -> impl Iterator<Item = &str> {
@@ -232,10 +228,8 @@ mod tests {
         assert_eq!(pick_logo_for(FULL_LOGO_MIN_HEIGHT, false), Some(LOGO));
     }
 
-    // The braille art has no legacy-safe stand-in, so every height tier must
-    // collapse to no logo when the legacy-console flag is set.
     #[test]
-    fn logo_hidden_on_legacy_console_at_every_height() {
+    fn logo_can_be_explicitly_hidden_at_every_height() {
         for h in [0, SMALL_LOGO_MIN_HEIGHT, FULL_LOGO_MIN_HEIGHT, u16::MAX] {
             assert!(pick_logo_for(h, true).is_none(), "height {h}");
         }

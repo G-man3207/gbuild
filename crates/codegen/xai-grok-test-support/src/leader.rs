@@ -1,4 +1,4 @@
-//! Leader-mode (`grok agent --leader stdio`) test harness.
+//! Leader-mode (`gbuild agent --leader stdio`) test harness.
 //!
 //! The fixture owns only subprocess handles it created: one initial persistent
 //! leader and each returned stdio client. Lock-file PIDs are observations only;
@@ -21,11 +21,11 @@ use crate::sandbox::TestSandbox;
 
 /// Env var naming the binary that elects/hosts the leader in a two-binary
 /// (version-skew) test. Falls back to [`grok_binary`]'s resolution.
-pub const LEADER_BINARY_ENV: &str = "GROK_BINARY_LEADER";
+pub const LEADER_BINARY_ENV: &str = "GBUILD_BINARY_LEADER";
 
 /// Env var naming the binary for the second (usually newer) client in a
 /// two-binary test. Falls back to [`grok_binary`]'s resolution.
-pub const CLIENT_BINARY_ENV: &str = "GROK_BINARY_CLIENT";
+pub const CLIENT_BINARY_ENV: &str = "GBUILD_BINARY_CLIENT";
 
 fn role_binary(env_key: &str) -> PathBuf {
     if let Ok(path) = std::env::var(env_key) {

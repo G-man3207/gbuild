@@ -1,5 +1,6 @@
 {
     "name": "@xai-official/grok-win32-arm64",
+    "private": true,
     "version": "0.2.0-dev",
     "description": "win32-arm64 binary for @xai-official/grok. Do not install directly; install @xai-official/grok instead.",
     "license": "Apache-2.0",

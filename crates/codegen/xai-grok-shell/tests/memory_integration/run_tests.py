@@ -3,7 +3,7 @@
 """
 Memory System Integration Tests — Full Suite.
 
-Launches grok agent stdio in isolated environments ($HOME override)
+Launches gbuild agent stdio in isolated environments ($HOME override)
 with pre-populated memory files. Tests the entire memory lifecycle:
 indexing, search, embeddings, flush, session-end, compaction, pruning.
 
@@ -21,7 +21,7 @@ Usage:
     python3 crates/codegen/xai-grok-shell/tests/memory_integration/run_tests.py test_fts_search_quality
 
     # Skip build (use pre-built binary):
-    GROK_BINARY=/path/to/xai-grok-pager python3 run_tests.py --fast
+    GBUILD_BINARY=/path/to/gbuild python3 run_tests.py --fast
 """
 
 import json
@@ -266,9 +266,9 @@ class IsolatedEnv:
         return sorted(files)
 
     def spawn_agent(self, extra_env=None):
-        binary = os.environ.get("GROK_BINARY", "grok")
+        binary = os.environ.get("GBUILD_BINARY", "gbuild")
         if not shutil.which(binary) and not os.path.isfile(binary):
-            print(f"{R}grok binary not found: {binary}{N}")
+            print(f"{R}gbuild binary not found: {binary}{N}")
             sys.exit(1)
         env = os.environ.copy()
         env["HOME"] = self.fake_home
@@ -1347,7 +1347,7 @@ def test_multiple_workspace_isolation():
         # Config is already in global ~/.grok/config.toml from env1.write_config
 
         # Start agent in workspace beta (reuse env1's fake home)
-        binary = os.environ.get("GROK_BINARY", "grok")
+        binary = os.environ.get("GBUILD_BINARY", "gbuild")
         env_vars = os.environ.copy()
         env_vars["HOME"] = env1.fake_home
         env_vars["GROK_MEMORY"] = "1"
@@ -2575,13 +2575,13 @@ def find_repo_root():
 
 
 def build_binary():
-    """Build xai-grok-pager with --features dev --release. Returns binary path."""
+    """Build the release gbuild binary. Returns its path."""
     repo = find_repo_root()
     if not repo:
         print(f"{R}Could not find repo root (no Cargo.toml + crates/ above cwd){N}")
         sys.exit(1)
 
-    binary = os.path.join(repo, "target", "release", "xai-grok-pager")
+    binary = os.path.join(repo, "target", "release", "gbuild")
 
     # Find rg for GROK_SHELL_BUNDLE_RG_PATH
     rg = shutil.which("rg")
@@ -2592,9 +2592,17 @@ def build_binary():
     env = os.environ.copy()
     env["GROK_SHELL_BUNDLE_RG_PATH"] = rg
 
-    print(f"{B}Building xai-grok-pager (release + dev)...{N}")
+    print(f"{B}Building gbuild (release)...{N}")
     result = subprocess.run(
-        ["cargo", "build", "-p", "xai-grok-pager", "--features", "dev", "--release"],
+        [
+            "cargo",
+            "build",
+            "-p",
+            "xai-grok-pager-bin",
+            "--bin",
+            "gbuild",
+            "--release",
+        ],
         cwd=repo,
         env=env,
     )
@@ -2611,12 +2619,12 @@ def main():
     print(f"{'=' * 60}{N}\n")
 
     # Build or locate binary
-    if "GROK_BINARY" in os.environ:
-        binary = os.environ["GROK_BINARY"]
-        print(f"Binary: {binary} (from $GROK_BINARY, skipping build)")
+    if "GBUILD_BINARY" in os.environ:
+        binary = os.environ["GBUILD_BINARY"]
+        print(f"Binary: {binary} (from $GBUILD_BINARY, skipping build)")
     else:
         binary = build_binary()
-        os.environ["GROK_BINARY"] = binary
+        os.environ["GBUILD_BINARY"] = binary
 
     if not os.path.isfile(binary):
         print(f"{R}Binary not found: {binary}{N}")

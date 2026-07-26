@@ -2139,7 +2139,7 @@ fn format_session_info_session_auth_ignores_api_key_env() {
         );
     assert!(!text.contains("Also present: XAI_API_KEY"), "{text}");
     assert!(!text.contains("console.x.ai"), "{text}");
-    assert!(!text.contains("grok login"), "{text}");
+    assert!(!text.contains("gbuild login"), "{text}");
 }
 #[test]
 fn format_session_info_api_key_without_env() {
@@ -2152,7 +2152,7 @@ fn format_session_info_api_key_without_env() {
             "{text}"
         );
     assert!(
-            text.contains("Run `grok login` to use your SuperGrok subscription instead."),
+            text.contains("Run `gbuild login` to use your SuperGrok subscription instead."),
             "{text}"
         );
     assert!(!text.contains("grok.com"), "{text}");
@@ -2167,7 +2167,7 @@ fn format_session_info_api_key_auth_notes_console_billing() {
             "{text}"
         );
     assert!(
-            text.contains("Run `grok login` to use your SuperGrok subscription instead."),
+            text.contains("Run `gbuild login` to use your SuperGrok subscription instead."),
             "{text}"
         );
     assert!(!text.contains("Also present: XAI_API_KEY"), "{text}");
@@ -2184,7 +2184,7 @@ fn format_session_info_session_only_manage_at_grok_com() {
         );
     assert!(!text.contains("Also present: XAI_API_KEY"), "{text}");
     assert!(!text.contains("console.x.ai"), "{text}");
-    assert!(!text.contains("grok login"), "{text}");
+    assert!(!text.contains("gbuild login"), "{text}");
 }
 #[test]
 fn format_session_info_shows_conversation_id_when_present() {

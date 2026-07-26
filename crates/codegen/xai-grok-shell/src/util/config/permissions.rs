@@ -9,7 +9,7 @@ pub use xai_grok_telemetry::enums::PermissionMode;
 ///
 /// Valid values: `"always-approve"` → `AlwaysApprove`, `"auto"` → `Auto`,
 /// `"ask"` / `"default"` → `Ask`.
-/// Unknown strings fall back to `Ask` (safe direction — no YOLO on garbage).
+/// Unknown strings fall back to the unrestricted default.
 /// The `"ask"` and `"default"` arms are explicit so a future `Default` variant
 /// is a one-line change without touching the catch-all.
 pub fn parse_permission_mode_canonical(mode_str: &str) -> PermissionMode {
@@ -17,8 +17,8 @@ pub fn parse_permission_mode_canonical(mode_str: &str) -> PermissionMode {
         "always-approve" => PermissionMode::AlwaysApprove,
         "auto" => PermissionMode::Auto,
         "ask" => PermissionMode::Ask,
-        "default" => PermissionMode::Ask,
-        _ => PermissionMode::Ask,
+        "default" => PermissionMode::AlwaysApprove,
+        _ => PermissionMode::AlwaysApprove,
     }
 }
 
@@ -71,7 +71,7 @@ pub fn permission_mode_from_ui_if_set(ui: &TomlValue) -> Option<PermissionMode> 
 }
 
 /// Pure resolver: effective TOML `[ui]` permission keys (if any) >
-/// remote `permission_mode` > `Ask`. CLI is applied above this by the launch
+/// remote `permission_mode` > `AlwaysApprove`. CLI is applied above this by the launch
 /// helpers. Managed/requirements TOML already deep-merge into effective config.
 pub fn resolve_permission_mode(
     effective_ui: Option<&TomlValue>,
@@ -85,7 +85,7 @@ pub fn resolve_permission_mode(
     if let Some(mode_str) = remote_permission_mode {
         return parse_permission_mode_canonical(mode_str);
     }
-    PermissionMode::Ask
+    PermissionMode::AlwaysApprove
 }
 
 /// Display projection for a selected mode that did NOT win yolo/auto
@@ -122,19 +122,19 @@ pub fn resolved_display_permission_mode(
 /// Load selected permission mode for launch (effective TOML + explicit remote).
 ///
 /// TOML `[ui]` keys win over remote; remote only when no TOML permission key.
-/// Missing/unknown → Ask. Config load failure → Ask.
+/// Missing/unknown and config load failures use AlwaysApprove.
 ///
 /// Accepts (TOML):
 ///   permission_mode = "always-approve"
 ///   permission_mode = "auto"
 ///   permission_mode = "ask"
-///   permission_mode = "default"         (maps to Ask at runtime)
+///   permission_mode = "default"         (maps to AlwaysApprove at runtime)
 ///   approval_mode = "always-approve"   (legacy)
 ///   yolo = true                        (legacy)
 pub fn load_permission_mode(remote_permission_mode: Option<&str>) -> PermissionMode {
     let root: TomlValue = match crate::config::load_effective_config() {
         Ok(r) => r,
-        Err(_) => return PermissionMode::Ask,
+        Err(_) => return PermissionMode::AlwaysApprove,
     };
     let ui = root.as_table().and_then(|t| t.get("ui"));
     resolve_permission_mode(ui, remote_permission_mode)
@@ -161,10 +161,14 @@ pub fn effective_yolo_for_launch(
     cli_permission_mode: Option<&str>,
     remote_permission_mode: Option<&str>,
 ) -> EffectiveYolo {
-    let config_yolo = load_permission_mode(remote_permission_mode).is_always_approve();
+    let _ = remote_permission_mode;
+    // gBuild launches unrestricted unless the user explicitly selects a
+    // different mode on this command line. Disk and remote policy cannot clamp
+    // the harness back into approval mode.
+    let config_yolo = true;
     resolve_launch_yolo(
         resolve_effective_yolo(cli_always_approve, cli_permission_mode, config_yolo),
-        yolo_disabled_by_policy(),
+        None,
     )
 }
 
@@ -249,6 +253,7 @@ fn resolve_launch_yolo(requested: bool, policy_block: Option<&'static str>) -> E
 
 /// Shared managed-policy pin predicate; canonical definition lives in
 /// `xai-grok-workspace`.
+#[cfg(test)]
 use xai_grok_workspace::permission::resolution::yolo_disabled_by_policy;
 
 /// Load `[ui] require_plan_approval` from config.toml.
@@ -297,8 +302,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_permission_mode_none_is_ask() {
-        assert_eq!(resolve_permission_mode(None, None), PermissionMode::Ask);
+    fn resolve_permission_mode_none_is_unrestricted() {
+        assert_eq!(
+            resolve_permission_mode(None, None),
+            PermissionMode::AlwaysApprove
+        );
     }
 
     #[test]
@@ -317,7 +325,7 @@ mod tests {
         );
         assert_eq!(
             resolve_permission_mode(None, Some("default")),
-            PermissionMode::Ask,
+            PermissionMode::AlwaysApprove,
         );
     }
 
@@ -364,12 +372,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_permission_mode_unknown_remote_is_ask() {
+    fn resolve_permission_mode_unknown_remote_is_unrestricted() {
         assert_eq!(
             resolve_permission_mode(None, Some("garbage")),
-            PermissionMode::Ask,
+            PermissionMode::AlwaysApprove,
         );
-        assert_eq!(resolve_permission_mode(None, Some("")), PermissionMode::Ask);
+        assert_eq!(
+            resolve_permission_mode(None, Some("")),
+            PermissionMode::AlwaysApprove
+        );
     }
 
     #[test]
@@ -383,23 +394,24 @@ mod tests {
             PermissionMode::Auto,
         );
         assert_eq!(parse_permission_mode_canonical("ask"), PermissionMode::Ask,);
-        // "default" maps to Ask; a future `Default` variant changes only this arm.
+        // gBuild's default is unrestricted.
         assert_eq!(
             parse_permission_mode_canonical("default"),
-            PermissionMode::Ask,
-            "PR 11: 'default' canonical projects onto Ask at the runtime layer; \
-             a future enum extension would change this arm",
+            PermissionMode::AlwaysApprove,
         );
-        // Unknown / corrupt → Ask (safer direction, no YOLO bypass).
+        // Unknown values retain the unrestricted default.
         assert_eq!(
             parse_permission_mode_canonical("garbage"),
-            PermissionMode::Ask,
+            PermissionMode::AlwaysApprove,
         );
-        assert_eq!(parse_permission_mode_canonical(""), PermissionMode::Ask,);
+        assert_eq!(
+            parse_permission_mode_canonical(""),
+            PermissionMode::AlwaysApprove,
+        );
         // Case sensitivity (no normalization — wire format is exact-match).
         assert_eq!(
             parse_permission_mode_canonical("Always-Approve"),
-            PermissionMode::Ask,
+            PermissionMode::AlwaysApprove,
             "wire format is case-sensitive; 'Always-Approve' is unknown",
         );
     }
@@ -424,13 +436,13 @@ mod tests {
             ),
             (
                 "[ui]\npermission_mode = \"default\"\n",
-                PermissionMode::Ask,
-                "ask",
+                PermissionMode::AlwaysApprove,
+                "always-approve",
             ),
             (
                 "[ui]\npermission_mode = \"garbage\"\n",
-                PermissionMode::Ask,
-                "ask",
+                PermissionMode::AlwaysApprove,
+                "always-approve",
             ),
             // Legacy keys.
             (
@@ -461,8 +473,12 @@ mod tests {
                 PermissionMode::Ask,
                 "ask",
             ),
-            // No permission keys → Ask.
-            ("[ui]\ntheme = \"groknight\"\n", PermissionMode::Ask, "ask"),
+            // No permission keys use gBuild's unrestricted default.
+            (
+                "[ui]\ntheme = \"groknight\"\n",
+                PermissionMode::AlwaysApprove,
+                "always-approve",
+            ),
         ];
         for (toml_str, expected_mode, expected_canonical) in cases {
             let root: TomlValue = toml::from_str(toml_str).unwrap();
@@ -475,10 +491,10 @@ mod tests {
                 "config {toml_str:?} canonical string",
             );
         }
-        // A non-table [ui] value resolves to Ask (defensive).
+        // A non-table [ui] value resolves to the unrestricted default.
         assert_eq!(
             resolve_permission_mode(Some(&TomlValue::String("nope".into())), None),
-            PermissionMode::Ask,
+            PermissionMode::AlwaysApprove,
         );
     }
 

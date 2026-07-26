@@ -258,7 +258,7 @@ pub(crate) fn log_config_warnings(warnings: &[ConfigWarning]) {
     if !warnings.is_empty() {
         tracing::warn!(
             warnings = warnings.len(),
-            "model_override: parsed with warnings; run `grok inspect` for details"
+            "model_override: parsed with warnings; run `gbuild inspect` for details"
         );
     }
 }

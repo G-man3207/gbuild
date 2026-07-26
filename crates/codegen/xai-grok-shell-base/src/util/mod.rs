@@ -217,14 +217,27 @@ pub fn kill_process_with_signal(pid: u32, signal: KillSignal) -> std::io::Result
         terminate.map_err(|e| std::io::Error::other(format!("TerminateProcess({pid}): {e}")))
     }
 }
-/// True if `pid` is a grok process; pairs with [`kill_process_by_pid`] to avoid killing a recycled PID.
+fn is_gbuild_executable(path: &str) -> bool {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("gbuild") || name.eq_ignore_ascii_case("gbuild.exe")
+        })
+}
+
+/// True if `pid` is a gBuild process; pairs with [`kill_process_by_pid`] to avoid killing a recycled PID.
 /// Best-effort on macOS/BSD (liveness-only via `kill -0`), exact on Linux (/proc cmdline) and Windows (image path).
 pub fn is_grok_process(pid: u32) -> bool {
     #[cfg(target_os = "linux")]
     {
         let cmdline_path = format!("/proc/{pid}/cmdline");
         match std::fs::read(&cmdline_path) {
-            Ok(data) => String::from_utf8_lossy(&data).contains("grok"),
+            Ok(data) => data
+                .split(|byte| *byte == 0)
+                .next()
+                .map(String::from_utf8_lossy)
+                .is_some_and(|exe| is_gbuild_executable(&exe)),
             Err(_) => false,
         }
     }
@@ -254,9 +267,7 @@ pub fn is_grok_process(pid: u32) -> bool {
         if result.is_err() {
             return false;
         }
-        String::from_utf16_lossy(&buf[..size as usize])
-            .to_ascii_lowercase()
-            .contains("grok")
+        is_gbuild_executable(&String::from_utf16_lossy(&buf[..size as usize]))
     }
     #[cfg(all(not(target_os = "linux"), not(windows)))]
     {
@@ -273,7 +284,7 @@ pub fn is_grok_process(pid: u32) -> bool {
 /// name-matches via `ps` (not liveness-only), so eviction never SIGKILLs a
 /// recycled PID now owned by an unrelated process. Linux/Windows already match
 /// exactly, so this delegates there. Use the permissive [`is_grok_process`] for
-/// operator-driven `grok leaders kill`.
+/// operator-driven `gbuild leader kill`.
 pub fn is_grok_process_strict(pid: u32) -> bool {
     #[cfg(all(not(target_os = "linux"), not(windows)))]
     {
@@ -291,7 +302,7 @@ pub fn is_grok_process_strict(pid: u32) -> bool {
                     .filter(|line| !line.is_empty())
                     .and_then(|line| std::path::Path::new(line).file_name())
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.to_ascii_lowercase().contains("grok"))
+                    .is_some_and(is_gbuild_executable)
             }
             _ => false,
         }
@@ -304,6 +315,15 @@ pub fn is_grok_process_strict(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gbuild_process_match_uses_executable_basename() {
+        assert!(is_gbuild_executable("/tmp/bin/gbuild"));
+        assert!(is_gbuild_executable("C:/tools/gbuild.exe"));
+        assert!(!is_gbuild_executable("/tmp/gbuild-helper"));
+        assert!(!is_gbuild_executable("/tmp/grok"));
+    }
+
     #[test]
     fn test_is_cli_chat_proxy_url_accepts_proxy_subpath() {
         assert!(is_cli_chat_proxy_url(
@@ -400,13 +420,11 @@ mod tests {
         );
     }
     #[test]
-    fn is_grok_process_self_true_impossible_pid_false() {
-        assert!(is_grok_process(std::process::id()));
+    fn is_grok_process_impossible_pid_false() {
         assert!(!is_grok_process(u32::MAX));
     }
     #[test]
-    fn is_grok_process_strict_self_true_impossible_pid_false() {
-        assert!(is_grok_process_strict(std::process::id()));
+    fn is_grok_process_strict_impossible_pid_false() {
         assert!(!is_grok_process_strict(u32::MAX));
     }
     #[cfg(unix)]

@@ -46,12 +46,12 @@ const THEME_CHOICES: &[EnumChoice] = &[
     },
     EnumChoice {
         canonical: "groknight",
-        display: "Grok Night",
+        display: "gBuild Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
         canonical: "grokday",
-        display: "Grok Day",
+        display: "gBuild Day",
         description: "Light theme for bright environments.",
     },
     EnumChoice {
@@ -476,12 +476,12 @@ const VOICE_STT_LANGUAGE_CHOICES: &[EnumChoice] = &[
 const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         canonical: "groknight",
-        display: "Grok Night",
+        display: "gBuild Night",
         description: "Neutral dark with magenta accent.",
     },
     EnumChoice {
         canonical: "grokday",
-        display: "Grok Day",
+        display: "gBuild Day",
         description: "Light theme for bright environments.",
     },
     EnumChoice {
@@ -1544,7 +1544,7 @@ pub fn default_settings() -> Vec<SettingMeta> {
             category: SettingCategory::Advanced,
             owner: SettingOwner::Shell,
             label: "SSH wrap",
-            description: "Show a `/doctor` tip when an SSH session is not using `grok wrap`.",
+            description: "Show a `/doctor` tip when an SSH session is not using `gbuild wrap`.",
             keywords: &[
                 "ssh",
                 "wrap",

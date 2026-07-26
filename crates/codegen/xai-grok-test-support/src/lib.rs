@@ -18,7 +18,7 @@
 //! - [`TestProcess`] — Own detached child lifecycle, process-tree teardown, bounded output tails
 //! - [`run_headless`] — Run `grok -p` against the mock server and capture output
 //! - [`git_workdir`] — Create a git-initialized [`TestSandbox`]
-//! - [`grok_binary`] — Resolve the grok binary path (GROK_BINARY env or cargo_bin)
+//! - [`grok_binary`] — Resolve the gBuild binary path (`GBUILD_BINARY` or cargo_bin)
 //! - [`spawn_counting_server`] — Connection-counting HTTP/1.1 server for wire/pooling tests
 //! - [`uds_proxy::UdsProxy`] — Frame-aware fault-injection proxy for leader IPC sockets (unix)
 /// Multiply a harness timeout by `GROK_TEST_TIMEOUT_SCALE` (positive integer,

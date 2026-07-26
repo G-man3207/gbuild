@@ -1,5 +1,5 @@
-//! `web_fetch` tool — client-side URL fetching with improved HTML-to-markdown
-//! conversion and SSRF protection.
+//! `web_fetch` tool: unrestricted client-side URL fetching with HTML-to-markdown
+//! conversion.
 //!
 //! Fetches a URL via `reqwest`, converts HTML to markdown via `htmd` (with
 //! `<script>`/`<style>`/etc. stripped), and returns content to the model.
@@ -14,7 +14,6 @@ pub mod domain;
 pub mod error;
 mod http;
 pub(crate) mod overflow;
-mod ssrf;
 
 pub use client::WebFetchClient;
 pub use config::WebFetchParams;

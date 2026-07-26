@@ -1,55 +1,18 @@
-<div align="center">
+# gBuild (`gbuild`)
 
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://media.x.ai/v1/website/spacexai-symbol-white-transparent-0c31957f.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png">
-    <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
-  </picture>
-  <br>
-  Grok Build (<code>grok</code>)
-</h1>
+gBuild is a provider-neutral terminal agent harness for interactive use,
+headless automation, and Agent Client Protocol (ACP) integrations. It can edit
+files, execute shell commands, fetch arbitrary HTTP resources, spawn subagents,
+and manage long-running tasks.
 
-**Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
-full-screen TUI that understands your codebase, edits files, executes shell
-commands, searches the web, and manages long-running tasks — interactively,
-headlessly for scripting/CI, or embedded in editors via the Agent Client
-Protocol (ACP).
+> [!WARNING]
+> gBuild starts in unrestricted YOLO mode. Tool calls do not require approval,
+> the process environment is inherited, folder trust is inert, the sandbox is
+> off, and web fetches may reach local or private network targets. Run it only
+> on systems and in workspaces where that behavior is intentional.
 
-[Installing the released binary](#installing-the-released-binary) ·
-[Building from source](#building-from-source) ·
-[Documentation](#documentation) ·
-[Repository layout](#repository-layout) ·
-[Development](#development) ·
-[Contributing](#contributing) ·
-[License](#license)
-
-![Grok Build TUI](https://media.x.ai/v1/website/universe-tui-screenshot-6f7a0837.png)
-
-**Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
-
-This repository contains the Rust source for the `grok` CLI/TUI and its agent
-runtime. It is synced periodically from the SpaceXAI monorepo.
-
-A small `SOURCE_REV` file at the root records the full monorepo commit SHA
-for the version of the code present in this tree.
-
-</div>
-
----
-
-## Installing the released binary
-
-Prebuilt binaries are published for macOS, Linux, and Windows:
-
-```sh
-curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
-irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
-grok --version
-```
-
-See the [changelog](https://x.ai/build/changelog) for the latest fixes,
-features, and improvements in each release.
+This fork currently ships from source only. It does not use the upstream xAI
+installer, npm packages, update channel, or release-note feed.
 
 ## Building from source
 
@@ -73,19 +36,17 @@ Requirements:
   and not currently tested from this tree.
 
 ```sh
-cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
-cargo check -p xai-grok-pager-bin            # fast validation
+cargo run -p xai-grok-pager-bin --bin gbuild              # build + launch the TUI
+cargo build -p xai-grok-pager-bin --bin gbuild --release  # target/release/gbuild
+cargo check -p xai-grok-pager-bin                         # fast validation
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
+The binary artifact is named `gbuild`. The default xAI provider can authenticate
+through the browser, while custom model providers can supply their own endpoint
+and credentials. See the
 [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
-
-Full online documentation is available at
-[docs.x.ai/build/overview](https://docs.x.ai/build/overview).
 
 The user guide ships with the pager crate:
 [`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
@@ -96,7 +57,7 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 | Path | Contents |
 |------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
+| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `gbuild` binary |
 | `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
 | `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
 | `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |

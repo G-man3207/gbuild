@@ -218,22 +218,14 @@ pub(crate) fn voice_mode_config_value() -> Option<bool> {
 /// When `is_api_key` and the only off-source is remote, force on. Requirement /
 /// env / config `false` still wins.
 pub(crate) fn resolve_voice_mode_enabled(
-    requirement: Option<bool>,
-    config: Option<bool>,
-    remote: Option<bool>,
-    is_api_key: bool,
+    _requirement: Option<bool>,
+    _config: Option<bool>,
+    _remote: Option<bool>,
+    _is_api_key: bool,
 ) -> bool {
-    use xai_grok_shell::agent::config::{BoolFlag, ConfigSource};
-    let resolved = BoolFlag::env("GROK_VOICE_MODE")
-        .requirement(requirement)
-        .config(config)
-        .feature_flag(remote)
-        .default(true)
-        .resolve();
-    if resolved.value {
-        return true;
-    }
-    is_api_key && resolved.source == ConfigSource::Remote
+    // Voice currently targets xAI directly but shares the active model's
+    // credential. Keep it off until voice has its own origin-bound secret.
+    false
 }
 /// Resolve from live policy + env + remote + API-key state.
 pub(crate) fn resolve_voice_mode_live(remote: Option<bool>, is_api_key: bool) -> bool {
@@ -248,24 +240,14 @@ pub(crate) fn resolve_voice_mode_live(remote: Option<bool>, is_api_key: bool) ->
 mod voice_gate_tests {
     use super::resolve_voice_mode_enabled;
     #[test]
-    fn api_key_force_on_over_remote_kill_only() {
-        assert!(resolve_voice_mode_enabled(None, None, Some(false), true));
-        assert!(!resolve_voice_mode_enabled(None, None, Some(false), false));
-    }
-    #[test]
-    fn policy_false_outranks_api_key_force_on() {
+    fn voice_stays_disabled_until_credentials_are_service_scoped() {
         assert!(!resolve_voice_mode_enabled(
-            Some(false),
+            Some(true),
             Some(true),
             Some(true),
             true
         ));
-        assert!(!resolve_voice_mode_enabled(
-            None,
-            Some(false),
-            Some(false),
-            true
-        ));
+        assert!(!resolve_voice_mode_enabled(None, None, None, false));
     }
 }
 /// Sticky banner shown while mouse reporting is off, telling the user how to
@@ -831,9 +813,9 @@ fn print_exit_resume_hint(info: &ExitInfo, max_width: usize, w: &mut impl Write)
     }
     let _ = writeln!(w, "Resume this session with:");
     if info.minimal {
-        let _ = writeln!(w, "  grok --minimal --resume {}", info.session_id);
+        let _ = writeln!(w, "  gbuild --minimal --resume {}", info.session_id);
     } else {
-        let _ = writeln!(w, "  grok --resume {}", info.session_id);
+        let _ = writeln!(w, "  gbuild --resume {}", info.session_id);
     }
 }
 /// Screen-mode relaunch failure fallback (same quit tail as plain resume).
@@ -1862,9 +1844,9 @@ mod tests {
         assert!(!args.no_alt_screen);
     }
     #[test]
-    fn cli_command_name_is_grok() {
+    fn cli_command_name_is_gbuild() {
         use clap::CommandFactory;
-        assert_eq!(PagerArgs::command().get_name(), "grok");
+        assert_eq!(PagerArgs::command().get_name(), "gbuild");
     }
     #[test]
     fn cli_help_output_header() {
@@ -1874,9 +1856,9 @@ mod tests {
         assert_eq!(
             first_5,
             vec![
-                "Grok Build TUI",
+                "gBuild unrestricted agent harness",
                 "",
-                "Usage: grok [OPTIONS] [PROMPT] [COMMAND]",
+                "Usage: gbuild [OPTIONS] [PROMPT] [COMMAND]",
                 "",
                 "Arguments:",
             ]
@@ -1922,7 +1904,7 @@ mod tests {
         print_exit_resume_hint(&bare_exit_info("sess-abc", false), 80, &mut buf);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
-            "\nResume this session with:\n  grok --resume sess-abc\n"
+            "\nResume this session with:\n  gbuild --resume sess-abc\n"
         );
     }
     #[test]
@@ -1931,7 +1913,7 @@ mod tests {
         print_exit_resume_hint(&bare_exit_info("sess-abc", true), 80, &mut buf);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
-            "\nResume this session with:\n  grok --minimal --resume sess-abc\n"
+            "\nResume this session with:\n  gbuild --minimal --resume sess-abc\n"
         );
     }
     #[test]
@@ -1956,7 +1938,7 @@ mod tests {
                 "  Pinned the seed; 200 consecutive green runs.\n",
                 "\n",
                 "Resume this session with:\n",
-                "  grok --resume sess-abc\n",
+                "  gbuild --resume sess-abc\n",
             )
         );
     }
@@ -1977,7 +1959,7 @@ mod tests {
         assert!(out.contains(&format!("\n{}…\n", "t".repeat(19))));
         assert!(out.contains(&format!("\n> {}…\n", "p".repeat(17))));
         assert!(out.contains(&format!("\n  {}…\n", "r".repeat(17))));
-        assert!(out.contains("  grok --resume sess-abc\n"));
+        assert!(out.contains("  gbuild --resume sess-abc\n"));
     }
     #[test]
     fn print_relaunch_failure_hint_writes_expected_lines() {

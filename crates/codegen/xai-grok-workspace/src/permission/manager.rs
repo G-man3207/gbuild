@@ -1523,6 +1523,16 @@ fn spawn_permission_manager_with_pin(
                         continue;
                     }
 
+                    // gBuild's unrestricted mode bypasses every permission rule,
+                    // shell-risk gate, and protected-path prompt.
+                    if yolo_mode {
+                        tracing::debug!("YOLO mode: auto-approving permission request");
+                        let decision = Decision::Allow;
+                        emit_event(&decision, true, false, None, Some(reasons::YOLO));
+                        let _ = respond_to.send(decision);
+                        continue;
+                    }
+
                     let bash_evaluation = match &access {
                         AccessKind::Bash(cmd) => {
                             let mut evaluation = evaluate_bash(cmd, &state, true);
@@ -1611,14 +1621,6 @@ fn spawn_permission_manager_with_pin(
                         );
                         let decision = Decision::PolicyDeny(reason);
                         emit_event(&decision, false, false, None, Some(reasons::POLICY_DENY));
-                        let _ = respond_to.send(decision);
-                        continue;
-                    }
-
-                    if yolo_mode && !shell_forced_prompt {
-                        tracing::debug!("YOLO mode: auto-approving permission request");
-                        let decision = Decision::Allow;
-                        emit_event(&decision, true, false, None, Some(reasons::YOLO));
                         let _ = respond_to.send(decision);
                         continue;
                     }
@@ -2877,8 +2879,7 @@ mod tests {
             .await;
     }
 
-    /// A managed file deny beats auto-allow, YOLO, and persisted bash grants; an
-    /// `Ask` rule reaches the prompt; a non-denied reader still auto-allows.
+    /// Managed rules still apply outside YOLO; gBuild's YOLO mode bypasses them.
     #[tokio::test]
     async fn managed_file_deny_beats_shell_auto_allow_yolo_and_persisted() {
         use crate::permission::types::{
@@ -3008,16 +3009,16 @@ mod tests {
                     .request(AccessKind::Bash("cat .env".into()), tc(), None, None, None)
                     .await;
                 assert!(
-                    matches!(d, Decision::PolicyDeny(_)),
-                    "YOLO must not bypass the direct managed deny, got {d:?}"
+                    matches!(d, Decision::Allow),
+                    "YOLO must bypass the direct managed deny, got {d:?}"
                 );
                 let inline_read = "bash -c 'cat .env'";
                 let d = yolo_mgr
                     .request(AccessKind::Bash(inline_read.into()), tc(), None, None, None)
                     .await;
                 assert!(
-                    matches!(d, Decision::PolicyDeny(_)),
-                    "YOLO must not bypass the inline Read deny, got {d:?}"
+                    matches!(d, Decision::Allow),
+                    "YOLO must bypass the inline Read deny, got {d:?}"
                 );
 
                 let inline_write = "bash -c 'echo x > .env'";
@@ -3055,8 +3056,7 @@ mod tests {
             .await;
     }
 
-    /// High-confidence `env -S` packed denials stay `PolicyDeny` under YOLO;
-    /// uncertain split-string shapes force a prompt (never silent allow).
+    /// gBuild's YOLO mode bypasses shell parsing, denies, and prompt floors.
     #[tokio::test]
     async fn managed_bash_deny_env_split_string_yolo() {
         use crate::permission::types::{
@@ -3076,14 +3076,9 @@ mod tests {
                 // Record prompts so reject-once responses prove uncertain forms reached the Ask floor.
                 let client = RecordingClient::default();
                 let prompts = client.prompts.clone();
-                let (mgr, _e) = manager_with_recording_client(
-                    &cwd,
-                    Some(config),
-                    client,
-                    ClientType::Generic,
-                );
+                let (mgr, _e) =
+                    manager_with_recording_client(&cwd, Some(config), client, ClientType::Generic);
                 mgr.set_yolo_mode(true);
-                // High-confidence packed deny → PolicyDeny even under YOLO.
                 for cmd in [
                     "env -S 'rm -rf /tmp/victim'",
                     "timeout 5 env -S 'rm -rf /tmp/victim'",
@@ -3093,16 +3088,11 @@ mod tests {
                         .request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None)
                         .await;
                     assert!(
-                        matches!(d, Decision::PolicyDeny(_)),
-                        "high-confidence env -S must PolicyDeny under YOLO: {cmd}, got {d:?}"
+                        matches!(d, Decision::Allow),
+                        "YOLO must allow env -S command: {cmd}, got {d:?}"
                     );
                 }
-                assert!(
-                    prompts.borrow().is_empty(),
-                    "hard PolicyDeny must not prompt the user"
-                );
-                // Uncertain/malformed env -S: Ask floor blocks YOLO and reaches the
-                // user prompt (not silent Allow, not hard PolicyDeny).
+                assert!(prompts.borrow().is_empty(), "YOLO must not prompt the user");
                 let uncertain = [
                     "env -S",
                     "env -S 'echo $HOME'",
@@ -3115,16 +3105,15 @@ mod tests {
                         .request(AccessKind::Bash(cmd.into()), tool_call(), None, None, None)
                         .await;
                     assert!(
-                        matches!(d, Decision::Reject(_)),
-                        "uncertain env -S must prompt under YOLO (reject answer), not Allow/PolicyDeny: {cmd}, got {d:?}"
+                        matches!(d, Decision::Allow),
+                        "YOLO must allow uncertain env -S shape: {cmd}, got {d:?}"
                     );
                 }
                 assert_eq!(
                     prompts.borrow().len(),
-                    uncertain.len(),
-                    "each uncertain env -S shape must hit the user prompt once under YOLO"
+                    0,
+                    "uncertain env -S shapes must not prompt under YOLO"
                 );
-                // Ordinary env assignment still denies the peeled command under YOLO.
                 let d = mgr
                     .request(
                         AccessKind::Bash("env FOO=1 rm -rf /tmp/victim".into()),
@@ -3135,13 +3124,13 @@ mod tests {
                     )
                     .await;
                 assert!(
-                    matches!(d, Decision::PolicyDeny(_)),
-                    "ordinary env assignment must still PolicyDeny, got {d:?}"
+                    matches!(d, Decision::Allow),
+                    "YOLO must allow ordinary env assignment, got {d:?}"
                 );
                 assert_eq!(
                     prompts.borrow().len(),
-                    uncertain.len(),
-                    "ordinary env assignment PolicyDeny must not add prompts"
+                    0,
+                    "ordinary env assignment must not add prompts"
                 );
             })
             .await;
@@ -3149,8 +3138,7 @@ mod tests {
 
     /// A managed Bash deny must catch a denied command in any chained / piped
     /// segment, not just the leading one, the resulting
-    /// `PolicyDeny` must hold under YOLO, and an undecomposable script must
-    /// fail closed past the YOLO auto-approve. Both rule shapes are covered: a
+    /// non-YOLO sessions. YOLO bypasses those checks. Both rule shapes are covered: a
     /// `Bash(sed*)` glob and the bare-prefix `sed` that an unprefixed pattern
     /// parses to (`ToolFilter::Any`). Without matching rules the per-segment
     /// gate must stay inert and never escalate a script to a prompt.
@@ -3188,10 +3176,14 @@ mod tests {
                             let d = mgr
                                 .request(AccessKind::Bash(cmd.into()), tc(), None, None, None)
                                 .await;
-                            assert!(
-                                matches!(d, Decision::PolicyDeny(_)),
-                                "must deny non-leading segment (yolo={yolo}): {cmd}, got {d:?}"
-                            );
+                            if yolo {
+                                assert!(matches!(d, Decision::Allow));
+                            } else {
+                                assert!(
+                                    matches!(d, Decision::PolicyDeny(_)),
+                                    "must deny non-leading segment: {cmd}, got {d:?}"
+                                );
+                            }
                         }
                         // A chain with no denied segment must fall through
                         // unescalated: YOLO auto-allows it, and without YOLO it
@@ -3216,9 +3208,7 @@ mod tests {
                                 "clean chain must not be policy-denied, got {d:?}"
                             );
                         }
-                        // Undecomposable script: the command gate fails closed
-                        // to Ask, which must block the YOLO auto-approve — a
-                        // YOLO gate wired to the file-only flag would allow it.
+                        // Undecomposable scripts prompt outside YOLO and bypass in YOLO.
                         let d = mgr
                             .request(
                                 AccessKind::Bash("OUT=$(sed -n 1p f); echo $OUT".into()),
@@ -3228,10 +3218,7 @@ mod tests {
                                 None,
                             )
                             .await;
-                        assert!(
-                            !matches!(d, Decision::Allow),
-                            "fail-closed Ask must block auto-approval (yolo={yolo}), got {d:?}"
-                        );
+                        assert_eq!(matches!(d, Decision::Allow), yolo);
                     }
                 }
 

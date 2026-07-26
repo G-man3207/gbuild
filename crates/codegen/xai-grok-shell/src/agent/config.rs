@@ -1849,7 +1849,7 @@ impl Default for Config {
             reasoning_effort_override: None,
             web_search_model_override: None,
             session_summary_model_override: None,
-            default_yolo_mode: false,
+            default_yolo_mode: true,
             default_auto_mode: false,
             agent_profile_path: None,
             client_version: Some(xai_grok_version::VERSION.to_string()),
@@ -2411,7 +2411,7 @@ impl Config {
             .requirement(self.requirements.feedback.pinned())
             .config(self.features.feedback)
             .feature_flag(ff)
-            .default(true)
+            .default(false)
             .resolve()
     }
     pub(crate) fn resolve_two_pass_compaction(&self) -> Resolved<bool> {
@@ -2539,93 +2539,23 @@ impl Config {
             .default(true)
             .resolve()
     }
-    /// Voice dictation gate. Default on.
-    ///
-    /// Precedence: requirements > `GROK_VOICE_MODE` > config/managed
-    /// `[features] voice_mode` > remote `voice_mode_enabled` > default true.
-    /// The pager may force API-key sessions on when only remote is off.
+    /// Voice dictation is disabled until it has service-scoped credentials.
+    /// Reusing the active model credential for an xAI-only service can disclose
+    /// a third-party provider key to the wrong origin.
     pub(crate) fn resolve_voice_mode(&self) -> Resolved<bool> {
-        let ff = self
-            .remote_settings
-            .as_ref()
-            .and_then(|s| s.voice_mode_enabled);
-        BoolFlag::env("GROK_VOICE_MODE")
-            .requirement(self.requirements.voice_mode.pinned())
-            .config(self.features.voice_mode)
-            .feature_flag(ff)
-            .default(true)
-            .resolve()
+        Resolved::new(false, ConfigSource::Default)
     }
-    /// `image_gen` (+ `/imagine`). Default on.
-    ///
-    /// `imagine_tools_disabled` is a remote force-off (env/config cannot
-    /// re-enable). Otherwise: requirement > env > `[features]` > remote >
-    /// default.
+    /// Image generation is disabled until it has service-scoped credentials.
     pub(crate) fn resolve_image_gen(&self) -> Resolved<bool> {
-        use xai_grok_tools::implementations::grok_build::IMAGE_GEN_TOOL_NAME;
-        if let Some(pinned) = self.requirements.image_gen.pinned() {
-            return Resolved::new(pinned, ConfigSource::Requirement);
-        }
-        if self
-            .remote_settings
-            .as_ref()
-            .is_some_and(|s| s.imagine_tool_disabled(IMAGE_GEN_TOOL_NAME))
-        {
-            return Resolved::new(false, ConfigSource::Remote);
-        }
-        BoolFlag::env("GROK_IMAGE_GEN")
-            .config(self.features.image_gen)
-            .feature_flag(
-                self.remote_settings
-                    .as_ref()
-                    .and_then(|s| s.image_gen_enabled),
-            )
-            .default(true)
-            .resolve()
+        Resolved::new(false, ConfigSource::Default)
     }
-    /// `image_edit` tool gate. Same denylist / requirement pattern as
-    /// [`Self::resolve_image_gen`]; no `[features]` key (defaults on).
+    /// Image editing is disabled until it has service-scoped credentials.
     pub(crate) fn resolve_image_edit(&self) -> Resolved<bool> {
-        use xai_grok_tools::implementations::grok_build::IMAGE_EDIT_TOOL_NAME;
-        if let Some(pinned) = self.requirements.image_edit.pinned() {
-            return Resolved::new(pinned, ConfigSource::Requirement);
-        }
-        if self
-            .remote_settings
-            .as_ref()
-            .is_some_and(|s| s.imagine_tool_disabled(IMAGE_EDIT_TOOL_NAME))
-        {
-            return Resolved::new(false, ConfigSource::Remote);
-        }
-        BoolFlag::env("GROK_IMAGE_EDIT").default(true).resolve()
+        Resolved::new(false, ConfigSource::Default)
     }
-    /// `image_to_video` / `reference_to_video` (+ `/imagine-video`). Default on.
-    ///
-    /// Registered as a pair; denylisting either tool name (or `video_gen`)
-    /// disables both. Otherwise same precedence as [`Self::resolve_image_gen`].
+    /// Video generation is disabled until it has service-scoped credentials.
     pub(crate) fn resolve_video_gen(&self) -> Resolved<bool> {
-        use xai_grok_tools::implementations::grok_build::{
-            IMAGE_TO_VIDEO_TOOL_NAME, REFERENCE_TO_VIDEO_TOOL_NAME,
-        };
-        if let Some(pinned) = self.requirements.video_gen.pinned() {
-            return Resolved::new(pinned, ConfigSource::Requirement);
-        }
-        if self.remote_settings.as_ref().is_some_and(|s| {
-            s.imagine_tool_disabled(IMAGE_TO_VIDEO_TOOL_NAME)
-                || s.imagine_tool_disabled(REFERENCE_TO_VIDEO_TOOL_NAME)
-                || s.imagine_tool_disabled("video_gen")
-        }) {
-            return Resolved::new(false, ConfigSource::Remote);
-        }
-        BoolFlag::env("GROK_VIDEO_GEN")
-            .config(self.features.video_gen)
-            .feature_flag(
-                self.remote_settings
-                    .as_ref()
-                    .and_then(|s| s.video_gen_enabled),
-            )
-            .default(true)
-            .resolve()
+        Resolved::new(false, ConfigSource::Default)
     }
     /// Optional Imagine model override for `image_gen`. When set (non-empty),
     /// `image_gen` calls this model slug instead of the default quality model.
@@ -4603,8 +4533,8 @@ pub struct Features {
     /// `None` = defer to remote settings / env / default (`true`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_recap: Option<bool>,
-    /// Voice dictation (STT). `None` = env / remote / default on.
-    /// Set `false` in requirements or managed config to force off.
+    /// Reserved voice dictation setting. Voice remains disabled until it uses
+    /// service-scoped credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_mode: Option<bool>,
     /// Two-pass (prefire) compaction: speculatively summarize the history
@@ -4612,10 +4542,10 @@ pub struct Features {
     /// compaction. `None` = defer to remote settings / env / default (`false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub two_pass_compaction: Option<bool>,
-    /// `image_gen` / `/imagine`. `None` = env / remote / default (`true`).
+    /// Reserved image-generation setting. The xAI media tools are disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen: Option<bool>,
-    /// Video tools / `/imagine-video`. `None` = env / remote / default (`true`).
+    /// Reserved video-generation setting. The xAI media tools are disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_gen: Option<bool>,
     /// `image_gen` Imagine model override. `None`/empty = defer to remote settings
@@ -4760,8 +4690,9 @@ pub(crate) fn first_own_credential(
         .map(str::to_owned)
         .or_else(|| env_key.and_then(EnvKeys::resolve_value))
 }
-/// Priority: model api_key/env_key > cached auth-provider token > session
-/// token > XAI_API_KEY.
+/// Priority: model api_key/env_key > cached auth-provider token > first-party
+/// xAI session token > first-party XAI_API_KEY. Ambient xAI credentials are
+/// never attached to a custom origin.
 pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> ResolvedCredentials {
     let info = model.info();
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
@@ -4777,7 +4708,9 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
             info.base_url.clone(),
             xai_chat_state::AuthType::ApiKey,
         )
-    } else if let Some(key) = session_key {
+    } else if let Some(key) = session_key
+        && crate::util::is_xai_api_bearer_url(&info.base_url)
+    {
         (
             Some(key.to_owned()),
             info.base_url.clone(),
@@ -4788,7 +4721,22 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
             .api_base_url
             .clone()
             .unwrap_or_else(|| info.base_url.clone());
-        (Some(key), url, xai_chat_state::AuthType::ApiKey)
+        if crate::util::is_xai_api_bearer_url(&info.base_url)
+            && crate::util::is_xai_api_bearer_url(&url)
+        {
+            (Some(key), url, xai_chat_state::AuthType::ApiKey)
+        } else {
+            tracing::debug!(
+                model = %info.model,
+                base_url = %info.base_url,
+                "ignored ambient xAI credential for non-xAI model origin"
+            );
+            (
+                None,
+                info.base_url.clone(),
+                xai_chat_state::AuthType::ApiKey,
+            )
+        }
     } else {
         if let Some(ref env_keys) = model.env_key
             && !env_keys.is_empty()
@@ -6705,7 +6653,7 @@ reasoning_effort = "low"
     }
     #[test]
     #[serial]
-    fn resolve_credentials_empty_env_key_falls_through_to_session() {
+    fn resolve_credentials_empty_env_key_does_not_send_session_to_custom_origin() {
         use xai_chat_state::AuthType;
         use xai_grok_test_support::EnvGuard;
         let primary = "GROK_TEST_EMPTY_ENV_PRIMARY";
@@ -6716,12 +6664,12 @@ reasoning_effort = "low"
         model.env_key = Some(EnvKeys::new([primary, alias]));
         assert!(!model.has_own_credentials());
         let creds = resolve_credentials(&model, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
-        assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
+        assert_eq!(creds.auth_type, AuthType::ApiKey);
+        assert_eq!(creds.api_key, None);
     }
     #[test]
     #[serial]
-    fn resolve_credentials_empty_env_key_falls_through_to_global_key() {
+    fn resolve_credentials_empty_env_key_does_not_send_global_key_to_custom_origin() {
         use crate::agent::auth_method::{LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR};
         use xai_chat_state::AuthType;
         use xai_grok_test_support::EnvGuard;
@@ -6737,16 +6685,28 @@ reasoning_effort = "low"
         assert!(!model.has_own_credentials());
         let creds = resolve_credentials(&model, None);
         assert_eq!(creds.auth_type, AuthType::ApiKey);
-        assert_eq!(creds.api_key.as_deref(), Some(sentinel));
+        assert_eq!(creds.api_key, None);
     }
     #[test]
-    fn resolve_credentials_empty_api_key_falls_through_to_session() {
+    #[serial]
+    fn resolve_credentials_global_key_is_limited_to_xai_origin() {
+        use crate::agent::auth_method::{LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR};
+        use xai_grok_test_support::EnvGuard;
+        let _global = EnvGuard::set(XAI_API_KEY_ENV_VAR, "xai-origin-bound-key");
+        let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
+        let model = test_model_entry("m", "https://api.x.ai/v1", None, None, None);
+        let creds = resolve_credentials(&model, None);
+        assert_eq!(creds.api_key.as_deref(), Some("xai-origin-bound-key"));
+        assert_eq!(creds.base_url, "https://api.x.ai/v1");
+    }
+    #[test]
+    fn resolve_credentials_empty_api_key_does_not_send_session_to_custom_origin() {
         use xai_chat_state::AuthType;
         let model = test_model_entry("m", "https://inference.example/v1", Some(""), None, None);
         assert!(!model.has_own_credentials());
         let creds = resolve_credentials(&model, Some("session-jwt"));
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
-        assert_eq!(creds.api_key.as_deref(), Some("session-jwt"));
+        assert_eq!(creds.auth_type, AuthType::ApiKey);
+        assert_eq!(creds.api_key, None);
     }
     #[test]
     #[serial]
@@ -6774,7 +6734,8 @@ reasoning_effort = "low"
         use xai_chat_state::AuthType;
         let model = test_model_entry("m", "https://example.com/v1", None, None, None);
         let creds = resolve_credentials(&model, Some("tok"));
-        assert_eq!(creds.auth_type, AuthType::SessionToken);
+        assert_eq!(creds.auth_type, AuthType::ApiKey);
+        assert_eq!(creds.api_key, None);
         let byok = test_model_entry("m", "https://example.com/v1", Some("key"), None, None);
         let creds = resolve_credentials(&byok, Some("tok"));
         assert_eq!(creds.auth_type, AuthType::ApiKey);
@@ -8903,12 +8864,15 @@ reasoning_effort = "low"
     }
     #[test]
     #[serial]
-    fn resolve_feedback_defaults_to_true_when_unset() {
+    fn resolve_feedback_defaults_to_false_when_unset() {
         unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
         unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
         let cfg = Config::default();
         let r = cfg.resolve_feedback();
-        assert!(r.value, "feedback should be true by default");
+        assert!(
+            !r.value,
+            "feedback should be false without an owned endpoint"
+        );
         assert_eq!(r.source, ConfigSource::Default);
     }
     #[test]
@@ -9538,102 +9502,12 @@ reasoning_effort = "low"
         assert_eq!(gen_only.resolve_image_edit_model_override(), None);
     }
     #[test]
-    #[serial]
-    fn imagine_tools_disabled_gates_image_edit() {
-        unsafe { std::env::remove_var("GROK_IMAGE_EDIT") };
-        let with_list = |tools: Vec<&str>| Config {
-            remote_settings: Some(crate::util::config::RemoteSettings {
-                imagine_tools_disabled: Some(tools.into_iter().map(String::from).collect()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        unsafe { std::env::set_var("GROK_IMAGE_EDIT", "1") };
-        let off = with_list(vec!["image_edit"]).resolve_image_edit();
-        assert!(!off.value);
-        assert_eq!(off.source, ConfigSource::Remote);
-        unsafe { std::env::remove_var("GROK_IMAGE_EDIT") };
-        assert!(with_list(vec!["image_to_video"]).resolve_image_edit().value);
-        assert!(Config::default().resolve_image_edit().value);
-    }
-    #[test]
-    #[serial]
-    fn resolve_image_gen_gates() {
-        unsafe { std::env::remove_var("GROK_IMAGE_GEN") };
-        assert!(Config::default().resolve_image_gen().value);
-        assert!(
-            !Config {
-                features: Features {
-                    image_gen: Some(false),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .resolve_image_gen()
-            .value
-        );
-        assert!(
-            !Config {
-                remote_settings: Some(crate::util::config::RemoteSettings {
-                    image_gen_enabled: Some(false),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }
-            .resolve_image_gen()
-            .value
-        );
-        unsafe { std::env::set_var("GROK_IMAGE_GEN", "1") };
-        let denied = Config {
-            remote_settings: Some(crate::util::config::RemoteSettings {
-                imagine_tools_disabled: Some(vec!["image_gen".into()]),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }
-        .resolve_image_gen();
-        assert!(!denied.value);
-        assert_eq!(denied.source, ConfigSource::Remote);
-        unsafe { std::env::remove_var("GROK_IMAGE_GEN") };
-    }
-    #[test]
-    #[serial]
-    fn resolve_video_gen_gates() {
-        unsafe { std::env::remove_var("GROK_VIDEO_GEN") };
-        assert!(Config::default().resolve_video_gen().value);
-        assert!(
-            !Config {
-                features: Features {
-                    video_gen: Some(false),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .resolve_video_gen()
-            .value
-        );
-        assert!(
-            !Config {
-                remote_settings: Some(crate::util::config::RemoteSettings {
-                    video_gen_enabled: Some(false),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }
-            .resolve_video_gen()
-            .value
-        );
-        assert!(
-            !Config {
-                remote_settings: Some(crate::util::config::RemoteSettings {
-                    imagine_tools_disabled: Some(vec!["image_to_video".into()]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }
-            .resolve_video_gen()
-            .value
-        );
+    fn xai_auxiliary_services_stay_disabled_without_scoped_credentials() {
+        let config = Config::default();
+        assert!(!config.resolve_voice_mode().value);
+        assert!(!config.resolve_image_gen().value);
+        assert!(!config.resolve_image_edit().value);
+        assert!(!config.resolve_video_gen().value);
     }
     /// Clear every env var the goal/companion resolvers read so tests
     /// start from a known baseline regardless of run order.

@@ -68,9 +68,9 @@ pub(super) fn dispatch_send_feedback(app: &mut AppView, text: String) -> Vec<Eff
         return vec![];
     };
 
-    agent.scrollback.push_block(RenderBlock::system(
-        "Thanks for the feedback! The Grok Build team is on it.".to_string(),
-    ));
+    agent
+        .scrollback
+        .push_block(RenderBlock::system("Thanks for the feedback.".to_string()));
 
     vec![Effect::SendFeedback {
         agent_id: id,

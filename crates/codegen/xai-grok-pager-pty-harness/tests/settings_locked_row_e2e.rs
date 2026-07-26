@@ -32,7 +32,7 @@ use xai_grok_pager_pty_harness::{
 
 const ROWS: u16 = 50;
 const COLS: u16 = 120;
-const BANNER_TITLE: &str = "Help improve Grok";
+const BANNER_TITLE: &str = "Help improve gBuild";
 const ROW_LABEL: &str = "Coding data sharing";
 const CHEVRON: &str = "\u{203A}"; // ›
 const ZDR_REASON: &str = "Your team has Zero Data Retention.";

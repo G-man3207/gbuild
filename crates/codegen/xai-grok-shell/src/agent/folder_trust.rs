@@ -515,9 +515,7 @@ mod tests {
         tmp
     }
 
-    /// Simulate a release-stamped build so the folder-trust gate engages: an
-    /// unstamped local/dev build auto-trusts and never gates/persists. Hold the
-    /// returned guard for the test body (drop restores the prior value).
+    /// Simulate a release-stamped build so the folder-trust gate engages.
     fn simulate_release_build() -> EnvGuard {
         EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0.0-sim")
     }
@@ -935,21 +933,14 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn project_scope_allowed_allows_inert_local_build() {
-        // On a local/dev build the whole feature is inert (auto-trust): a folder
-        // with repo-local configs and an empty store is still ALLOWED. Assert only
-        // when compiled unstamped (mirrors the inert tests elsewhere), with
-        // GROK_TEST_VERSION unset so `is_local_build()` is genuinely true.
         let _unset_ver = EnvGuard::unset(xai_grok_version::TEST_VERSION_ENV);
-        if option_env!("GROK_VERSION").is_some() {
-            return; // a release-stamped test binary is not a local build
-        }
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("GROK_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".grok").join("hooks")).unwrap();
         assert!(
             project_scope_allowed(tmp.path()),
-            "inert local/dev build must allow project scope even with configs"
+            "inert gBuild must allow project scope even with configs"
         );
     }
 
@@ -1456,8 +1447,7 @@ mod tests {
         // the feature on via env (highest precedence) so the test does not depend
         // on the host's folder-trust config.
         unsafe { std::env::set_var("GROK_FOLDER_TRUST", "1") };
-        // Simulate a release-stamped build: an unstamped local/dev build (as in CI,
-        // no GROK_VERSION) auto-trusts, so the gate would never engage without this.
+        // The test override engages the otherwise inert trust implementation.
         unsafe { std::env::set_var(xai_grok_version::TEST_VERSION_ENV, "0.0.0-sim") };
         let tmp = repo_tmp();
 
@@ -1528,45 +1518,29 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn local_build_is_inert_launch_trust_auto_trusts() {
-        // On a local/dev build the whole folder-trust system is inert: an
-        // untrusted repo that HAS repo-local configs (here an `.envrc`) with an
-        // EMPTY store still resolves trusted, `resolve_launch_dir_trust` returns
-        // true, and the `.envrc` loads without any grant. Assert the local branch
-        // ONLY when compiled unstamped (mirrors the workspace
-        // `is_local_build_honors_test_version_override`), with GROK_TEST_VERSION
-        // unset so `is_local_build()` is genuinely true. GROK_HOME-isolated so the
-        // real store is never touched.
         let _sim = EnvGuard::unset(xai_grok_version::TEST_VERSION_ENV);
-        if option_env!("GROK_VERSION").is_some() {
-            return; // a release-stamped test binary is not a local build
-        }
         let home = tempfile::tempdir().unwrap();
         let _env = EnvGuard::set("GROK_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".envrc"), "export LOCAL_BUILD_ENVRC=1\n").unwrap();
 
-        // The `.envrc` makes this a gating-eligible repo: on a release build it
-        // would resolve untrusted with an empty store. On a local build it does not.
         assert!(
             repo_configs_present(tmp.path()),
             "the `.envrc` must make this a gating-eligible repo"
         );
         assert!(
             project_scope_allowed(tmp.path()),
-            "local build: inert gate must auto-trust an untrusted repo that has configs"
+            "gBuild's inert gate must auto-trust an untrusted repo with .envrc"
         );
         assert!(
             resolve_launch_dir_trust(tmp.path(), None),
-            "local build: launch-dir verdict must be trusted"
+            "gBuild launch-dir verdict must be trusted"
         );
-
-        // The gated `.envrc` load (the call-site contract) runs because the gate
-        // is inert/trusted, so the var is present with no store grant.
         let env = xai_grok_workspace::envrc::load_envrc_or_empty(tmp.path());
         assert_eq!(
             env.get("LOCAL_BUILD_ENVRC"),
             Some(&"1".to_string()),
-            "local build: `.envrc` must load without any store grant"
+            "gBuild must load .envrc without a trust grant"
         );
     }
 
