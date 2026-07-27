@@ -2151,11 +2151,11 @@ impl Config {
         config.apply_env_overrides();
         Ok(config)
     }
-    /// Populate trust-independent `#[serde(skip)]` subagent base fields.
+    /// Populate `#[serde(skip)]` subagent base fields.
     ///
     /// Must be called after `new_from_toml_cfg` on the **primary startup path**
-    /// before the config is handed to `MvpAgent`. Project definitions are overlaid
-    /// per cwd after that cwd's authoritative folder-trust resolve.
+    /// before the config is handed to `MvpAgent`. Project definitions are
+    /// overlaid per cwd.
     pub fn resolve_subagents(&mut self, cli_flag: bool, raw_config: &toml::Value) {
         let sa = crate::config::SubagentsConfig::resolve(cli_flag, raw_config);
         self.subagents_enabled = sa.enabled;
@@ -3677,6 +3677,14 @@ struct DefaultModelJson {
     model: String,
     name: Option<String>,
     description: Option<String>,
+    /// Provider base URL. Absent = first-party xAI endpoints (session auth).
+    base_url: Option<String>,
+    /// Environment variable(s) holding this provider's API key.
+    env_key: Option<EnvKeys>,
+    /// Credential header scheme (Bearer default; `x-api-key` for Anthropic).
+    auth_scheme: Option<AuthScheme>,
+    /// Static headers sent with every request (e.g. `anthropic-version`).
+    extra_headers: IndexMap<String, String>,
     context_window: Option<NonZeroU64>,
     temperature: Option<f32>,
     top_p: Option<f32>,
@@ -3720,7 +3728,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
         count = entries.len(),
         "loaded default models from embedded JSON"
     );
-    entries
+    let mut catalog: IndexMap<String, ModelEntryConfig> = entries
         .into_iter()
         .map(|m| {
             assert!(
@@ -3732,11 +3740,21 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
             let context_window = m
                 .context_window
                 .unwrap_or_else(|| NonZeroU64::new(200_000).expect("200000 is non-zero"));
+            // Third-party entries carry their own base_url; first-party xAI
+            // entries resolve against the configured endpoints and may use
+            // session auth via api_base_url.
+            let (base_url, api_base_url) = match m.base_url {
+                Some(url) => (url, None),
+                None => (
+                    endpoints.resolve_inference_base_url(),
+                    Some(endpoints.xai_api_base_url.clone()),
+                ),
+            };
             let config = ModelEntryConfig {
                 id: m.id,
                 model: m.model,
-                base_url: endpoints.resolve_inference_base_url(),
-                api_base_url: Some(endpoints.xai_api_base_url.clone()),
+                base_url,
+                api_base_url,
                 name: m.name,
                 description: m.description,
                 context_window,
@@ -3746,13 +3764,13 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 top_p: m.top_p,
                 max_completion_tokens: m.max_completion_tokens,
                 api_backend: m.api_backend,
-                auth_scheme: None,
+                auth_scheme: m.auth_scheme,
                 agent_type: m.agent_type,
                 inference_idle_timeout_secs: m.inference_idle_timeout_secs,
                 max_retries: None,
                 api_key: None,
-                env_key: None,
-                extra_headers: IndexMap::new(),
+                env_key: m.env_key,
+                extra_headers: m.extra_headers,
                 use_concise: false,
                 hidden: m.hidden,
                 supported_in_api: m.supported_in_api,
@@ -3768,7 +3786,31 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
             };
             (key, config)
         })
-        .collect()
+        .collect();
+    sort_catalog_by_credentials(&mut catalog);
+    catalog
+}
+
+/// Rank a built-in catalog entry by credential availability so the default
+/// model lands on a provider the user can actually call: entries with a
+/// resolvable API key first (stable catalog order), first-party xAI entries
+/// next when `XAI_API_KEY` is set, everything else last. With no credentials
+/// at all the JSON order is preserved (grok-4.5 first).
+fn catalog_credential_rank(entry: &ModelEntryConfig) -> u8 {
+    if let Some(env_key) = &entry.env_key
+        && env_key.resolve_value().is_some()
+    {
+        return 0;
+    }
+    if entry.env_key.is_none() && std::env::var("XAI_API_KEY").is_ok() {
+        return 1;
+    }
+    2
+}
+
+/// Order a catalog so credential-backed entries come first (stable).
+fn sort_catalog_by_credentials(catalog: &mut IndexMap<String, ModelEntryConfig>) {
+    catalog.sort_by(|_, a, _, b| catalog_credential_rank(a).cmp(&catalog_credential_rank(b)));
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntryConfig {
@@ -6607,6 +6649,66 @@ reasoning_effort = "low"
     }
     #[test]
     #[serial]
+    fn built_in_catalog_promotes_credential_backed_providers() {
+        use gbuild_test_support::EnvGuard;
+        let provider_keys = [
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENROUTER_API_KEY",
+            "OPENCODE_API_KEY",
+            "KIMI_API_KEY",
+            "ZHIPU_API_KEY",
+            "ZAI_API_KEY",
+            "XAI_API_KEY",
+        ];
+        let _clear: Vec<EnvGuard> = provider_keys.iter().map(|k| EnvGuard::unset(k)).collect();
+
+        let catalog = default_models(&EndpointsConfig::default());
+        assert_eq!(
+            catalog.keys().next().map(String::as_str),
+            Some("grok-4.5"),
+            "no credentials anywhere: JSON order preserved (grok first)"
+        );
+        assert!(
+            catalog.contains_key("claude-sonnet-4-6")
+                && catalog.contains_key("gpt-5.5")
+                && catalog.contains_key("gemini-3.1-pro")
+                && catalog.contains_key("openrouter-auto")
+                && catalog.contains_key("opencode-go-glm-5.1")
+                && catalog.contains_key("kimi-for-coding")
+                && catalog.contains_key("zai-glm-5.1"),
+            "built-in catalog must carry the multi-provider entries"
+        );
+        let claude = catalog.get("claude-sonnet-4-6").unwrap();
+        assert_eq!(claude.base_url, "https://api.anthropic.com/v1");
+        assert_eq!(claude.api_backend, crate::sampling::ApiBackend::Messages);
+        assert_eq!(claude.auth_scheme, Some(AuthScheme::XApiKey));
+        assert_eq!(
+            claude.extra_headers.get("anthropic-version").map(String::as_str),
+            Some("2023-06-01")
+        );
+        assert!(claude.api_base_url.is_none(), "third-party entries must not carry the xAI api_base_url");
+
+        let _anthropic = EnvGuard::set("ANTHROPIC_API_KEY", "sk-ant-test");
+        let catalog = default_models(&EndpointsConfig::default());
+        let first = catalog.keys().next().map(String::as_str).unwrap_or("");
+        assert!(
+            first.starts_with("claude-"),
+            "ANTHROPIC_API_KEY should promote Claude entries to the front, got {first}"
+        );
+
+        let _openai = EnvGuard::set("OPENAI_API_KEY", "sk-test");
+        let catalog = default_models(&EndpointsConfig::default());
+        let first_two: Vec<&str> = catalog.keys().take(2).map(String::as_str).collect();
+        assert!(
+            first_two.iter().all(|k| k.starts_with("claude-") || k.starts_with("gpt-")),
+            "credential-backed providers lead the catalog, got {first_two:?}"
+        );
+    }
+    #[test]
+    #[serial]
     fn first_own_credential_empty_api_key_falls_through_to_env_key() {
         use gbuild_test_support::EnvGuard;
         let var = "GBUILD_TEST_FIRST_OWN_CRED_ENV";
@@ -8506,24 +8608,38 @@ reasoning_effort = "low"
             Some("https://api.x.ai/v1"),
         );
         let sampling = resolve_sampling(&model_no_key, Some("session-key"));
-        assert_eq!(
-            sampling.api_key.as_deref(),
-            Some("session-key"),
-            "session token should beat env key when model has no own credentials"
+        assert!(
+            sampling.api_key.is_none(),
+            "credential isolation: a custom-origin model must not receive the ambient session token"
         );
         assert_eq!(
             sampling.base_url, "https://proxy.api/v1",
-            "session auth should use base_url, not api_base_url"
+            "custom-origin model keeps its own base_url"
         );
         let sampling = resolve_sampling(&model_no_key, None);
+        assert!(
+            sampling.api_key.is_none(),
+            "credential isolation: ambient XAI_API_KEY must not leak to a custom-origin model"
+        );
+        // First-party xAI model (xAI base_url): ambient credentials apply.
+        let xai_model = test_model_entry(
+            "test",
+            "https://api.x.ai/v1",
+            None,
+            None,
+            Some("https://api.x.ai/v1"),
+        );
+        let sampling = resolve_sampling(&xai_model, Some("session-key"));
+        assert_eq!(
+            sampling.api_key.as_deref(),
+            Some("session-key"),
+            "session token should beat env key for a first-party xAI model"
+        );
+        let sampling = resolve_sampling(&xai_model, None);
         assert_eq!(
             sampling.api_key.as_deref(),
             Some("env-key"),
-            "env key should be used when no session and no model credentials"
-        );
-        assert_eq!(
-            sampling.base_url, "https://api.x.ai/v1",
-            "env key should route to api_base_url"
+            "env key should be used for a first-party xAI model when no session"
         );
         unsafe { std::env::remove_var("XAI_API_KEY") };
         let sampling = resolve_sampling(&model_no_key, None);

@@ -37,6 +37,130 @@
           "description": "Quick, fast implementations"
         }
       ]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "name": "Claude Sonnet 4.6",
+      "description": "Anthropic Claude Sonnet 4.6",
+      "base_url": "https://api.anthropic.com/v1",
+      "env_key": "ANTHROPIC_API_KEY",
+      "auth_scheme": "x_api_key",
+      "extra_headers": {
+        "anthropic-version": "2023-06-01"
+      },
+      "context_window": 200000,
+      "api_backend": "messages",
+      "system_prompt_label": "Claude",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "claude-opus-4-6",
+      "model": "claude-opus-4-6",
+      "name": "Claude Opus 4.6",
+      "description": "Anthropic Claude Opus 4.6",
+      "base_url": "https://api.anthropic.com/v1",
+      "env_key": "ANTHROPIC_API_KEY",
+      "auth_scheme": "x_api_key",
+      "extra_headers": {
+        "anthropic-version": "2023-06-01"
+      },
+      "context_window": 200000,
+      "api_backend": "messages",
+      "system_prompt_label": "Claude",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "gpt-5.5",
+      "model": "gpt-5.5",
+      "name": "GPT-5.5",
+      "description": "OpenAI GPT-5.5",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "context_window": 400000,
+      "api_backend": "responses",
+      "system_prompt_label": "GPT-5.5",
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "medium",
+      "auto_compact_threshold_percent": 80,
+      "reasoning_efforts": [
+        {
+          "value": "high",
+          "label": "High Effort",
+          "description": "Highest implementation quality with extensive reasoning"
+        },
+        {
+          "value": "medium",
+          "label": "Medium Effort",
+          "description": "Balanced effort with standard implementation and testing",
+          "default": true
+        },
+        {
+          "value": "low",
+          "label": "Low Effort",
+          "description": "Quick, fast implementations"
+        }
+      ]
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "model": "gemini-3.1-pro",
+      "name": "Gemini 3.1 Pro",
+      "description": "Google Gemini 3.1 Pro (OpenAI-compatible endpoint)",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "env_key": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+      "context_window": 1048576,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "Gemini",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "openrouter-auto",
+      "model": "openrouter/auto",
+      "name": "OpenRouter Auto",
+      "description": "OpenRouter auto-routed model; add specific slugs via [model.*] config",
+      "base_url": "https://openrouter.ai/api/v1",
+      "env_key": "OPENROUTER_API_KEY",
+      "context_window": 200000,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "OpenRouter",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "opencode-go-glm-5.1",
+      "model": "glm-5.1",
+      "name": "GLM 5.1 (OpenCode Go)",
+      "description": "GLM 5.1 via the OpenCode Go gateway",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "env_key": "OPENCODE_API_KEY",
+      "context_window": 202752,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "GLM",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "kimi-for-coding",
+      "model": "kimi-for-coding",
+      "name": "Kimi K2.7 Code",
+      "description": "Moonshot Kimi for Coding (K2.7 Code)",
+      "base_url": "https://api.kimi.com/coding/v1",
+      "env_key": "KIMI_API_KEY",
+      "context_window": 262144,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "Kimi",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "zai-glm-5.1",
+      "model": "glm-5.1",
+      "name": "GLM 5.1 (Z.AI Coding Plan)",
+      "description": "GLM 5.1 via the Z.AI coding plan endpoint",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "env_key": ["ZHIPU_API_KEY", "ZAI_API_KEY"],
+      "context_window": 200000,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "GLM",
+      "auto_compact_threshold_percent": 80
     }
   ]
 }

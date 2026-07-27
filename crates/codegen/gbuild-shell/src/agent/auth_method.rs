@@ -383,7 +383,7 @@ pub fn session_token_auth_gate(
 pub const AUTH_ERROR_SESSION_EXPIRED: &str =
     "Session expired. Run `gbuild login` to re-authenticate.";
 
-pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `gbuild login`, set XAI_API_KEY, or add api_key to ~/.gbuild/config.toml.";
+pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `gbuild login`, set a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, …), or add api_key to ~/.gbuild/config.toml.";
 
 /// Next ACP method id when `cached_token` cannot proceed (missing / expired /
 /// legacy WebLogin), or `None` when fallthrough is forbidden.

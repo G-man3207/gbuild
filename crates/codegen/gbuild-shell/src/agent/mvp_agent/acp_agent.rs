@@ -119,7 +119,6 @@ impl acp::Agent for MvpAgent {
                     ),
                 );
             });
-        gbuild_workspace::trust::migrate_legacy_hook_trust();
         if let Some(auth) = self.auth_manager.current() {
             let user_id = auth.user_id.trim();
             let needs_user_info = user_id.is_empty()
@@ -182,10 +181,6 @@ impl acp::Agent for MvpAgent {
             "code-nav capability initialized from initialize request; \
              index will start lazily on first x.ai/code/* request if eligible"
         );
-        let interactive_trust_client = Self::parse_interactive_trust_capability(
-            &arguments,
-        );
-        self.interactive_trust_client.set(interactive_trust_client);
         let client_supports_mcp_apps = arguments
             .meta
             .as_ref()
@@ -606,7 +601,7 @@ impl acp::Agent for MvpAgent {
                         return Err(
                             acp::Error::auth_required()
                                 .data(
-                                    "Set XAI_API_KEY or add api_key/env_key to config.toml.",
+                                    "Set a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, …) or add api_key/env_key to config.toml.",
                                 ),
                         );
                     }
@@ -947,7 +942,6 @@ impl acp::Agent for MvpAgent {
         let cwd = AbsPathBuf::new(arguments.cwd.clone())
             .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
         let remote_settings = self.cfg.borrow().remote_settings.clone();
-        folder_trust::resolve_and_record(cwd.as_path(), remote_settings.as_ref(), false);
         let initial_client_mcp_servers = arguments.mcp_servers.clone();
         let (mcp_servers, managed_mcp_expires_at) = self
             .resolve_mcp_servers(arguments.mcp_servers, cwd.as_path())
@@ -1193,11 +1187,6 @@ impl acp::Agent for MvpAgent {
         };
         spawn_res?;
         tracing::debug!(session_id = %session_id.0, "new_session: spawn_session_actor");
-        self.maybe_spawn_interactive_trust_prompt(
-            &session_id,
-            cwd.as_path(),
-            remote_settings.as_ref(),
-        );
         let bridge_attach = BridgeAttach::NotAttached;
         let product_analytics = self.product_analytics_enabled();
         if product_analytics || gbuild_telemetry::external::is_active() {
@@ -1366,7 +1355,6 @@ impl acp::Agent for MvpAgent {
         let cwd = AbsPathBuf::new(cwd)
             .map_err(|e| acp::Error::invalid_params().data(e.to_string()))?;
         let remote_settings = self.cfg.borrow().remote_settings.clone();
-        folder_trust::resolve_and_record(cwd.as_path(), remote_settings.as_ref(), false);
         let initial_client_mcp_servers = client_mcp_servers.clone();
         let (mcp_servers, managed_mcp_expires_at) = self
             .resolve_mcp_servers(client_mcp_servers, cwd.as_path())
@@ -1683,10 +1671,11 @@ impl acp::Agent for MvpAgent {
         for rx in reconcile_completions {
             let _ = rx.await;
         }
-        let preloaded_envrc = gbuild_workspace::envrc::load_envrc_or_empty_when_trusted(
-            cwd.as_path(),
-            load_envrc && folder_trust::project_scope_allowed(cwd.as_path()),
-        );
+        let preloaded_envrc = if load_envrc {
+            gbuild_workspace::envrc::load_envrc_or_empty(cwd.as_path())
+        } else {
+            std::collections::HashMap::new()
+        };
         let client_code_nav_enabled = request_meta
             .as_ref()
             .and_then(|m| m.get("codeNavEnabled"))
@@ -1829,11 +1818,6 @@ impl acp::Agent for MvpAgent {
                     });
             }
         }
-        self.maybe_spawn_interactive_trust_prompt(
-            &session_id,
-            cwd.as_path(),
-            remote_settings.as_ref(),
-        );
         let orphan_parent = {
             let sessions = self.sessions.borrow();
             sessions
