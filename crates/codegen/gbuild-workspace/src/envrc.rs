@@ -74,15 +74,11 @@ fn try_direnv_export(dir: &Path) -> Option<HashMap<String, String>> {
     let output = cmd.output().ok()?;
 
     if !output.status.success() {
-        // A direnv refusal is an explicit, separate trust decision. Returning
-        // an empty environment prevents the Bash fallback from executing a file
-        // that direnv deliberately declined to load.
+        // direnv not allowed, or other error
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if direnv_refused(&stderr) {
-            tracing::info!(?dir, "direnv refused .envrc; skipping Bash fallback");
-            return Some(HashMap::new());
+        if !stderr.contains("not allowed") {
+            tracing::debug!(?dir, %stderr, "direnv export failed");
         }
-        tracing::debug!(?dir, %stderr, "direnv export failed");
         return None;
     }
 
@@ -119,10 +115,6 @@ fn try_direnv_export(dir: &Path) -> Option<HashMap<String, String>> {
             None
         }
     }
-}
-
-fn direnv_refused(stderr: &str) -> bool {
-    stderr.contains("not allowed")
 }
 
 /// Load environment by running .envrc in a bash subshell.
@@ -289,11 +281,5 @@ fi
 
         let env = load_envrc(dir.path()).unwrap();
         assert_eq!(env.get("EXISTS"), Some(&"yes".to_string()));
-    }
-
-    #[test]
-    fn direnv_refusal_is_detected() {
-        assert!(direnv_refused("direnv: error .envrc is not allowed"));
-        assert!(!direnv_refused("direnv: command failed"));
     }
 }

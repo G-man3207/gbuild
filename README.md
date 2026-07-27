@@ -6,12 +6,10 @@ files, execute shell commands, fetch arbitrary HTTP resources, spawn subagents,
 and manage long-running tasks.
 
 > [!WARNING]
-> gBuild starts in Ask mode for model-requested tool calls, but Ask is a review
-> aid rather than host isolation. The process environment is inherited, the
-> sandbox is off by default, file tools can access paths outside the workspace,
-> and web fetches may reach local or private network targets. Repository startup
-> configuration is gated by folder trust. Run it only on systems and in
-> workspaces where that behavior is intentional.
+> gBuild starts in unrestricted YOLO mode. Tool calls do not require approval,
+> the process environment is inherited, folder trust is inert, the sandbox is
+> off, and web fetches may reach local or private network targets. Run it only
+> on systems and in workspaces where that behavior is intentional.
 
 This fork currently ships from source only. It does not use the upstream xAI
 installer, npm packages, update channel, or release-note feed.

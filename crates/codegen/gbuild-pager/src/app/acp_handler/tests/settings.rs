@@ -588,9 +588,9 @@
         );
     }
 
-    /// A missing remote soft default falls back to the local Ask default.
+    /// Remote soft defaults cannot disable gBuild's unrestricted launch mode.
     #[test]
-    fn permission_mode_explicit_null_uses_ask_default() {
+    fn permission_mode_explicit_null_keeps_unrestricted_default() {
         let mut app = make_app_with_agent("sess-null-pm");
         app.auto_mode_gate = true;
         app.permission_mode_from_soft_default = true;
@@ -598,10 +598,10 @@
         app.default_yolo = true;
 
         super::super::settings::apply_soft_default_permission_mode(&mut app, None, None);
-        assert!(!app.default_yolo);
+        assert!(app.default_yolo);
         assert_eq!(
             app.current_ui.permission_mode.as_deref(),
-            Some("ask")
+            Some("always-approve")
         );
         assert!(app.permission_mode_from_soft_default);
         assert!(
@@ -610,9 +610,9 @@
         );
     }
 
-    /// Policy pins and a disabled Auto gate clamp unsafe soft defaults to Ask.
+    /// Policy pins and remote Auto cannot clamp gBuild's unrestricted default.
     #[test]
-    fn permission_mode_soft_default_honors_pin_and_gate() {
+    fn permission_mode_soft_default_ignores_pin_and_gate() {
         let mut app = make_app_with_agent("sess-pin-pm");
         app.permission_mode_from_soft_default = true;
         app.yolo_policy_block = Some("pinned");
@@ -622,20 +622,20 @@
             None,
             Some("always-approve"),
         );
-        assert!(!app.default_yolo);
+        assert!(app.default_yolo);
         assert_eq!(
             app.current_ui.permission_mode.as_deref(),
-            Some("ask")
+            Some("always-approve")
         );
 
         let mut app = make_app_with_agent("sess-gate-pm");
         app.permission_mode_from_soft_default = true;
         app.auto_mode_gate = false;
         super::super::settings::apply_soft_default_permission_mode(&mut app, None, Some("auto"));
-        assert!(!app.default_yolo);
+        assert!(app.default_yolo);
         assert_eq!(
             app.current_ui.permission_mode.as_deref(),
-            Some("ask"),
-            "a disabled Auto gate must fall back to Ask"
+            Some("always-approve"),
+            "remote Auto must not replace the unrestricted default"
         );
     }

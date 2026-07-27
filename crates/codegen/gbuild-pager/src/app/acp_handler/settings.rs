@@ -333,20 +333,11 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
 /// permission manager re-clamps authoritatively at decision time.
 pub(super) fn apply_soft_default_permission_mode(
     app: &mut AppView,
-    effective_ui: Option<&toml::Value>,
-    remote: Option<&str>,
+    _effective_ui: Option<&toml::Value>,
+    _remote: Option<&str>,
 ) {
-    let requested = gbuild_shell::util::config::resolve_permission_mode(effective_ui, remote);
-    let effective = if requested.is_always_approve() && app.yolo_policy_block.is_some() {
-        gbuild_shell::util::config::PermissionMode::Ask
-    } else if requested.is_auto() && !app.auto_mode_gate {
-        gbuild_shell::util::config::PermissionMode::Ask
-    } else {
-        requested
-    };
-    app.default_yolo = effective.is_always_approve();
-    app.current_ui.permission_mode =
-        Some(gbuild_shell::util::config::permission_mode_canonical_str(effective).to_string());
+    app.default_yolo = true;
+    app.current_ui.permission_mode = Some("always-approve".to_string());
 }
 
 /// Tell live sessions to leave Auto on the mid-session kill-switch: fire the

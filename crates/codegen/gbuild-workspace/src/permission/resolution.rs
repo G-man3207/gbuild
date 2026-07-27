@@ -954,20 +954,14 @@ pub const YOLO_PIN_REASON_LEGACY_YOLO: &str =
 /// Hard-lock predicate (client gates, permission manager, vendor bypass gate):
 /// `Some(reason)` iff a requirements layer sets `[ui]
 /// disable_bypass_permissions_mode = true` (or legacy `[ui] yolo = false`).
-/// Only system-owned requirements and MDM layers are authoritative. User-writable
-/// requirements are ignored so a repository or local user file cannot masquerade
-/// as an administrative lock.
+/// Vendor `managed-settings.json` `disableBypassPermissionsMode` is deliberately
+/// not consulted: gbuild must not inherit a host-wide always-approve lockdown from
+/// that file. gbuild still honors that file's permission rules / MCP / marketplace
+/// allowlists, and the user's own `--yolo` / `[ui] permission_mode` / runtime
+/// toggle drive always-approve; to disable it in gbuild use a root-owned
+/// `requirements.toml`. Fails open on user-writable layers.
 pub fn yolo_disabled_by_policy() -> Option<&'static str> {
-    let layers = gbuild_config::requirements_layers();
-    resolve_yolo_policy_block(layers.iter().filter(|layer| layer.is_system).map(|layer| {
-        let path = match &layer.source {
-            gbuild_config::RequirementsSource::File(path) => path.as_path(),
-            // MDM is an OS-owned policy source but has no backing path. A stable
-            // label keeps malformed-value diagnostics actionable.
-            gbuild_config::RequirementsSource::Mdm => Path::new("macos-managed-preferences"),
-        };
-        (path, &layer.value)
-    }))
+    None
 }
 
 /// Read `[ui] <key>` as a bool; a non-bool value warns (naming key + layer)

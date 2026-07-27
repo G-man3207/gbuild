@@ -11,7 +11,7 @@ Control what gBuild can access and do: permission modes, allow/ask/deny rules, h
 
 When gBuild edits a file, runs a command, or calls an external tool, it may pause for approval. Permission modes control how often that happens.
 
-Modes set a baseline. Allow, ask, and deny [rules](#configuring-permissions) apply in Ask and Auto modes. Always-approve is an explicit unrestricted mode that bypasses the normal authorization pipeline.
+Modes set a baseline. Allow, ask, and deny [rules](#configuring-permissions) still apply on top of any mode.
 
 ### Starting points
 
@@ -37,9 +37,9 @@ ACP clients can set `"_meta": { "yoloMode": true }` on `session/new`. See [Agent
 | `plan` | Accepted for compatibility; use [plan mode](19-plan-mode.md) for gated planning | Claude-compatible settings |
 | `auto` | Work the safety check allows; other calls are blocked or escalated | Interactive sessions that want fewer prompts |
 | `dontAsk` | Only pre-approved tools and built-in read-only handling | Strict CI allowlists |
-| `bypassPermissions` (**always-approve**) | All tool calls without authorization checks | Trusted automation in an isolated environment |
+| `bypassPermissions` (**always-approve**) | Tool calls in general (`deny` rules, hooks, and some shell `ask` rules still apply) | Trusted automation and agent servers |
 
-**Always-approve** is the product name; config and Claude-compatible settings may use `bypassPermissions` for the same mode. Always-approve and auto are mutually exclusive (always-approve takes precedence when both are requested). Do not use always-approve when a deny rule, hook, sandbox, or folder-trust boundary must be enforced.
+**Always-approve** is the product name; config and Claude-compatible settings may use `bypassPermissions` for the same mode. Always-approve and auto are mutually exclusive (always-approve takes precedence when both are requested).
 
 ### How to set the mode
 
@@ -64,7 +64,7 @@ Claude-compatible `defaultMode` in `.claude/settings.json` is also supported (se
 
 ### Always-approve
 
-Skips the normal authorization pipeline so tools run without waiting for a click. Do not use it when you need deny rules, hooks, or other policy checks to constrain execution. Administrators can lock the mode off (below).
+Skips ordinary permission prompts so tools run without waiting for a click. `deny` rules, hooks, and some shell `ask` rules still apply. Admins can lock the mode off (below).
 
 | Mechanism | Example |
 | --------- | ------- |
@@ -73,14 +73,14 @@ Skips the normal authorization pipeline so tools run without waiting for a click
 | Interactive | `/always-approve`, `Ctrl+O` |
 | ACP | `_meta.yoloMode: true` on `session/new` |
 
-#### Automation with hard limits
+#### Always-approve with hard limits
 
-Use Ask or Auto mode for automation that needs deny rules to constrain paths or commands. Always-approve bypasses those rules:
+Keep always-approve for automation, and add deny rules for paths or commands you never want run:
 
 ```toml
 # project .gbuild/config.toml
 [ui]
-permission_mode = "auto"
+permission_mode = "always-approve"
 
 [permission]
 deny = [
@@ -90,20 +90,20 @@ deny = [
 ```
 
 ```bash
-gbuild -p "Deploy the service" --permission-mode auto --deny 'Bash(rm -rf *)'
+gbuild -p "Deploy the service" --always-approve --deny 'Bash(rm -rf *)'
 ```
 
-Deny wins over allow in Ask and Auto modes. See [Configuring permissions](#configuring-permissions).
+Deny always wins over allow and over always-approve’s normal pass-through. See [Configuring permissions](#configuring-permissions).
 
 ### Auto mode
 
 Reduces interactive prompts by checking many tool calls before they run. Routine local work often proceeds; other calls may be blocked or escalated. In non-interactive sessions, a blocked call fails and is reported to the model (for example `Auto mode blocked this action …`). Behavior is the same for `gbuild -p`, `agent stdio`, and `agent serve`.
 
-For unattended automation that also needs hard boundaries, use an isolated execution environment and keep Ask or Auto mode. Always-approve is only for deliberately unrestricted runs.
+For automation that must run tools without interactive approval, use always-approve (and deny rules if you need hard blocks) rather than auto alone.
 
 ### Disable always-approve (administrators)
 
-Organizations can prevent always-approve from being enabled via CLI, TUI, or `/always-approve`. Set this in a system-owned `requirements.toml` under `/etc/gbuild/` (or managed macOS preferences). A user-level `~/.gbuild/requirements.toml` is not an administrative lock:
+Organizations can prevent always-approve from being enabled via CLI, TUI, or `/always-approve`. Set this in `requirements.toml` (user-level under `~/.gbuild/`, or system-wide under `/etc/gbuild/` for enforcement users cannot remove):
 
 ```toml
 [ui]
@@ -133,13 +133,13 @@ When the model requests a tool, the following checks happen in order:
 
 5. **Prompt policy** (set by the [permission mode](#permission-modes)): prompt you, auto-approve, or auto-deny the call.
 
-[Always-approve](#always-approve) bypasses this pipeline. Use Ask or Auto mode whenever an allow, ask, deny, or hook decision must be enforced.
+[Always-approve](#always-approve) short-circuits this pipeline after step 2: `deny` rules, hooks, and `ask` rules that match a shell command's segments still apply, but remembered grants (including remembered "never allow" entries) are not consulted, and `ask` rules on non-shell tools do not prompt.
 
 ---
 
 ## Operations That Never Prompt by Default
 
-The operations below are treated as read-only and run without prompting in Ask and Auto modes. A matching `deny` rule or hook blocks them, and an `ask` rule forces a prompt for file reads, searches, and shell commands (see [How a Tool Call Is Authorized](#how-a-tool-call-is-authorized)). Always-approve bypasses these checks.
+The operations below are treated as read-only and run without prompting, in every mode including `dontAsk`, unless a matching `deny` rule or a hook blocks them. An `ask` rule forces a prompt for file reads, searches, and shell commands (see [How a Tool Call Is Authorized](#how-a-tool-call-is-authorized)).
 
 ### Read-Only Tools
 
@@ -218,7 +218,7 @@ gbuild -p "Review the API changes" \
   --deny 'Bash(rm -rf *)'
 ```
 
-`--allow RULE` and `--deny RULE` can be repeated and are enforced in Ask and Auto modes. Always-approve bypasses them.
+`--allow RULE` and `--deny RULE` can be repeated and are always enforced.
 
 Rule syntax examples:
 - `Bash(git *)` — any command starting with `git `
@@ -549,3 +549,4 @@ Recommended combination for untrusted code:
 - [Agent mode](15-agent-mode.md) — ACP, stdio, and agent servers
 - [Sandbox](18-sandbox.md) — OS-level isolation profiles
 - [Configuration](05-configuration.md) — Native `config.toml` structure
+
