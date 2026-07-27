@@ -84,6 +84,10 @@ cargo clippy -p <crate>       # lint config: clippy.toml at the repo root
 cargo fmt --all               # rustfmt.toml at the repo root
 ```
 
+> [!NOTE]
+> A few deep async session tests exceed the default 2 MiB test-thread stack
+> in debug builds. Run suites with `RUST_MIN_STACK=33554432 cargo test -p <crate> --lib`.
+
 ## Contributing
 
 > [!NOTE]

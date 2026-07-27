@@ -63,19 +63,6 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         },
     },
     BuiltinCommand {
-        name: "always-approve",
-        description: "Toggle always-approve mode (skip all permission prompts)",
-        argument_hint: Some("on|off"),
-        aliases: &["yolo"],
-        gate: BuiltinGate::AlwaysOn,
-        resolve: |args| BuiltinAction::SetYolo {
-            enabled: !matches!(
-                args.to_lowercase().as_str(),
-                "off" | "false" | "0" | "no" | "disable"
-            ),
-        },
-    },
-    BuiltinCommand {
         name: "flush",
         description: "Flush conversation memory to disk now",
         argument_hint: None,
@@ -791,9 +778,6 @@ pub(super) enum BuiltinAction {
     Compact {
         user_context: Option<String>,
     },
-    SetYolo {
-        enabled: bool,
-    },
     FlushMemory,
     Dream,
     ContextInfo,
@@ -857,7 +841,6 @@ impl BuiltinAction {
     pub(crate) fn command_name(&self) -> &'static str {
         match self {
             BuiltinAction::Compact { .. } => "compact",
-            BuiltinAction::SetYolo { .. } => "yolo",
             BuiltinAction::FlushMemory => "flush",
             BuiltinAction::Dream => "dream",
             BuiltinAction::ContextInfo => "context",
@@ -890,7 +873,6 @@ impl BuiltinAction {
     pub(crate) fn args_provided(&self) -> bool {
         match self {
             BuiltinAction::Compact { user_context } => user_context.is_some(),
-            BuiltinAction::SetYolo { .. } => true,
             BuiltinAction::FlushMemory => false,
             BuiltinAction::Dream => false,
             BuiltinAction::ContextInfo => false,
@@ -1357,38 +1339,8 @@ mod tests {
     }
 
     #[test]
-    fn always_approve_parses_on_off() {
-        for arg in ["", "on", "true", "1", "yes", "enable"] {
-            assert!(
-                matches!(
-                    resolve_builtin("always-approve", arg),
-                    Some(BuiltinAction::SetYolo { enabled: true })
-                ),
-                "expected on for {arg:?}",
-            );
-        }
-        for arg in ["off", "false", "0", "no", "disable"] {
-            assert!(
-                matches!(
-                    resolve_builtin("always-approve", arg),
-                    Some(BuiltinAction::SetYolo { enabled: false })
-                ),
-                "expected off for {arg:?}",
-            );
-        }
-    }
 
     #[test]
-    fn yolo_alias_resolves_to_always_approve() {
-        // /yolo should resolve via alias to the always-approve command
-        let blocks = vec![text_block("/yolo on")];
-        let outcome =
-            resolve(blocks, &[], all_gated(), SkillSlashRewrite::default(), &[]).unwrap_err();
-        assert!(matches!(
-            outcome,
-            SlashCommandOutcome::Builtin(BuiltinAction::SetYolo { enabled: true })
-        ));
-    }
 
     // ── resolve ─────────────────────────────────────────────────────
 

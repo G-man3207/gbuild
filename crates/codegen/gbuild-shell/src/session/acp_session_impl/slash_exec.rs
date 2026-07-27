@@ -15,41 +15,6 @@ impl SessionActor {
                 self.run_compact(user_context).await?;
                 ok_end_turn(0, None)
             }
-            BuiltinAction::SetYolo { enabled } => {
-                let was = self.permissions.is_yolo_mode();
-                self.permissions.set_yolo_mode(enabled);
-                // Report the ACTUAL state, not the request: the manager clamps a
-                // requested ON to OFF under the always-approve pin, so `enabled`
-                // would mis-report a turn-on (event, telemetry, and the log line)
-                // that never happened.
-                let actual = self.permissions.is_yolo_mode();
-                if let Some(actual) = yolo_toggle_report(was, actual) {
-                    self.emit_event(crate::session::events::Event::YoloToggled { enabled: actual });
-                    gbuild_telemetry::session_ctx::log_event(
-                        gbuild_telemetry::events::YoloToggled {
-                            enabled: actual,
-                            previous_state: was,
-                            trigger: gbuild_telemetry::events::YoloTrigger::SlashCommand,
-                        },
-                    );
-                    tracing::info_span!(
-                        "session.permission_mode_changed",
-                        from_mode = crate::session::telemetry::permission_mode_label(was),
-                        to_mode = crate::session::telemetry::permission_mode_label(actual),
-                        trigger = "slash_command",
-                        enabled = actual,
-                    )
-                    .in_scope(|| {});
-                }
-                let status = if actual { "enabled" } else { "disabled" };
-                tracing::info!(
-                    session_id = %self.session_info.id.0,
-                    requested = enabled,
-                    enabled = actual,
-                    "YOLO mode {status} via /yolo slash command",
-                );
-                ok_end_turn(0, None)
-            }
             BuiltinAction::FlushMemory => {
                 if self.memory.is_enabled() {
                     let did_flush = self.run_memory_flush("slash_command", None).await;
