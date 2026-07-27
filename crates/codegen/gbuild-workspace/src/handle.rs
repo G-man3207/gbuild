@@ -596,11 +596,10 @@ impl WorkspaceHandle {
                     &[],
                     &[],
                 );
-            let servers =
-                gbuild_tools::implementations::lsp::config::filter_project_lsp_when_untrusted(
-                    sourced,
-                    config.project_lsp_trusted,
-                );
+            let servers: std::collections::BTreeMap<_, _> = sourced
+                .into_iter()
+                .map(|(name, (cfg, _source))| (name, cfg))
+                .collect();
             if servers.is_empty() {
                 None
             } else {
@@ -3878,7 +3877,6 @@ pub async fn connect_local_workspace(
     allow_insecure_ws: bool,
     status_config: crate::status_config::StatusConfig,
     upload_queue_enabled: bool,
-    project_lsp_trusted: bool,
     diag: Option<DiagHandle>,
     require_explicit_toolset: bool,
     confine_fs_to_workspace_root: bool,
@@ -3921,7 +3919,6 @@ pub async fn connect_local_workspace(
         status_config,
         tool_config,
     );
-    ws_config.project_lsp_trusted = project_lsp_trusted;
     ws_config.require_explicit_toolset = require_explicit_toolset;
     ws_config.confine_fs_to_workspace_root = confine_fs_to_workspace_root;
     if let Ok(dir) = std::env::var("GBUILD_WORKSPACE_SERVER_SKILLS_DIR")
@@ -4477,7 +4474,6 @@ impl WorkspaceHandle {
     pub fn new_minimal(
         cwd: std::path::PathBuf,
         identity: crate::upload::environment::WorkspaceIdentity,
-        project_lsp_trusted: bool,
     ) -> WorkspaceResult<Self> {
         use crate::session::tool_config::WorkspaceSessionContextFactory;
         let config = WorkspaceConfig {
@@ -4498,7 +4494,6 @@ impl WorkspaceHandle {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -4540,7 +4535,6 @@ impl WorkspaceHandle {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         }
@@ -4627,7 +4621,6 @@ pub(crate) mod tests {
             ))),
             server_metadata: None,
             status_config,
-            project_lsp_trusted: true,
             require_explicit_toolset,
             confine_fs_to_workspace_root,
         };
@@ -5797,7 +5790,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -6244,7 +6236,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -6874,7 +6865,6 @@ pub(crate) mod tests {
                 "mode": "remote",
             })),
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7538,7 +7528,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7573,7 +7562,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7630,7 +7618,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7671,7 +7658,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7699,7 +7685,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -7731,7 +7716,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };
@@ -9561,7 +9545,6 @@ pub(crate) mod tests {
             auth_provider: None,
             server_metadata: None,
             status_config: Default::default(),
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
         };

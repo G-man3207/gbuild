@@ -31,10 +31,9 @@ pub fn project_agent_dirs(cwd: Option<&Path>) -> (Vec<PathBuf>, Option<PathBuf>)
 /// Existing project agent dirs (`.gbuild/agents` / `.claude/agents`) under each
 /// dir of a precomputed cwd→git-root chain ([`crate::repo::RepoDirChain`]).
 ///
-/// Single source of the `PROJECT_AGENT_SUBDIRS` walk: the folder-trust detector
-/// (`repo_configs_present`) reuses its one shared chain here so detection can
-/// never drift from discovery (adding a third project-agent dir updates both at
-/// once).
+/// Single source of the `PROJECT_AGENT_SUBDIRS` walk: detection reuses the one
+/// shared chain here so it can never drift from discovery (adding a third
+/// project-agent dir updates both at once).
 pub fn project_agent_dirs_in(chain_dirs: &[PathBuf]) -> Vec<PathBuf> {
     crate::repo::existing_subdirs_along(chain_dirs, PROJECT_AGENT_SUBDIRS)
 }

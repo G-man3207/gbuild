@@ -676,12 +676,12 @@ async fn recap_request_rides_parent_prompt_cache() {
                 .find(|r| r.path.contains("responses"))
                 .expect("a responses request must be recorded");
 
-            let conv_id = recap_req
-                .header("x-grok-conv-id")
-                .expect("recap must send x-grok-conv-id");
+            // x-grok-* identity headers are restricted to first-party xAI
+            // origins; a recap to any other endpoint must not leak the
+            // conversation id.
             assert!(
-                conv_id.starts_with("recap-"),
-                "conv id keeps the recap-* label: {conv_id}"
+                recap_req.header("x-grok-conv-id").is_none(),
+                "recap must not send x-grok-conv-id to a non-first-party origin"
             );
 
             let body = recap_req.body.as_ref().expect("recap body must be JSON");

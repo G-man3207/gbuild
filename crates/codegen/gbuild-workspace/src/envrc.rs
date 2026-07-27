@@ -210,19 +210,6 @@ pub fn load_envrc_or_empty(dir: &Path) -> HashMap<String, String> {
     load_envrc(dir).unwrap_or_default()
 }
 
-/// [`load_envrc_or_empty`] gated on folder-trust: loads the repo-local `.envrc`
-/// (executed in a bash subshell) only when `trusted`, else returns an empty map.
-/// The shell call sites pass the `project_scope_allowed` verdict so the "run a
-/// cloned repo's `.envrc` only when the folder is trusted" rule lives in ONE
-/// place (mirrors `permission::claude_settings::load_claude_env_with_project`).
-pub fn load_envrc_or_empty_when_trusted(dir: &Path, trusted: bool) -> HashMap<String, String> {
-    if trusted {
-        load_envrc_or_empty(dir)
-    } else {
-        HashMap::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

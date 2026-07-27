@@ -628,17 +628,10 @@ async fn handle_plugins_reload(agent: &MvpAgent) -> ExtResult {
     let mut plugins = agent.cfg.borrow().plugins.clone();
     plugins.merge_claude_enabled_plugins(session_cwd.as_deref());
     let disk_cfg = plugins.to_discovery_config();
-    // Folder-trust gates repo-local project plugins (hooks/MCP). Resolve and
-    // record the verdict for this cwd (honoring the real remote), then gate
-    // plugins on it.
-    let project_trusted = session_cwd.as_deref().is_some_and(|c| {
-        let remote_settings = agent.cfg.borrow().remote_settings.clone();
-        crate::agent::folder_trust::resolve_and_record(c, remote_settings.as_ref(), false)
-    });
     // Explicit desktop `x.ai/plugins/reload`: force a full local-install re-copy.
     agent
         .plugin_registry_handle()
-        .reload(session_cwd.as_deref(), &disk_cfg, project_trusted, true);
+        .reload(session_cwd.as_deref(), &disk_cfg, true);
 
     // Eagerly fan out the new registry to every live session: each adopts a
     // cwd-correct snapshot (hooks + MCP + skills + client slash-command
@@ -683,16 +676,6 @@ async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
     let plugin_reg = if let Some(cwd_str) = &req.cwd {
         let cwd = Path::new(cwd_str);
 
-        // Folder-trust gates repo-local project plugins (hooks/MCP). Resolve and
-        // record the verdict for this cwd (honoring the real remote) BEFORE the
-        // plugins-config read below: that read gates its project-paths merge on
-        // the recorded verdict, and a cold cwd (client-supplied, no session
-        // resolve yet) must not first take the gate's remote-less backstop —
-        // that would record a kill-switch-blind deny no later resolve can lift.
-        let remote_settings = agent.cfg.borrow().remote_settings.clone();
-        let project_trusted =
-            crate::agent::folder_trust::resolve_and_record(cwd, remote_settings.as_ref(), false);
-
         // Effective [plugins] config (global + ancestor project configs +
         // vendor compat merge), shared with reload_plugins_impl and the eager
         // fan-out so the menu agrees with each session's registry for this cwd.
@@ -700,9 +683,7 @@ async fn handle_commands_list(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
 
         // Fresh discovery for *this* cwd (includes .gbuild/plugins under it, plus
         // the cli --plugin-dir dirs). Does not mutate the shared snapshot.
-        agent
-            .plugin_registry_handle()
-            .build_for_cwd(cwd, &disk_cfg, &[], project_trusted)
+        agent.plugin_registry_handle().build_for_cwd(cwd, &disk_cfg, &[])
     } else {
         // No cwd: global/user skills only (pre-session case). Use the boot snapshot.
         agent.plugin_registry_handle().snapshot()

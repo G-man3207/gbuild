@@ -115,14 +115,6 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         resolve: |_args| BuiltinAction::ContextInfo,
     },
     BuiltinCommand {
-        name: "hooks-trust",
-        description: "Trust this project for hook execution",
-        argument_hint: None,
-        aliases: &[],
-        gate: BuiltinGate::Hooks,
-        resolve: |_args| BuiltinAction::HooksTrust,
-    },
-    BuiltinCommand {
         name: "hooks-list",
         description: "Show hooks loaded in this session",
         argument_hint: None,
@@ -149,14 +141,6 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         resolve: |args| BuiltinAction::HooksRemove {
             path: args.trim().to_string(),
         },
-    },
-    BuiltinCommand {
-        name: "hooks-untrust",
-        description: "Remove trust for the current project",
-        argument_hint: None,
-        aliases: &[],
-        gate: BuiltinGate::Hooks,
-        resolve: |_args| BuiltinAction::HooksUntrust,
     },
     BuiltinCommand {
         name: "plugins",
@@ -817,7 +801,6 @@ pub(super) enum BuiltinAction {
     FlushMemory,
     Dream,
     ContextInfo,
-    HooksTrust,
     HooksList,
     HooksAdd {
         path: String,
@@ -825,7 +808,6 @@ pub(super) enum BuiltinAction {
     HooksRemove {
         path: String,
     },
-    HooksUntrust,
     PluginsList,
     PluginsReload,
     PluginsTrust,
@@ -883,11 +865,9 @@ impl BuiltinAction {
             BuiltinAction::FlushMemory => "flush",
             BuiltinAction::Dream => "dream",
             BuiltinAction::ContextInfo => "context",
-            BuiltinAction::HooksTrust => "hooks-trust",
             BuiltinAction::HooksList => "hooks-list",
             BuiltinAction::HooksAdd { .. } => "hooks-add",
             BuiltinAction::HooksRemove { .. } => "hooks-remove",
-            BuiltinAction::HooksUntrust => "hooks-untrust",
             BuiltinAction::PluginsList => "plugins-list",
             BuiltinAction::PluginsReload => "plugins-reload",
             BuiltinAction::PluginsTrust => "plugins-trust",
@@ -918,11 +898,9 @@ impl BuiltinAction {
             BuiltinAction::FlushMemory => false,
             BuiltinAction::Dream => false,
             BuiltinAction::ContextInfo => false,
-            BuiltinAction::HooksTrust => false,
             BuiltinAction::HooksList => false,
             BuiltinAction::HooksAdd { .. } => true,
             BuiltinAction::HooksRemove { .. } => true,
-            BuiltinAction::HooksUntrust => false,
             BuiltinAction::PluginsList => false,
             BuiltinAction::PluginsReload => false,
             BuiltinAction::PluginsTrust => false,
@@ -1681,11 +1659,9 @@ mod tests {
                 "dream",
                 "memory",
                 "context",
-                "hooks-trust",
                 "hooks-list",
                 "hooks-add",
                 "hooks-remove",
-                "hooks-untrust",
                 "plugins",
                 "reload-plugins",
                 "session-info",
@@ -1770,11 +1746,9 @@ mod tests {
             ..CommandAvailability::all_enabled()
         });
         for n in [
-            "hooks-trust",
             "hooks-list",
             "hooks-add",
             "hooks-remove",
-            "hooks-untrust",
             "plugins",
             "reload-plugins",
         ] {
@@ -2279,8 +2253,6 @@ mod tests {
             "goal",
             "loop",
             "hooks-list",
-            "hooks-trust",
-            "hooks-untrust",
             "hooks-add",
             "hooks-remove",
             "plugins",

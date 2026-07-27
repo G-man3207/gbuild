@@ -57,7 +57,7 @@ use xai_acp_lib::{
 use super::actions::{Action, TaskResult};
 use super::agent::AgentState;
 use super::agent_view::AgentView;
-use super::app_view::{AppView, AuthState, TrustState};
+use super::app_view::{AppView, AuthState};
 use super::{acp_handler, dispatch, effects};
 use crate::acp::leader_bridge::bridge_channels;
 use crate::acp::model_state::ModelState;
@@ -596,7 +596,6 @@ impl PagerLeaderCluster {
         let mut app = AppView::new(tx, ModelState::default(), Vec::new());
         app.leader_mode = true;
         app.auth_state = AuthState::Done;
-        app.trust_state = TrustState::Done;
         app.project_picker_shown = true;
         app.cwd = self.workdir.path().to_path_buf();
 

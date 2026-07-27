@@ -247,10 +247,7 @@ impl ToolContext {
         terminal: Arc<dyn AsyncTerminalRunner>,
         hunk_tracker_handle: HunkTrackerHandle,
     ) -> Self {
-        let session_env = gbuild_workspace::envrc::load_envrc_or_empty_when_trusted(
-            cwd.as_path(),
-            crate::agent::folder_trust::project_scope_allowed(cwd.as_path()),
-        );
+        let session_env = gbuild_workspace::envrc::load_envrc_or_empty(cwd.as_path());
         Self {
             gateway,
             session_id,

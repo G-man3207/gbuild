@@ -19,7 +19,7 @@ use super::voice::{merge_prompt_with_voice_interim, voice_stop_on_submit};
 use crate::app::actions::{Action, Effect};
 use crate::app::agent::AgentId;
 use crate::app::agent_view::AgentView;
-use crate::app::app_view::{ActiveView, AppView, DashboardReturn, TrustState};
+use crate::app::app_view::{ActiveView, AppView, DashboardReturn};
 use agent_client_protocol as acp;
 
 // ---------------------------------------------------------------------------
@@ -125,13 +125,6 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
     // visually dismisses the auth UI. Toast and stay put.
     if !matches!(app.auth_state, crate::app::app_view::AuthState::Done) {
         app.show_toast("Sign in to open the dashboard");
-        return vec![];
-    }
-    // Same rationale for folder trust: opening the dashboard would visually
-    // dismiss the trust question with the folder still unanswered. Toast and
-    // stay put (mirrors the auth gate above) so the question is resolved first.
-    if matches!(app.trust_state, TrustState::Pending { .. }) {
-        app.show_toast("Answer the folder-trust question to open the dashboard");
         return vec![];
     }
     // Edge case 24: idempotent toggle — opening from the dashboard view

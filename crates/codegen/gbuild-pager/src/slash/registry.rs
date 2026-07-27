@@ -488,8 +488,6 @@ impl CommandRegistry {
             // Block individual hook/plugin shell commands — the pager's
             // /hooks and /plugins builtins provide a unified modal instead.
             "hooks-list",
-            "hooks-trust",
-            "hooks-untrust",
             "hooks-add",
             "hooks-remove",
             "reload-plugins",

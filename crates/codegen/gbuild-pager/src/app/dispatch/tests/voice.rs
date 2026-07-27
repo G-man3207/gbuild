@@ -44,7 +44,7 @@ fn voice_slash_submit_starts_recording_in_plan_mode() {
 
 #[test]
 fn voice_on_welcome_noop_when_startup_gated() {
-    // Auth/folder-trust unresolved: voice must not create a session (that would
+    // Auth unresolved: voice must not create a session (that would
     // bypass the startup gate) — it stays a silent no-op on welcome.
     let mut app = test_app();
     app.auth_state = AuthState::Pending { error: None };

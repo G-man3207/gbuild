@@ -6,10 +6,14 @@ files, execute shell commands, fetch arbitrary HTTP resources, spawn subagents,
 and manage long-running tasks.
 
 > [!WARNING]
-> gBuild starts in unrestricted YOLO mode. Tool calls do not require approval,
-> the process environment is inherited, folder trust is inert, the sandbox is
-> off, and web fetches may reach local or private network targets. Run it only
-> on systems and in workspaces where that behavior is intentional.
+> gBuild runs unrestricted — there are no approval prompts, ever. Tool calls
+> execute immediately with the permissions of the user account that started
+> the process: the environment is inherited, repo-local configuration (hooks,
+> MCP servers, plugins, `.envrc`) always loads, the sandbox is off, and web
+> fetches may reach local or private network targets. `[permission]` deny
+> rules are the one guardrail that still binds. Run it only on systems and in
+> workspaces where that behavior is intentional; for untrusted repositories or
+> unattended automation, run it inside a container, VM, or remote sandbox.
 
 This fork currently ships from source only. It does not use the upstream xAI
 installer, npm packages, update channel, or release-note feed.

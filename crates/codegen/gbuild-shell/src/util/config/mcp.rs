@@ -93,9 +93,8 @@ pub fn get_mcp_server_config_with_project(
 
 /// Scope tags for an MCP server definition. Single source of truth shared by
 /// the scope producers ([`mcp_server_scope`],
-/// [`load_mcp_server_configs_with_project`]) and the folder-trust gate that
-/// filters project-scoped names, so a retag can't silently desync the gate.
-/// `MCP_SCOPE_PROJECT` is `pub(crate)` for the gate consumer in `folder_trust`;
+/// [`load_mcp_server_configs_with_project`]).
+/// `MCP_SCOPE_PROJECT` is `pub(crate)` for crate-internal scope tagging;
 /// `MCP_SCOPE_USER` stays private (only used here).
 pub(crate) const MCP_SCOPE_PROJECT: &str = "project";
 const MCP_SCOPE_USER: &str = "user";
@@ -970,8 +969,8 @@ pub(crate) fn parse_mcp_servers_from_toml(root: &TomlValue) -> IndexMap<String, 
 
 // ── .mcp.json support ────────────────────────────────────────────────
 
-// `.mcp.json` discovery moved to `gbuild-workspace` (client-side, shared with
-// the folder-trust gate); re-exported so `crate::util::config::*` paths keep working.
+// `.mcp.json` discovery lives in `gbuild-workspace`; re-exported so
+// `crate::util::config::*` paths keep working.
 pub use gbuild_workspace::project_config::{
     MCP_JSON_FILENAME, find_mcp_json_files, mcp_json_candidate_paths,
 };

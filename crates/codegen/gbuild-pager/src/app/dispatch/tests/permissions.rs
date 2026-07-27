@@ -3,45 +3,6 @@
 use super::*;
 
 /// `ConfirmResetSetting
-/// { Reset }` on `permission_mode` (the security-critical SHELL Enum)
-/// dispatches `Action::SetPermissionMode(PermissionModeKind::Ask)`
-/// (the typed Action, per the modal-commit ↔ typed-setter
-/// rule) via recursive dispatch. Emits
-/// `Effect::PersistPermissionMode` — verifies the recursive
-/// dispatch reaches the YOLO pipeline through
-/// `set_permission_mode` rather than the legacy `set_yolo_mode`.
-#[test]
-fn dispatch_confirm_reset_setting_reset_dispatches_set_permission_mode_for_permission_mode() {
-    use crate::views::modal::ResetSettingsResult;
-    let mut app = test_app_with_agent();
-    // Flip yolo on first (default is OFF = "ask").
-    let _ = dispatch(Action::SetYoloMode(true), &mut app);
-    assert!(app.agents[&AgentId(0)].session.is_yolo());
-
-    setup_reset_confirm_open(&mut app, "permission_mode");
-
-    let effects = dispatch(
-        Action::ConfirmResetSetting {
-            choice: ResetSettingsResult::Reset,
-        },
-        &mut app,
-    );
-
-    // Recursive dispatch into Action::SetYoloMode(false) emits a
-    // PersistPermissionMode effect.
-    let has_persist = effects
-        .iter()
-        .any(|e| matches!(e, Effect::PersistPermissionMode { .. }));
-    assert!(
-        has_persist,
-        "Reset of permission_mode must emit PersistPermissionMode, got {effects:?}",
-    );
-    // Agent's yolo flag is reset to default (off).
-    assert!(
-        !app.agents[&AgentId(0)].session.is_yolo(),
-        "agent.session.yolo_mode must be reset to default (off)",
-    );
-}
 
 /// **Security-critical:** YOLO ON must drain the per-agent
 /// `permission_queue` with `AllowOnce` responses. If this drain

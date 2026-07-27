@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::app_view::{AuthMode, AuthState, SessionPickerEntry, TrustState};
+use crate::app::app_view::{AuthMode, AuthState, SessionPickerEntry};
 use crate::startup::StartupWarning;
 use crate::theme::Theme;
 use crate::views::prompt_widget::{PromptFlag, PromptInfo, PromptWidget};
@@ -589,9 +589,6 @@ fn render_prompt_and_version(
 pub struct WelcomeRenderParams<'a> {
     pub prompt_focus: WelcomePromptFocus,
     pub auth_state: &'a AuthState,
-    /// Folder-trust state. When `Pending` (auth done, access granted), the
-    /// welcome screen renders the trust question instead of the normal prompt.
-    pub trust_state: &'a TrustState,
     pub login_label: Option<&'a str>,
     pub auth_code_input: &'a str,
     pub auth_code_cursor_byte: usize,
@@ -695,7 +692,13 @@ pub fn render_welcome(
             let label = params.login_label.unwrap_or("grok.com");
             let login_text = format!("Login with {}", label);
             let menu = [("l", login_text.as_str()), ("q", "Quit")];
-            let msg = error.as_deref().map(|e| (e, theme.accent_error));
+            let msg = match error.as_deref() {
+                Some(e) => Some((e, theme.accent_error)),
+                None => Some((
+                    "or set an API key: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, …",
+                    theme.gray_dim,
+                )),
+            };
             let info = PromptInfo {
                 model_name: params.model_name,
                 flags: params.flags,
@@ -805,35 +808,15 @@ pub fn render_welcome(
                 privacy_banner_legal_rect: None,
             }
         }
-        // Folder-trust question: shown after auth, before any session is
-        // created, when the cwd has untrusted repo-local config. Mirrors the
-        // Pending login screen. Skipped under ZDR/access gates (the ZDR arm
-        // above and the !has_access arm below) since those already block
-        // sessions. The `if let` destructure makes the `Pending`-only render
-        // structurally exhaustive (no `unreachable!`).
-        AuthState::Done if params.has_access => {
-            if let TrustState::Pending { workspace } = params.trust_state {
-                render_welcome_trust(
-                    content_area,
-                    buf,
-                    &theme,
-                    workspace,
-                    params.selected,
-                    h_margin,
-                    params.compact,
-                )
-            } else {
-                render_welcome_done(
-                    content_area,
-                    buf,
-                    &theme,
-                    params,
-                    prompt,
-                    session_picker_state,
-                    h_margin,
-                )
-            }
-        }
+        AuthState::Done if params.has_access => render_welcome_done(
+            content_area,
+            buf,
+            &theme,
+            params,
+            prompt,
+            session_picker_state,
+            h_margin,
+        ),
         AuthState::Done => render_welcome_done(
             content_area,
             buf,
@@ -932,88 +915,6 @@ fn render_welcome_blocked(
         },
     );
     (menu_rects, post_flush_escapes)
-}
-
-/// Render the folder-trust question. Mirrors [`render_welcome_blocked`]'s
-/// stacked layout (logo + message + menu + version badge), but the message is a
-/// multi-line block showing the workspace path and the warning that gBuild
-/// may run or modify contents in this directory (a security risk). The y/N
-/// answer is handled by the welcome input interceptor, so this only paints;
-/// `menu_rects` are returned for parity with the other welcome arms.
-fn render_welcome_trust(
-    content_area: Rect,
-    buf: &mut Buffer,
-    theme: &Theme,
-    workspace: &std::path::Path,
-    selected: Option<usize>,
-    h_margin: u16,
-    compact: bool,
-) -> WelcomeRenderResult {
-    let menu_items = [("y", "Yes, proceed"), ("n", "No, quit")];
-    let lines = vec![
-        Line::from(Span::styled(
-            "Do you trust the contents of this directory?",
-            Style::default().fg(theme.gray_bright),
-        ))
-        .alignment(Alignment::Center),
-        Line::from(Span::styled(
-            workspace.display().to_string(),
-            Style::default().fg(theme.accent_user),
-        ))
-        .alignment(Alignment::Center),
-        Line::default(),
-        // Two lines so the warning never clips at narrow / compact widths
-        // (a single ~78-char line would truncate "...posing security risks").
-        Line::from(Span::styled(
-            "gBuild may run or modify contents in this directory,",
-            Style::default().fg(theme.gray),
-        ))
-        .alignment(Alignment::Center),
-        Line::from(Span::styled(
-            "posing security risks.",
-            Style::default().fg(theme.gray),
-        ))
-        .alignment(Alignment::Center),
-        // Spacer between the warning and the y/n menu.
-        Line::default(),
-    ];
-
-    let msg_height = lines.len() as u16;
-    let menu_height = menu_items.len() as u16;
-    let layout = WelcomeLayout::compute_stacked(WelcomeLayoutInput {
-        content_area,
-        error_height: msg_height,
-        menu_height,
-        compact,
-        prompt_compact: compact,
-        ..Default::default()
-    });
-
-    render_logo(layout.logo, buf, theme, content_area.height);
-    Paragraph::new(lines).render(layout.error, buf);
-
-    let menu_area = inset_horizontal(layout.menu, prompt::prompt_inset(compact));
-    let menu_rects = render_menu(menu_area, buf, theme, &menu_items, selected, None, 0);
-
-    render_version_badge(
-        layout.version,
-        buf,
-        theme,
-        None,
-        h_margin,
-        false,
-        VersionBadgeMode::Full {
-            subscription_tier: None,
-        },
-    );
-
-    // Only `menu_rects` are meaningful here; the rest are absent (no prompt,
-    // picker, auth/gate links) -- `Default` keeps this honest without a 13-field
-    // all-`None` literal.
-    WelcomeRenderResult {
-        menu_rects,
-        ..Default::default()
-    }
 }
 
 /// Header text shared by Loopback and Command auth modes.
@@ -2738,13 +2639,11 @@ mod tests {
 
     fn render_params<'a>(
         auth_state: &'a AuthState,
-        trust_state: &'a TrustState,
         session_picker: Option<&'a [SessionPickerEntry]>,
     ) -> WelcomeRenderParams<'a> {
         WelcomeRenderParams {
             prompt_focus: WelcomePromptFocus::Unfocused,
             auth_state,
-            trust_state,
             login_label: None,
             auth_code_input: "",
             auth_code_cursor_byte: 0,
@@ -2803,7 +2702,6 @@ mod tests {
         use gbuild_workspace::foreign_sessions::ForeignSessionTool;
 
         let auth = AuthState::Done;
-        let trust = TrustState::Done;
         for (tool, label) in [
             (ForeignSessionTool::Claude, "Claude Code"),
             (ForeignSessionTool::Codex, "Codex"),
@@ -2814,7 +2712,7 @@ mod tests {
                 native_id: "native-id".into(),
                 age: std::time::Duration::from_secs(125),
             };
-            let mut params = render_params(&auth, &trust, None);
+            let mut params = render_params(&auth, None);
             params.foreign_resume_hint = Some(&hint);
             let text = render_done_text(&params);
             assert!(text.contains(&format!("Coming from {label}?")), "{text}");
@@ -2826,13 +2724,12 @@ mod tests {
     #[test]
     fn pending_update_suppresses_foreign_resume_tip() {
         let auth = AuthState::Done;
-        let trust = TrustState::Done;
         let hint = gbuild_workspace::foreign_sessions::RecentForeignSession {
             tool: gbuild_workspace::foreign_sessions::ForeignSessionTool::Cursor,
             native_id: "native-id".into(),
             age: std::time::Duration::from_secs(30),
         };
-        let mut params = render_params(&auth, &trust, None);
+        let mut params = render_params(&auth, None);
         params.foreign_resume_hint = Some(&hint);
         params.pending_update_version = Some("9.9.9");
 
@@ -2884,8 +2781,7 @@ mod tests {
             auth_url: None,
             mode: AuthMode::Command,
         };
-        let trust_state = TrustState::Done;
-        let params = render_params(&auth_state, &trust_state, None);
+        let params = render_params(&auth_state, None);
         let area = Rect::new(0, 0, 100, 40);
         let mut buf = Buffer::empty(area);
         let mut prompt = PromptWidget::new();
@@ -2903,9 +2799,8 @@ mod tests {
         crate::terminal::overlay::reset_owner();
         seed_static_owner(82);
         let auth_state = AuthState::Done;
-        let trust_state = TrustState::Done;
         let sessions = [make_entry("session-1", "summary", "repo")];
-        let params = render_params(&auth_state, &trust_state, Some(&sessions));
+        let params = render_params(&auth_state, Some(&sessions));
         let area = Rect::new(0, 0, 100, 40);
         let mut buf = Buffer::empty(area);
         let mut prompt = PromptWidget::new();

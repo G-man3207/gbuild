@@ -3,46 +3,15 @@ use super::*;
 impl SessionActor {
     // ── Shared hook/plugin operation functions ────────────────────────
 
-    /// Trust the current project via the unified folder-trust store. Now an
-    /// alias of `--trust`: also allows repo-local MCP/LSP for this folder.
-    pub(super) fn do_hooks_trust_project(cwd: &str) -> Result<std::path::PathBuf, String> {
-        let root =
-            gbuild_workspace::session::git::find_git_root_from_path(std::path::Path::new(cwd))
-                .map_err(|_| {
-                    "Not in a git repository. Project hooks require a git worktree root."
-                        .to_string()
-                })?;
-        crate::agent::folder_trust::grant_folder_trust(&root);
-        Ok(root)
-    }
-
-    /// Untrust the current project in the unified folder-trust store.
-    /// Returns (git_root, was_trusted).
-    pub(super) fn do_hooks_untrust_project(
-        cwd: &str,
-    ) -> Result<(std::path::PathBuf, bool), String> {
-        let root =
-            gbuild_workspace::session::git::find_git_root_from_path(std::path::Path::new(cwd))
-                .map_err(|_| "Not in a git repository.".to_string())?;
-        // revoke_folder_trust persists set_untrusted AND downgrades the decision
-        // cache so the untrust takes effect on the next reload, not just restart.
-        let was_trusted = crate::agent::folder_trust::revoke_folder_trust(&root);
-        Ok((root, was_trusted))
-    }
-
     /// Re-resolve the session-scoped MCP output cap (repo
     /// `[mcp] max_output_bytes`) for this session's cwd and update the
     /// toolset's `TruncationCfg` resource to match.
     ///
     /// Field-level update so any other `TruncationCfg` fields a host seeded
     /// are preserved; clears the cap (restoring the process-global fallback)
-    /// when the project tier no longer wins — e.g. the key was removed, or
-    /// **folder trust was revoked** (`resolve_max_mcp_output_bytes_for_cwd`
-    /// is trust-gated, so calling this after a trust change keeps the seeded
-    /// cap in lockstep with the gate).
+    /// when the project tier no longer wins — e.g. the key was removed.
     ///
-    /// Called from the `UpdateMcpServers` handler (project-config hot reload)
-    /// and from the hooks-modal Trust/Untrust actions.
+    /// Called from the `UpdateMcpServers` handler (project-config hot reload).
     pub(super) async fn reseed_mcp_output_cap(&self) {
         let resolved = crate::util::config::resolve_max_mcp_output_bytes_for_cwd(
             std::path::Path::new(&self.session_info.cwd),
@@ -101,55 +70,6 @@ impl SessionActor {
                     requires_restart: false,
                 }
             }
-            HooksAction::Trust => match Self::do_hooks_trust_project(&self.session_info.cwd) {
-                Err(e) => ActionOutcome {
-                    status: OutcomeStatus::ValidationError,
-                    message: e,
-                    requires_reload: false,
-                    requires_restart: false,
-                },
-                Ok(root) => {
-                    let reload_msg = self.reload_hooks_impl().await;
-                    // Trust change flips the project-config gate: re-seed the
-                    // repo-level MCP output cap so it applies without waiting
-                    // for a config edit.
-                    self.reseed_mcp_output_cap().await;
-                    ActionOutcome {
-                        status: OutcomeStatus::Success,
-                        message: format!("Trusted: {}.\n{reload_msg}", root.display()),
-                        requires_reload: false,
-                        requires_restart: false,
-                    }
-                }
-            },
-            HooksAction::Untrust => match Self::do_hooks_untrust_project(&self.session_info.cwd) {
-                Err(e) => ActionOutcome {
-                    status: OutcomeStatus::ValidationError,
-                    message: e,
-                    requires_reload: false,
-                    requires_restart: false,
-                },
-                Ok((root, false)) => ActionOutcome {
-                    status: OutcomeStatus::NotFound,
-                    message: format!("Not currently trusted: {}", root.display()),
-                    requires_reload: false,
-                    requires_restart: false,
-                },
-                Ok((root, true)) => {
-                    let reload_msg = self.reload_hooks_impl().await;
-                    // Revoked trust must immediately drop a previously seeded
-                    // repo-level MCP output cap (the resolver is trust-gated,
-                    // so this clears it) — not linger until the next config
-                    // reload.
-                    self.reseed_mcp_output_cap().await;
-                    ActionOutcome {
-                        status: OutcomeStatus::Success,
-                        message: format!("Untrusted: {}.\n{reload_msg}", root.display()),
-                        requires_reload: false,
-                        requires_restart: false,
-                    }
-                }
-            },
             HooksAction::Add { path } => {
                 if path.is_empty() {
                     return ActionOutcome {
@@ -622,26 +542,19 @@ impl SessionActor {
     }
 
     /// Reload hooks mid-session. Re-discovers global and project hooks,
-    /// re-evaluates project trust, and re-appends plugin-contributed hooks.
-    /// `pub(super)` so the `SessionCommand::ReloadHooks` arm in `run_session`
-    /// (the parent module) can invoke it after an interactive folder-trust
-    /// grant — same visibility as `apply_plugin_registry_snapshot` below.
+    /// re-appends plugin-contributed hooks. `pub(super)` so the
+    /// `SessionCommand::ReloadHooks` arm in `run_session` (the parent module)
+    /// can invoke it — same visibility as `apply_plugin_registry_snapshot`
+    /// below.
     pub(super) async fn reload_hooks_impl(self: &std::sync::Arc<Self>) -> String {
         let git_root = gbuild_workspace::session::git::find_git_root_from_path(
             std::path::Path::new(&self.session_info.cwd),
         )
         .ok();
-        // Reconcile folder-trust so a mid-session /hooks-trust (or --trust) grant
-        // is honored on reload, then gate project hook sources on the verdict.
-        let cwd = std::path::Path::new(&self.session_info.cwd);
-        let is_trusted = crate::agent::folder_trust::resolve_and_record(cwd, None, false);
         // Single load entry point so all vendors (compat and native) and custom
         // hook-paths are handled consistently with the session-startup sites.
-        let (mut registry, errors) = crate::util::hooks::discover_hooks(
-            git_root.as_deref(),
-            &self.rebuild_spec.compat,
-            is_trusted,
-        );
+        let (mut registry, errors) =
+            crate::util::hooks::discover_hooks(git_root.as_deref(), &self.rebuild_spec.compat);
         for err in &errors {
             tracing::warn!("hook reload error: {err}");
         }
@@ -707,13 +620,8 @@ impl SessionActor {
                 }
             };
             let load_errors = self.hook_load_errors.borrow().clone();
-            let project_trusted = is_trusted;
-            self.send_xai_notification(XaiSessionUpdate::HooksChanged {
-                hooks,
-                project_trusted,
-                load_errors,
-            })
-            .await;
+            self.send_xai_notification(XaiSessionUpdate::HooksChanged { hooks, load_errors })
+                .await;
         }
         format!("Hooks reloaded: {hook_count} hook(s) loaded.")
     }
@@ -735,15 +643,6 @@ impl SessionActor {
         let sid = self.session_info.id.0.as_ref();
         gbuild_telemetry::unified_log::info("reload_plugins_impl: start", Some(sid), None);
 
-        // Folder-trust gates repo-local project plugins (hooks/MCP). Resolve and
-        // record the verdict for this cwd BEFORE the plugins-config read below,
-        // whose project-paths merge reads the gate — same site ordering as
-        // commands/list and the fan-out, so no gate read ever precedes the
-        // site's own resolve. Pure verdict: the session-start hook load already
-        // printed the folder-untrusted notice, so don't print a second.
-        let project_trusted =
-            crate::agent::folder_trust::resolve_and_record(session_cwd, None, false);
-
         let t0 = std::time::Instant::now();
         // Resolve effective [plugins] config (global + ancestor project
         // configs + compat merge). Shared with commands/list and the eager
@@ -753,7 +652,7 @@ impl SessionActor {
 
         let t2 = std::time::Instant::now();
         let discovery_config = plugins_cfg.to_discovery_config();
-        let count = handle.reload(Some(session_cwd), &discovery_config, project_trusted, force);
+        let count = handle.reload(Some(session_cwd), &discovery_config, force);
         let discover_ms = t2.elapsed().as_millis();
 
         gbuild_telemetry::unified_log::info(
@@ -774,12 +673,7 @@ impl SessionActor {
         let new_registry_snapshot = if session_dirs.is_empty() {
             handle.snapshot()
         } else {
-            handle.build_for_cwd(
-                session_cwd,
-                &discovery_config,
-                &session_dirs,
-                project_trusted,
-            )
+            handle.build_for_cwd(session_cwd, &discovery_config, &session_dirs)
         };
         let (hooks_reloaded, mcp_changed, skill_count) = self
             .apply_plugin_registry_snapshot(new_registry_snapshot)
@@ -822,10 +716,7 @@ impl SessionActor {
         let session_cwd = std::path::Path::new(&self.session_info.cwd);
         let disk_cfg =
             crate::config::resolve_effective_plugins_config(session_cwd).to_discovery_config();
-        // Pure verdict read: the session's spawn resolve already recorded this
-        // cwd with the real remote.
-        let project_trusted = crate::agent::folder_trust::project_scope_allowed(session_cwd);
-        handle.build_for_cwd(session_cwd, &disk_cfg, &dirs, project_trusted)
+        handle.build_for_cwd(session_cwd, &disk_cfg, &dirs)
     }
 
     /// Apply a pre-built plugin registry snapshot to this session: swap the
@@ -892,12 +783,9 @@ impl SessionActor {
                     // snapshot doesn't drop config hooks.
                     let git_root =
                         gbuild_workspace::session::git::find_git_root_from_path(session_cwd).ok();
-                    let is_trusted =
-                        crate::agent::folder_trust::resolve_and_record(session_cwd, None, false);
                     let (mut new_reg, _errs) = crate::util::hooks::discover_hooks(
                         git_root.as_deref(),
                         &self.rebuild_spec.compat,
-                        is_trusted,
                     );
                     new_reg.append_specs(new_specs);
                     *reg = Some(Arc::new(new_reg));
@@ -1017,16 +905,8 @@ impl SessionActor {
                 }
             };
             let load_errors = self.hook_load_errors.borrow().clone();
-            // Report the folder-trust verdict so the flag matches the gated registry.
-            let project_trusted = crate::agent::folder_trust::project_scope_allowed(
-                std::path::Path::new(&self.session_info.cwd),
-            );
-            self.send_xai_notification(XaiSessionUpdate::HooksChanged {
-                hooks,
-                project_trusted,
-                load_errors,
-            })
-            .await;
+            self.send_xai_notification(XaiSessionUpdate::HooksChanged { hooks, load_errors })
+                .await;
 
             use crate::extensions::plugins::loaded_plugin_to_info;
             let plugins = {

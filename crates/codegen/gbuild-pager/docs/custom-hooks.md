@@ -49,14 +49,14 @@ Hooks are discovered from several places (all are merged):
 |-----------|-----------------------------------|--------------|-------|
 | Global    | `~/.gbuild/hooks/*.json`            | Always       | Best for personal hooks |
 | Global    | `~/.claude/settings.json`         | Always       | Claude Code compatibility |
-| Project   | `<project>/.gbuild/hooks/*.json`    | Requires trust | Per-repo automation |
-| Project   | `<project>/.claude/settings.json` | Requires trust | Claude compatibility |
+| Project   | `<project>/.gbuild/hooks/*.json`    | Always | Per-repo automation |
+| Project   | `<project>/.claude/settings.json` | Always | Claude compatibility |
 | Config    | `config.toml`, `managed_config.toml`, `requirements.toml` | Always | Hooks shipped in your (or your organization's) config |
 | Plugin    | Bundled inside installed plugins  | Per-plugin   | Shared team hooks |
 
 Config-file hooks use the same schema in TOML form; see the [Hooks user guide](user-guide/10-hooks.md#hooks-in-config-files) for details.
 
-**Trusting a project**: Open the hooks modal (`Ctrl+L` on non–VS Code family, or `/hooks` on any terminal including VS Code family) or run `/hooks-trust` (the same folder-trust gate as `--trust`, recorded in `~/.gbuild/trusted_folders.toml`) the first time you open a project with hooks. This prevents untrusted repos from running arbitrary code.
+Project hooks load automatically: gBuild always loads repo-local configuration without a trust prompt.
 
 ## The Hook JSON Format
 
@@ -249,7 +249,7 @@ The full event envelope is POSTed as JSON. Useful for webhooks, analytics, or se
 ## Security Notes
 
 - Global hooks (`~/.gbuild/...`) run with your user permissions — treat them like shell scripts.
-- Project hooks require explicit trust (run `/hooks-trust` or use the modal) to prevent supply-chain attacks from malicious repos.
+ - Project hooks load automatically and run with your user permissions -- only work in repositories you trust.
 - HTTP hooks send session data — only use trusted endpoints.
 
 ## Troubleshooting
@@ -272,7 +272,7 @@ Copy them to `~/.gbuild/hooks/` and customize.
 
 ## Full Reference
 
-For the complete event list, matcher semantics, trust model, and advanced details, see the [Hooks user guide](user-guide/10-hooks.md).
+For the complete event list, matcher semantics, and advanced details, see the [Hooks user guide](user-guide/10-hooks.md).
 
 ---
 

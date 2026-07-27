@@ -207,21 +207,20 @@ pub(super) fn surface_screen_mode_switch_hint(app: &mut AppView, target: AgentId
 /// No-op if `target` is unknown or already active. Dashboard-first flows that
 /// assign `Agent` directly must call the notice themselves.
 pub(crate) fn switch_to_agent(app: &mut AppView, target: AgentId, _cause: SwitchCause) {
-    // Structural backstop for the auth + folder-trust session gate. This is the
-    // single funnel every FRESH-agent creator routes through (New/Load/Fork —
-    // `Picker` switches to an already-created, post-gate agent), so asserting the
-    // gate here makes "no session is created while `TrustState::Pending`" a
-    // property of the flow rather than of each call site: any future creator
-    // that forgets the deferring chokepoint gate trips this in debug/tests. The
-    // deferring chokepoints (`dispatch_new_session`/`_worktree_session`/
-    // `_load_session_inner`) stash+return BEFORE reaching here, so this never
-    // fires on the reachable gated paths. (`dispatch_project_selected` re-creates
-    // an already-active, post-gate agent without switching, so it is exempt.)
-    // `_cause` stays underscored so it isn't flagged unused once `debug_assert!`
-    // compiles out in release.
+    // Structural backstop for the auth session gate. This is the single funnel
+    // every FRESH-agent creator routes through (New/Load/Fork — `Picker`
+    // switches to an already-created, post-gate agent), so asserting the gate
+    // here makes "no session is created before auth resolves" a property of the
+    // flow rather than of each call site. The deferring chokepoints
+    // (`dispatch_new_session`/`_worktree_session`/`_load_session_inner`)
+    // stash+return BEFORE reaching here, so this never fires on the reachable
+    // gated paths. (`dispatch_project_selected` re-creates an already-active,
+    // post-gate agent without switching, so it is exempt.) `_cause` stays
+    // underscored so it isn't flagged unused once `debug_assert!` compiles out
+    // in release.
     debug_assert!(
         matches!(_cause, SwitchCause::Picker) || app.session_startup_allowed(),
-        "session creation via {_cause:?} requires the startup gate open (auth + folder trust)"
+        "session creation via {_cause:?} requires the startup gate open (auth)"
     );
     if !app.agents.contains_key(&target) {
         return;

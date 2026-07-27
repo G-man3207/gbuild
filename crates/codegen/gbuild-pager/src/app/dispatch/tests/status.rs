@@ -800,7 +800,6 @@ fn privacy_banner_ready_app() -> AppView {
     let mut app = test_app_with_agent();
     app.active_view = ActiveView::Welcome;
     app.auth_state = AuthState::Done;
-    app.trust_state = TrustState::Done;
     app.privacy_notice_rollout = true;
     app.privacy_banner_acked = None;
     app.privacy_banner_reshow_days = None;

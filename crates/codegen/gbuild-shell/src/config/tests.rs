@@ -2369,83 +2369,46 @@ fn project_overlay_preserves_source_precedence() {
         Some(&home.join(".gbuild")),
         &bundled,
     );
-    let resolve = |project_trusted| {
-        let (roles, personas) = SubagentsConfig::effective_definition_maps(
-            &base.roles,
-            &base.personas,
-            &project,
-            project_trusted,
-        );
-        SubagentsConfig {
-            roles,
-            personas,
-            ..Default::default()
-        }
+    let (roles, personas) = SubagentsConfig::effective_definition_maps(
+        &base.roles,
+        &base.personas,
+        &project,
+    );
+    let resolved = SubagentsConfig {
+        roles,
+        personas,
+        ..Default::default()
     };
-    let untrusted = resolve(false);
     assert_eq!(
-            untrusted.get_role("shadowed").unwrap().description,
-            "User role"
-        );
-    assert_eq!(
-            untrusted
-                .get_persona("shadowed")
-                .and_then(|persona| persona.instructions.as_deref()),
-            Some("User persona")
-        );
-    assert!(untrusted.get_role("project-only").is_none());
-    assert!(untrusted.get_persona("project-only").is_none());
-    assert!(untrusted.get_role("user-only").is_some());
-    assert!(untrusted.get_persona("user-only").is_some());
-    assert!(untrusted.get_role("bundled-only").is_some());
-    assert!(untrusted.get_persona("bundled-only").is_some());
-    assert_eq!(
-            untrusted.get_role("bundled-shadowed").unwrap().description,
-            "Bundled role"
-        );
-    assert_eq!(
-            untrusted
-                .get_persona("bundled-shadowed")
-                .and_then(|persona| persona.instructions.as_deref()),
-            Some("Bundled persona")
-        );
-    let trusted = resolve(true);
-    assert_eq!(
-            trusted.get_role("shadowed").unwrap().description,
+            resolved.get_role("shadowed").unwrap().description,
             "Project role"
         );
     assert_eq!(
-            trusted
+            resolved
                 .get_persona("shadowed")
                 .and_then(|persona| persona.instructions.as_deref()),
             Some("Project persona")
         );
     assert_eq!(
-            trusted.get_role("bundled-shadowed").unwrap().description,
+            resolved.get_role("bundled-shadowed").unwrap().description,
             "Project role"
         );
     assert_eq!(
-            trusted
+            resolved
                 .get_persona("bundled-shadowed")
                 .and_then(|persona| persona.instructions.as_deref()),
             Some("Project persona")
         );
     assert_eq!(
-            trusted.get_role("inline").unwrap().description,
+            resolved.get_role("inline").unwrap().description,
             "Inline role"
         );
     assert_eq!(
-            trusted
+            resolved
                 .get_persona("inline")
                 .and_then(|persona| persona.instructions.as_deref()),
             Some("Inline persona")
         );
-    let denied_again = resolve(false);
-    assert_eq!(
-            denied_again.get_role("shadowed").unwrap().description,
-            "User role"
-        );
-    assert!(denied_again.get_role("project-only").is_none());
 }
 #[test]
 fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
@@ -2514,7 +2477,6 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
         &base.roles,
         &base.personas,
         &workspace,
-        true,
     );
     let resolved = SubagentsConfig {
         roles,
@@ -2552,7 +2514,6 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
         &base.roles,
         &base.personas,
         &workspace,
-        true,
     );
     let resolved = SubagentsConfig {
         roles,
@@ -2590,7 +2551,6 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
         &base.roles,
         &base.personas,
         &workspace,
-        true,
     );
     let resolved = SubagentsConfig {
         roles,
@@ -2966,8 +2926,6 @@ fn project_config_never_sources_feedback_user() {
     use gbuild_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
     let _env = EnvGuard::set("GBUILD_HOME", home.path());
-    let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
-    let _sim = simulate_release_build();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
     let gbuild = repo.path().join(".gbuild");
@@ -2978,13 +2936,12 @@ fn project_config_never_sources_feedback_user() {
         )
         .unwrap();
     let cwd = repo.path();
-    crate::agent::folder_trust::grant_folder_trust(cwd);
     assert!(
             resolve_effective_plugins_config(cwd)
                 .paths
                 .iter()
                 .any(|p| p == "./p"),
-            "trusted project [plugins].paths must merge (proves the project config is read)"
+            "project [plugins].paths must merge (proves the project config is read)"
         );
     let cfg = crate::agent::config::Config::new_from_toml_cfg(
             &load_effective_config().unwrap(),
@@ -3100,9 +3057,10 @@ fn apply_requirements_value_overrides_user_settings() {
             cfg.endpoints.models_list_url.as_deref()
         );
     assert!(
-            enforced
+            !enforced
                 .iter()
-                .any(|e| e.path == "ui.yolo" && e.value == "--yolo blocked")
+                .any(|e| e.path == "ui.yolo" && e.value == "--yolo blocked"),
+            "gBuild runs unrestricted: requirements cannot pin always-approve off"
         );
     assert_eq!(
             Some("https://s3.custom.example.com"),
@@ -3344,13 +3302,8 @@ fn managed_settings_does_not_override_user_yolo() {
     assert_eq!(enforced.len(), 2);
     assert!(!enforced.iter().any(|e| e.path == "ui.yolo"));
 }
-/// Simulate a release-stamped build so the folder-trust gate engages (a
-/// local/dev build auto-trusts). Hold the returned guard for the test body.
-fn simulate_release_build() -> gbuild_test_support::EnvGuard {
-    gbuild_test_support::EnvGuard::set(gbuild_version::TEST_VERSION_ENV, "0.0.0-sim")
-}
 #[test]
-fn project_overlay_tracks_authoritative_trust_transitions() {
+fn project_overlay_loads_project_definitions() {
     let source_root = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
@@ -3379,30 +3332,14 @@ fn project_overlay_tracks_authoritative_trust_transitions() {
                 ..Default::default()
             },
         );
-    let (untrusted_roles, _) = SubagentsConfig::effective_definition_maps(
+    let (roles, personas) = SubagentsConfig::effective_definition_maps(
         &base.roles,
         &base.personas,
         repo.path(),
-        false,
     );
-    assert_eq!(untrusted_roles["shared"].description, "User role");
-    assert!(!untrusted_roles.contains_key("project-only"));
-    let (trusted_roles, trusted_personas) = SubagentsConfig::effective_definition_maps(
-        &base.roles,
-        &base.personas,
-        repo.path(),
-        true,
-    );
-    assert_eq!(trusted_roles["shared"].description, "Project role");
-    assert!(trusted_personas.contains_key("project-only"));
-    let (revoked_roles, _) = SubagentsConfig::effective_definition_maps(
-        &base.roles,
-        &base.personas,
-        repo.path(),
-        false,
-    );
-    assert_eq!(revoked_roles["shared"].description, "User role");
-    assert!(!revoked_roles.contains_key("project-only"));
+    assert_eq!(roles["shared"].description, "Project role");
+    assert!(roles.contains_key("project-only"));
+    assert!(personas.contains_key("project-only"));
 }
 #[test]
 fn base_resolver_without_project_cwd_keeps_project_files_out() {
@@ -3437,24 +3374,19 @@ fn explicit_gbuild_root_is_the_only_user_source() {
 }
 /// SECURITY (plugin-RCE): a PROJECT-declared `[plugins].paths` loads as an
 /// auto-enabled, auto-trusted ConfigPath plugin, so it must merge into the
-/// effective config ONLY when the folder is trusted; project
-/// `[plugins].disabled` is never gated. The closing set-difference proves
-/// the gate toggles ONLY that path (user/global paths pass through both
-/// verdicts untouched). GBUILD_HOME-isolated + `#[serial]` for folder-trust
-/// store hygiene (empty store ⇒ deterministic untrusted;
-/// `EnvGuard` restores GBUILD_HOME even on panic). No user-global
+/// Project `[plugins].paths` always merge into the effective config; project
+/// `[plugins].disabled` merges too. GBUILD_HOME-isolated + `#[serial]`
+/// (`EnvGuard` restores GBUILD_HOME even on panic). No user-global
 /// `$GBUILD_HOME/config.toml` is seeded: `gbuild_home()` is `OnceLock`-cached,
 /// so under a shared-process harness (Bazel) such a seed is read
 /// non-deterministically — reliable only under nextest's process-per-test
 /// isolation.
 #[test]
 #[serial_test::serial]
-fn resolve_effective_plugins_config_gates_project_paths_on_folder_trust() {
+fn resolve_effective_plugins_config_merges_project_paths() {
     use gbuild_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
     let _env = EnvGuard::set("GBUILD_HOME", home.path());
-    let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
-    let _sim = simulate_release_build();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
     let gbuild = repo.path().join(".gbuild");
@@ -3465,57 +3397,29 @@ fn resolve_effective_plugins_config_gates_project_paths_on_folder_trust() {
         )
         .unwrap();
     let cwd = repo.path();
-    let proj_path = "./proj-plugin".to_string();
-    let proj_disabled = "proj-bad".to_string();
-    let untrusted = resolve_effective_plugins_config(cwd);
+    let cfg = resolve_effective_plugins_config(cwd);
     assert!(
-            !untrusted.paths.contains(&proj_path),
-            "untrusted folder must NOT merge the project [plugins].paths"
+            cfg.paths.contains(&"./proj-plugin".to_string()),
+            "project [plugins].paths must merge"
         );
     assert!(
-            untrusted.disabled.contains(&proj_disabled),
-            "project [plugins].disabled must merge even when untrusted (fail-safe)"
-        );
-    crate::agent::folder_trust::grant_folder_trust(cwd);
-    let trusted = resolve_effective_plugins_config(cwd);
-    assert!(
-            trusted.paths.contains(&proj_path),
-            "trusted folder must merge the project [plugins].paths"
-        );
-    assert!(
-            trusted.disabled.contains(&proj_disabled),
-            "project [plugins].disabled must merge when trusted too"
-        );
-    let trusted_minus_project: Vec<String> = trusted
-        .paths
-        .iter()
-        .filter(|p| *p != &proj_path)
-        .cloned()
-        .collect();
-    assert_eq!(
-            trusted_minus_project, untrusted.paths,
-            "the trust gate must toggle ONLY the project path; user/global paths unaffected"
+            cfg.disabled.contains(&"proj-bad".to_string()),
+            "project [plugins].disabled must merge"
         );
 }
-/// SECURITY (plugin-RCE) end-to-end: prove through the REAL `discover_plugins`
-/// that a PROJECT-declared `[plugins].paths` ConfigPath plugin is EXCLUDED
-/// from discovery while untrusted and included once trusted. The Part-2
-/// set-difference test covers the config merge; this closes the loop at the
-/// discovery boundary (if it is never discovered it can never activate).
-/// Mirrors the Project-scope analog `discover_real_project_plugin_gated_on_project_trusted`
-/// in `gbuild-agent`. An ABSOLUTE plugin path is used so the merged
-/// `config_paths` entry resolves against the repo — `discover_plugins`' `is_dir()`
-/// check resolves a relative `./x` against the process cwd, not `cwd`.
+/// End-to-end: a PROJECT-declared `[plugins].paths` ConfigPath plugin is
+/// discovered through the REAL `discover_plugins`. An ABSOLUTE plugin path is
+/// used so the merged `config_paths` entry resolves against the repo —
+/// `discover_plugins`' `is_dir()` check resolves a relative `./x` against the
+/// process cwd, not `cwd`.
 /// GBUILD_HOME-isolated + `#[serial]` (`EnvGuard` restores it even on panic).
 #[test]
 #[serial_test::serial]
-fn discover_plugins_excludes_untrusted_configpath_plugin_end_to_end() {
+fn discover_plugins_finds_project_configpath_plugin_end_to_end() {
     use gbuild_agent::plugins::{TrustStore, discover_plugins};
     use gbuild_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
     let _env = EnvGuard::set("GBUILD_HOME", home.path());
-    let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
-    let _sim = simulate_release_build();
     let repo = tempfile::tempdir().unwrap();
     git2::Repository::init(repo.path()).unwrap();
     let cwd = repo.path();
@@ -3531,87 +3435,15 @@ fn discover_plugins_excludes_untrusted_configpath_plugin_end_to_end() {
         )
         .unwrap();
     let trust_store = TrustStore::load_from(home.path().join("plugin-trust"));
-    let untrusted_dc = resolve_effective_plugins_config(cwd).to_discovery_config();
-    let untrusted_verdict = crate::agent::folder_trust::project_scope_allowed(cwd);
+    let dc = resolve_effective_plugins_config(cwd).to_discovery_config();
     assert!(
-            !untrusted_verdict,
-            "a fresh repo declaring [plugins].paths must resolve untrusted"
-        );
-    assert!(
-            !untrusted_dc
-                .config_paths
+            dc.config_paths
                 .iter()
                 .any(|p| p.ends_with("cfgpath-probe")),
-            "untrusted: the project path must be absent from config_paths"
+            "the project path must be present in config_paths"
         );
-    let untrusted_found = discover_plugins(
-            Some(cwd),
-            &untrusted_dc,
-            &trust_store,
-            untrusted_verdict,
-        )
+    let found = discover_plugins(Some(cwd), &dc, &trust_store)
         .iter()
         .any(|p| p.manifest.name == "cfgpath-probe");
-    assert!(
-            !untrusted_found,
-            "untrusted folder must EXCLUDE the ConfigPath plugin from discovery"
-        );
-    crate::agent::folder_trust::grant_folder_trust(cwd);
-    crate::agent::folder_trust::resolve_and_record(cwd, None, false);
-    let trusted_dc = resolve_effective_plugins_config(cwd).to_discovery_config();
-    let trusted_verdict = crate::agent::folder_trust::project_scope_allowed(cwd);
-    assert!(trusted_verdict, "a store-granted repo must resolve trusted");
-    let trusted_found = discover_plugins(
-            Some(cwd),
-            &trusted_dc,
-            &trust_store,
-            trusted_verdict,
-        )
-        .iter()
-        .any(|p| p.manifest.name == "cfgpath-probe");
-    assert!(
-            trusted_found,
-            "trusted folder must DISCOVER the merged ConfigPath plugin"
-        );
-}
-/// Kill-switch ordering regression: `resolve_effective_plugins_config` reads
-/// the folder-trust gate internally, so its call sites (commands/list, plugin
-/// fan-out, reload) resolve with the REAL RemoteSettings first. A cold key
-/// under an org kill-switch must end up allowed — if the plugins-config read
-/// ran first, the gate's remote-less backstop would record a durable
-/// kill-switch-blind deny that `resolve_and_record_inner`'s `Some(false)`
-/// arm (store-only reconcile) could never lift. GBUILD_HOME-isolated (empty
-/// store); GBUILD_FOLDER_TRUST unset so the kill-switch is the only signal.
-#[test]
-#[serial_test::serial]
-fn kill_switched_cold_cwd_stays_allowed_through_plugins_config_read() {
-    use gbuild_test_support::EnvGuard;
-    let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GBUILD_HOME", home.path());
-    let _flag = EnvGuard::unset("GBUILD_FOLDER_TRUST");
-    let _sim = simulate_release_build();
-    let repo = tempfile::tempdir().unwrap();
-    git2::Repository::init(repo.path()).unwrap();
-    let gbuild = repo.path().join(".gbuild");
-    std::fs::create_dir_all(&gbuild).unwrap();
-    std::fs::write(gbuild.join("config.toml"), "[plugins]\npaths = [\"./proj-plugin\"]\n")
-        .unwrap();
-    let cwd = repo.path();
-    let remote = crate::util::config::RemoteSettings {
-        folder_trust_enabled: Some(false),
-        ..Default::default()
-    };
-    assert!(
-            crate::agent::folder_trust::resolve_and_record(cwd, Some(&remote), false),
-            "kill-switch must resolve the cold key trusted"
-        );
-    let cfg = resolve_effective_plugins_config(cwd);
-    assert!(
-            cfg.paths.contains(&"./proj-plugin".to_string()),
-            "kill-switched folder counts trusted, so the project path must merge"
-        );
-    assert!(
-            crate::agent::folder_trust::project_scope_allowed(cwd),
-            "gate must still allow the kill-switched folder after the config read"
-        );
+    assert!(found, "the merged ConfigPath plugin must be discovered");
 }

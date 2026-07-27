@@ -1584,17 +1584,6 @@ mod interjection_actor_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/observability_bridge_mapping_tests.rs"]
 mod observability_bridge_mapping_tests;
-#[cfg(test)]
-#[path = "acp_session_tests/permission_auto_mode_tests.rs"]
-mod permission_auto_mode_tests;
-/// Resume re-park of the parked `exit_plan_mode` approval.
-#[cfg(test)]
-#[path = "acp_session_tests/plan_approval_resume_tests.rs"]
-mod plan_approval_resume_tests;
-/// Plan-mode edit gate: read-only except the plan file, even under allow-all.
-#[cfg(test)]
-#[path = "acp_session_tests/plan_mode_edit_gate_tests.rs"]
-mod plan_mode_edit_gate_tests;
 /// Mid-turn plan-mode toggle: immediate activation + buffered reminder.
 #[cfg(test)]
 #[path = "acp_session_tests/plan_mode_midturn_tests.rs"]

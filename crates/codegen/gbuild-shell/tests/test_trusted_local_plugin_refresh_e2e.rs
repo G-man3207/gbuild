@@ -147,7 +147,7 @@ fn trusted_local_refresh_surfaces_new_agent_via_discovery() {
         enabled: vec!["demo-plugin".to_string()],
     };
     let plugin_registry = handle
-        .refresh_and_build_for_cwd(&cwd, &config, &[], true)
+        .refresh_and_build_for_cwd(&cwd, &config, &[])
         .expect("registry built with installed plugin");
 
     assert!(
@@ -183,7 +183,7 @@ fn trusted_local_refresh_surfaces_new_agent_via_discovery() {
     };
     let session_dirs = vec![plugin_dir.clone()];
     let registry = session_handle
-        .build_for_cwd(&cwd, &session_config, &session_dirs, true)
+        .build_for_cwd(&cwd, &session_config, &session_dirs)
         .expect("registry built with session plugin dir");
 
     let plugin = registry
@@ -197,7 +197,7 @@ fn trusted_local_refresh_surfaces_new_agent_via_discovery() {
     assert_eq!(registry.session_plugin_dirs(), session_dirs.as_slice());
 
     // A rebuild without the dirs (the shared fan-out shape) must not carry them.
-    let shared = session_handle.build_for_cwd(&cwd, &session_config, &[], true);
+    let shared = session_handle.build_for_cwd(&cwd, &session_config, &[]);
     assert!(shared.is_none_or(|r| r.session_plugin_dirs().is_empty()));
 }
 
@@ -283,7 +283,7 @@ async fn headless_session_refreshes_trusted_local_plugin_and_writes_session_json
         enabled: vec!["demo-plugin".to_string()],
     };
     let plugin_registry = SharedPluginRegistryHandle::new(None, Vec::new())
-        .build_for_cwd(workdir.workspace(), &config, &[], true)
+        .build_for_cwd(workdir.workspace(), &config, &[])
         .expect("registry built from refreshed snapshot");
     let agents = gbuild_agent::discovery::all_subagents_with_plugins(
         workdir.workspace(),

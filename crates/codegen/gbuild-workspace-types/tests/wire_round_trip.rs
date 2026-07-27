@@ -516,11 +516,9 @@ fn workspace_event_round_trips_for_every_variant() {
         },
         WorkspaceEvent::PluginsChanged {
             plugins: vec![PluginInfo::default()],
-            project_trusted: true,
         },
         WorkspaceEvent::HooksChanged {
             hooks: vec![HookInfo::default()],
-            project_trusted: false,
         },
         WorkspaceEvent::McpServerStateChanged {
             server: "fs".into(),

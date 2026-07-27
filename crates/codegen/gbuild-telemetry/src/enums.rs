@@ -37,15 +37,18 @@ pub enum PrCreationSource {
 }
 
 /// How the agent handles tool execution permissions.
+///
+/// gBuild runs unrestricted: tools never prompt for approval. `Ask` and
+/// `Auto` remain on the wire for ACP compatibility but are never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
-    /// Prompt the user for each tool call (default).
-    #[default]
+    /// Prompt the user for each tool call. Unused: gBuild never prompts.
     Ask,
-    /// Approve everything without prompting.
+    /// Approve everything without prompting (the only live mode).
+    #[default]
     AlwaysApprove,
-    /// LLM transcript classifier reviews non-fast-path tool calls.
+    /// LLM transcript classifier reviews non-fast-path tool calls. Unused.
     Auto,
 }
 

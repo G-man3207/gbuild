@@ -326,14 +326,7 @@ pub fn resolve_max_mcp_output_bytes(remote: Option<u64>) -> usize {
 
 /// Project tier of the MCP output cap: `[mcp] max_output_bytes` from the
 /// `.gbuild/config.toml` chain (`cwd` → git root), deepest file wins.
-///
-/// Folder-trust-gated: an untrusted checkout must not raise (context-stuffing
-/// / cost vector) or lower the cap, matching how project plugin paths and
-/// repo env contributions are gated.
 fn project_max_mcp_output_bytes(cwd: &std::path::Path) -> Option<usize> {
-    if !crate::agent::folder_trust::project_scope_allowed(cwd) {
-        return None;
-    }
     let mut value = None;
     // Repo-root-first → cwd-last: later (deeper) files overwrite.
     for config_path in crate::config::find_project_configs(cwd) {
@@ -426,9 +419,7 @@ mod max_mcp_output_bytes_tests {
     /// without the key leave the running value untouched.
     ///
     /// Uses the pure chain logic via tempdirs + `find_project_configs`
-    /// ordering (repo root → cwd), mirroring `project_max_mcp_output_bytes`
-    /// without the trust gate (exercised separately — trust is inert in
-    /// dev/test builds, see `folder_trust_inert`).
+    /// ordering (repo root → cwd), mirroring `project_max_mcp_output_bytes`.
     #[test]
     fn project_chain_deepest_file_wins() {
         let tmp = tempfile::tempdir().unwrap();

@@ -347,35 +347,12 @@ impl MvpAgent {
             let _ = tx.send(SessionCommand::RefreshMcpSearchIndex);
         }
     }
-    /// Resolve the launch dir's project-scope trust verdict ONCE and return it
-    /// with its path.
-    ///
-    /// Memoizes the single [`folder_trust::resolve_launch_dir_trust`] gather (see
-    /// it for the dedup + TOCTOU contract) so the two one-shot init helpers
-    /// (`ensure_plugin_registry` and `ensure_local_workspace_ops`) share it
-    /// instead of each re-scanning. They share a single point-in-time verdict
-    /// rather than two independent re-scans; the sub-millisecond, startup-only
-    /// window between them is intentional (the cross-session TOCTOU re-scan is
-    /// preserved per the contract).
-    fn prime_launch_dir_trust(&self) -> (&std::path::Path, bool) {
-        let trust = *self
-            .launch_dir_trust
-            .get_or_init(|| {
-                let remote_settings = self.cfg.borrow().remote_settings.clone();
-                folder_trust::resolve_launch_dir_trust(
-                    &self.launch_cwd,
-                    remote_settings.as_ref(),
-                )
-            });
-        (&self.launch_cwd, trust)
-    }
-    /// Resolve folder trust and load launch-dir MCP configs after `initialize`
+    /// Load launch-dir MCP configs after `initialize`
     /// returns. The walks are synchronous and expensive in large monorepos; they
     /// must not block the ACP response (grok-desktop sends `initialize` immediately).
     pub(super) fn spawn_initialize_launch_mcp_setup(&self, fetch_managed_mcps: bool) {
         let cwd = self.launch_cwd.clone();
         let compat = self.cfg.borrow().compat_resolved;
-        let remote_settings = self.cfg.borrow().remote_settings.clone();
         let gateway = self.gateway.clone();
         let agent_mcp_state = self.agent_mcp_state.clone();
         let managed_mcp_cache = self.managed_mcp_cache.clone();
@@ -383,13 +360,7 @@ impl MvpAgent {
         let auth_manager = self.auth_manager.clone();
         tokio::task::spawn_local(async move {
             let local_mcp_servers = match tokio::task::spawn_blocking(move || {
-                    let local = crate::util::config::load_mcp_servers(&cwd, &compat);
-                    folder_trust::resolve_and_record(
-                        &cwd,
-                        remote_settings.as_ref(),
-                        false,
-                    );
-                    folder_trust::filter_untrusted_project_mcp(&cwd, local)
+                    crate::util::config::load_mcp_servers(&cwd, &compat)
                 })
                 .await
             {
@@ -446,13 +417,13 @@ impl MvpAgent {
         if self.plugin_registry_initialized.replace(true) {
             return;
         }
-        let (cwd, trusted) = self.prime_launch_dir_trust();
+        let cwd = &self.launch_cwd;
         let mut plugins = self.cfg.borrow().plugins.clone();
         plugins.merge_claude_enabled_plugins(Some(cwd));
         let disk_config = plugins.to_discovery_config();
         let count = self
             .plugin_registry_handle
-            .reload(Some(cwd), &disk_config, trusted, false);
+            .reload(Some(cwd), &disk_config, false);
         tracing::debug!(
             plugin_count = count,
             "lazily populated plugin registry snapshot"
@@ -727,8 +698,8 @@ impl MvpAgent {
     }
     /// Build the process-lifetime local `WorkspaceOps` on first use.
     ///
-    /// Deferred past ACP wiring so `initialize` can respond before folder-trust
-    /// scans and `WorkspaceHandle::new_minimal` run (same boot stall as plugin
+    /// Deferred past ACP wiring so `initialize` can respond before
+    /// `WorkspaceHandle::new_minimal` runs (same boot stall as plugin
     /// discovery on grok-desktop Windows).
     fn ensure_local_workspace_ops(
         &self,
@@ -736,7 +707,7 @@ impl MvpAgent {
         if let Some(ops) = self.workspace_ops.borrow().clone() {
             return Ok(ops);
         }
-        let (cwd, project_lsp_trusted) = self.prime_launch_dir_trust();
+        let cwd = &self.launch_cwd;
         let workspace_identity = self
             .auth_manager
             .current_or_expired()
@@ -756,7 +727,6 @@ impl MvpAgent {
         let ops = match gbuild_workspace::handle::WorkspaceHandle::new_minimal(
             cwd.to_path_buf(),
             workspace_identity,
-            project_lsp_trusted,
         ) {
             Ok(handle) => gbuild_workspace::WorkspaceOps::local(handle),
             Err(e) => {
@@ -1635,7 +1605,6 @@ impl MvpAgent {
             gateway,
             launch_cwd: std::env::current_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from(".")),
-            launch_dir_trust: std::cell::OnceCell::new(),
             plugin_registry_handle: gbuild_agent::plugins::SharedPluginRegistryHandle::new(
                 None,
                 cfg.plugins.cli_plugin_dirs.clone(),
@@ -1658,10 +1627,6 @@ impl MvpAgent {
             interactive_auth: Default::default(),
             client_type: RefCell::new(ClientType::default()),
             code_nav_enabled: std::cell::Cell::new(false),
-            interactive_trust_client: std::cell::Cell::new(false),
-            interactive_trust_prompted: Rc::new(
-                RefCell::new(std::collections::HashSet::new()),
-            ),
             tier_allowed: std::cell::Cell::new(true),
             storage_mode,
             default_yolo_mode,
@@ -2213,13 +2178,6 @@ impl MvpAgent {
         session_id: &acp::SessionId,
         action: xai_hooks_plugins_types::HooksAction,
     ) -> Option<xai_hooks_plugins_types::ActionOutcome> {
-        if matches!(action, xai_hooks_plugins_types::HooksAction::Untrust)
-            && let Some(cwd) = self.get_session_cwd(session_id)
-        {
-            self.interactive_trust_prompted
-                .borrow_mut()
-                .remove(&gbuild_workspace::trust::workspace_key(&cwd));
-        }
         let handle = self.get_session_handle(session_id)?;
         handle.execute_hooks_action(action).await
     }
@@ -3065,12 +3023,6 @@ impl MvpAgent {
         } = spec;
         let _timer = crate::instrumentation_timer!("session.spawn_and_register");
         reject_direct_hub_cloud_meta(session_meta)?;
-        let spawn_remote_settings = self.cfg.borrow().remote_settings.clone();
-        folder_trust::resolve_and_record(
-            cwd.as_path(),
-            spawn_remote_settings.as_ref(),
-            false,
-        );
         let use_acp_fs = client_fs_read && client_fs_write;
         let fs_notify_config = init
             .client_capabilities
@@ -3230,19 +3182,12 @@ impl MvpAgent {
             }
             _ => None,
         };
-        let project_env_trusted = folder_trust::project_scope_allowed(cwd.as_path());
-        let mut session_env = gbuild_workspace::permission::claude_settings::load_claude_env_with_project(
-            cwd.as_path(),
-            project_env_trusted,
-        );
+        let mut session_env =
+            gbuild_workspace::permission::claude_settings::load_claude_env(cwd.as_path());
         let envrc = match preloaded_envrc {
             Some(env) => env,
-            None => {
-                gbuild_workspace::envrc::load_envrc_or_empty_when_trusted(
-                    cwd.as_path(),
-                    load_envrc && project_env_trusted,
-                )
-            }
+            None if load_envrc => gbuild_workspace::envrc::load_envrc_or_empty(cwd.as_path()),
+            None => std::collections::HashMap::new(),
         };
         session_env.extend(envrc);
         if no_color {
@@ -3466,10 +3411,10 @@ impl MvpAgent {
                 &plugin_names,
                 &inline_names,
             );
-            let servers = folder_trust::filter_untrusted_project_lsp(
-                tool_ctx.cwd.as_path(),
-                sourced,
-            );
+            let servers: std::collections::BTreeMap<_, _> = sourced
+                .into_iter()
+                .map(|(name, (cfg, _source))| (name, cfg))
+                .collect();
             tool_ctx.lsp_server_names = servers.keys().cloned().collect();
             if servers.is_empty() {
                 let user_path = gbuild_tools::util::gbuild_home::gbuild_home()
@@ -3640,7 +3585,6 @@ impl MvpAgent {
                         return None;
                     }
                     let cwd = std::path::Path::new(&session_info.cwd);
-                    let hooks_trusted = folder_trust::project_scope_allowed(cwd);
                     let git_root = gbuild_workspace::session::git::find_git_root_from_path(
                             cwd,
                         )
@@ -3648,18 +3592,12 @@ impl MvpAgent {
                     let (disk_registry, disk_errors) = crate::util::hooks::discover_hooks(
                         git_root.as_deref(),
                         &compat,
-                        hooks_trusted,
                     );
                     for e in &disk_errors {
                         tracing::warn!(error = ?e, "hook loading error");
                     }
                     let mut merged = disk_registry;
-                    if folder_trust::agent_inline_hooks_allowed(
-                        agent_definition.scope,
-                        || hooks_trusted,
-                    ) {
-                        merged.append_specs(specs);
-                    }
+                    merged.append_specs(specs);
                     Some(std::sync::Arc::new(merged))
                 });
             let initial_reasoning_effort = chat_history
@@ -3785,7 +3723,6 @@ impl MvpAgent {
                                 session_cwd,
                                 &disk_cfg,
                                 &parse_session_plugin_dirs(session_meta),
-                                folder_trust::project_scope_allowed(session_cwd),
                             )
                     },
                     Some(self.plugin_registry_handle.clone()),

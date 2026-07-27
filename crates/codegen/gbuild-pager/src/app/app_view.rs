@@ -411,26 +411,6 @@ pub enum AuthMode {
     /// RFC 8628 device flow: device code + copyable URL, no paste box.
     Device,
 }
-/// Folder-trust state for the welcome screen.
-///
-/// Mirrors [`AuthState`]: a welcome sub-state that drives the "Do you trust the
-/// contents of this directory?" question and gates session creation until it is
-/// answered. Seeded once before the first render from the pure
-/// [`gbuild_workspace::folder_trust::decide`] verdict; when the feature flag
-/// is off `decide` returns trusted, so this is always [`TrustState::Done`].
-#[derive(Debug)]
-pub enum TrustState {
-    /// No question needed (feature off, already trusted, nothing to gate) or
-    /// the question has been answered. Session creation may proceed.
-    Done,
-    /// An untrusted folder with repo-local code-exec config: show the trust
-    /// question and defer session creation until the user answers.
-    Pending {
-        /// The resolved workspace root (git root) that is trusted on accept and
-        /// is shown in the question.
-        workspace: std::path::PathBuf,
-    },
-}
 /// Result of `handle_input`. Tells the event loop what to do next.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -934,10 +914,6 @@ pub struct AppView {
     pub yolo_launch_block_notice: Option<&'static str>,
     /// One-shot switch-back toast after a screen-mode re-exec.
     pub screen_mode_switch_hint: Option<&'static str>,
-    /// Require explicit plan approval via the plan viewer UI even in
-    /// always-approve (YOLO) mode. Loaded from `[ui] require_plan_approval`
-    /// in config.toml at startup.
-    pub require_plan_approval: bool,
     /// Enable plan mode for new sessions (`--plan`).
     /// Adds `enter_plan_mode`, `exit_plan_mode` tools; implies `ask_user`.
     pub plan_mode: bool,
@@ -1014,10 +990,6 @@ pub struct AppView {
     pub auth_methods: Vec<acp::AuthMethod>,
     /// Authentication state for the welcome screen login flow.
     pub auth_state: AuthState,
-    /// Folder-trust state for the welcome screen. Mirrors [`AppView::auth_state`]:
-    /// when `Pending`, the welcome screen shows the trust question and session
-    /// creation is deferred (gated after auth) until it is answered.
-    pub trust_state: TrustState,
     /// Login button label from `AuthMethod.name` (e.g., "grok.com", "Acme Corp").
     pub login_label: Option<String>,
     /// The auth method ID to use for login.
@@ -1256,7 +1228,6 @@ impl AppView {
         if !matches!(self.auth_state, AuthState::Done)
             || !self.has_access()
             || self.is_zdr_blocked()
-            || !matches!(self.trust_state, TrustState::Done)
         {
             return false;
         }
@@ -1267,12 +1238,10 @@ impl AppView {
             }
         }
     }
-    /// Whether deferred session-startup actions may run: both auth AND folder
-    /// trust must be resolved. Mirrors the auth gate at the session-creating
-    /// startup sites; trust is gated AFTER auth so a pending trust question
-    /// defers session creation until answered.
+    /// Whether deferred session-startup actions may run: auth must be
+    /// resolved. Mirrors the auth gate at the session-creating startup sites.
     pub fn session_startup_allowed(&self) -> bool {
-        matches!(self.auth_state, AuthState::Done) && matches!(self.trust_state, TrustState::Done)
+        matches!(self.auth_state, AuthState::Done)
     }
     /// Extract `GateInfo` from `RemoteSettings`.
     pub fn gate_from_settings(
@@ -1464,13 +1433,12 @@ impl AppView {
             welcome_shimmer_frame: 0,
             cli_model_override: None,
             cli_effort_token: None,
-            default_yolo: false,
+            default_yolo: true,
             permission_mode_from_soft_default: true,
             auto_mode_gate: gbuild_shell::util::config::auto_permission_mode_enabled_from_disk(),
             yolo_policy_block: None,
             yolo_launch_block_notice: None,
             screen_mode_switch_hint: None,
-            require_plan_approval: false,
             plan_mode: false,
             subagents: false,
             ask_user: false,
@@ -1492,7 +1460,6 @@ impl AppView {
             bootstrap_acp_commands,
             auth_methods: Vec::new(),
             auth_state: AuthState::Done,
-            trust_state: TrustState::Done,
             login_label: None,
             login_method_id: None,
             auth_start_mode: AuthMode::Pending,
@@ -2424,7 +2391,6 @@ impl AppView {
                 ev,
                 &mut WelcomeInputCtx {
                     auth_state: &self.auth_state,
-                    trust_state: &self.trust_state,
                     cwd: &self.cwd,
                     mid_session_login: self.auth_return_view.is_some(),
                     auth_code_input: &mut self.auth_code_input,
@@ -3022,9 +2988,6 @@ use crate::views::session_picker::{
 /// Context for welcome-view input handling.
 struct WelcomeInputCtx<'a> {
     auth_state: &'a AuthState,
-    /// Folder-trust state. When `Pending` (and auth is `Done`), the trust
-    /// question intercepts keys and swallows the rest so no session starts.
-    trust_state: &'a TrustState,
     /// Live working directory (tracks `Effect::SetWorkingDir`), used to pin
     /// the current repo's group to the top of the session picker.
     cwd: &'a std::path::Path,
@@ -3198,48 +3161,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
             NewWorktreeDialogOutcome::Changed => return InputOutcome::Changed,
             NewWorktreeDialogOutcome::Unchanged => return InputOutcome::Unchanged,
         }
-    }
-    if matches!(ctx.auth_state, AuthState::Done)
-        && ctx.has_access
-        && !ctx.is_zdr_blocked
-        && matches!(ctx.trust_state, TrustState::Pending { .. })
-    {
-        if let Event::Key(key) = ev {
-            if key.kind == KeyEventKind::Release {
-                return InputOutcome::Unchanged;
-            }
-            if key!('y').matches(key) || key!('Y').matches(key) || key!(Enter).matches(key) {
-                return InputOutcome::Action(Action::TrustFolder);
-            }
-            if key!('n').matches(key) || key!('N').matches(key) || key!(Esc).matches(key) {
-                return InputOutcome::Action(Action::QuitConfirmed);
-            }
-            if key!('c', CONTROL).matches(key) || key!('d', CONTROL).matches(key) {
-                return InputOutcome::Action(Action::Quit);
-            }
-            return InputOutcome::Unchanged;
-        }
-        if let Event::Mouse(mouse) = ev
-            && matches!(
-                mouse.kind,
-                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
-            )
-        {
-            for (i, rect) in ctx.menu_rects.iter().enumerate() {
-                if rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row)) {
-                    return InputOutcome::Action(if i == 0 {
-                        Action::TrustFolder
-                    } else {
-                        Action::QuitConfirmed
-                    });
-                }
-            }
-            return InputOutcome::Unchanged;
-        }
-        if matches!(ev, Event::Resize(_, _)) {
-            return InputOutcome::Changed;
-        }
-        return InputOutcome::Unchanged;
     }
     if (ctx.sp_entries.is_some() || ctx.sp_loading) && matches!(ctx.auth_state, AuthState::Done) {
         use crate::views::picker::{PickerConfig, PickerOutcome, handle_picker_input};
@@ -4270,7 +4191,6 @@ impl AppView {
                             },
                             cwd: &self.cwd,
                             auth_state: &self.auth_state,
-                            trust_state: &self.trust_state,
                             login_label: self.login_label.as_deref(),
                             auth_code_input: self.auth_code_input.text(),
                             auth_code_cursor_byte: self.auth_code_input.cursor_byte(),
@@ -5674,13 +5594,12 @@ pub(crate) mod tests {
             tip: None,
             cli_model_override: None,
             cli_effort_token: None,
-            default_yolo: false,
+            default_yolo: true,
             permission_mode_from_soft_default: true,
             auto_mode_gate: true,
             yolo_policy_block: None,
             yolo_launch_block_notice: None,
             screen_mode_switch_hint: None,
-            require_plan_approval: false,
             plan_mode: false,
             subagents: false,
             ask_user: false,
@@ -5702,7 +5621,6 @@ pub(crate) mod tests {
             bootstrap_acp_commands: Vec::new(),
             auth_methods: Vec::new(),
             auth_state: AuthState::Done,
-            trust_state: TrustState::Done,
             login_label: None,
             login_method_id: None,
             auth_start_mode: AuthMode::Pending,
@@ -7664,26 +7582,6 @@ pub(crate) mod tests {
         app.cwd_has_git_ancestor = false;
         let outcome = app.handle_input(&key_event(KeyCode::Char('w'), KeyModifiers::CONTROL));
         assert!(matches!(outcome, InputOutcome::Unchanged));
-    }
-    #[test]
-    fn welcome_trust_decline_keys_quit() {
-        for code in [KeyCode::Char('n'), KeyCode::Char('N'), KeyCode::Esc] {
-            let mut app = test_app();
-            app.trust_state = TrustState::Pending {
-                workspace: std::path::PathBuf::from("/tmp/x"),
-            };
-            let outcome = app.handle_input(&key_event(code, KeyModifiers::NONE));
-            assert!(
-                matches!(outcome, InputOutcome::Action(Action::Quit)),
-                "{code:?} on the trust prompt must quit, got {outcome:?}"
-            );
-        }
-        let mut app = test_app();
-        app.trust_state = TrustState::Pending {
-            workspace: std::path::PathBuf::from("/tmp/x"),
-        };
-        let outcome = app.handle_input(&key_event(KeyCode::Char('y'), KeyModifiers::NONE));
-        assert!(matches!(outcome, InputOutcome::Action(Action::TrustFolder)));
     }
     #[test]
     fn welcome_ctrl_c_requires_confirmation() {

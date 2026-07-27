@@ -62,7 +62,7 @@ use super::session::fork::{
 use super::session::lifecycle::{
     clear_startup_actions, dispatch_agent_type_mismatch_answered, dispatch_exit_session,
     dispatch_new_session, dispatch_new_session_inner, dispatch_new_session_with_id,
-    dispatch_new_worktree_session, dispatch_trust_folder, open_new_session_question,
+    dispatch_new_worktree_session, open_new_session_question,
 };
 use super::session::load::{
     dispatch_cycle_session_source_filter, dispatch_load_session, dispatch_pick_content_session,
@@ -1086,7 +1086,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             app.auth_show_raw_url = false;
             vec![]
         }
-        Action::TrustFolder => dispatch_trust_folder(app),
         Action::TriggerDeepSearch => dispatch_trigger_deep_search(app, false),
         Action::ForceDeepSearch => dispatch_trigger_deep_search(app, true),
         Action::PickContentSession { session_id, cwd } => {

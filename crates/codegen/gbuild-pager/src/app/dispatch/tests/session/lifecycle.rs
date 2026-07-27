@@ -1,10 +1,5 @@
-//! Tests for session create, exit, trust, startup actions, worktree creation, and cloud lifecycle.
+//! Tests for session create, exit, startup actions, worktree creation, and cloud lifecycle.
 use super::*;
-/// Simulate a release-stamped build so folder-trust is active (a local/dev
-/// build auto-trusts and persists nothing). Mirrors this module's raw env idiom.
-fn simulate_release_build() {
-    unsafe { std::env::set_var(gbuild_version::TEST_VERSION_ENV, "0.0.0-sim") };
-}
 #[test]
 fn voice_on_welcome_creates_session_and_records() {
     if !gbuild_voice::AUDIO_SUPPORTED {
@@ -994,207 +989,38 @@ fn deferred_model_switch_applied_on_worktree_session_created() {
             .. } if *a_id == id && *s_id == session_id && *m_id == model_id
     )));
 }
-/// The session-startup gate requires BOTH auth AND trust resolved. Trust is
-/// gated AFTER auth, so either one pending defers session creation.
+/// The session-startup gate requires auth resolved.
 #[test]
-fn session_startup_allowed_requires_auth_and_trust() {
+fn session_startup_allowed_requires_auth() {
     let mut app = test_app();
     assert!(app.session_startup_allowed());
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
-    assert!(
-        !app.session_startup_allowed(),
-        "pending trust must block session startup",
-    );
-    app.trust_state = TrustState::Done;
     app.auth_state = AuthState::Pending { error: None };
     assert!(
         !app.session_startup_allowed(),
         "pending auth must block session startup",
     );
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
-    assert!(
-        !app.session_startup_allowed(),
-        "both pending must block session startup",
-    );
-}
-/// Accepting the trust question (its `finish_trust` tail) resolves trust and
-/// replays the deferred startup when auth is already done. (Declining quits
-/// instead -- see `welcome_trust_decline_keys_quit` in `app_view`.)
-#[test]
-fn finish_trust_resolves_and_replays_startup() {
-    let mut app = test_app();
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
-    app.deferred_startup.session =
-        Some(crate::app::session_startup::DeferredSessionStartup::Load {
-            session_id: "deferred-session".into(),
-            session_cwd: None,
-            chat_kind: false,
-        });
-    let effects = finish_trust(&mut app);
-    assert!(matches!(app.trust_state, TrustState::Done));
-    assert!(
-        app.deferred_startup.session.is_none(),
-        "resolving trust must drain the deferred startup",
-    );
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::LoadSession { .. })),
-        "deferred load must replay once trust resolves",
-    );
-}
-/// Accepting the trust question persists the grant to the store and resolves
-/// trust. GBUILD_HOME-isolated so the write hits a temp store, not the real one.
-#[serial_test::serial(GBUILD_HOME)]
-#[test]
-fn trust_folder_grants_and_resolves() {
-    use gbuild_workspace::trust::{TrustStore, workspace_key};
-    let home = tempfile::tempdir().expect("home tempdir");
-    unsafe { std::env::set_var("GBUILD_HOME", home.path()) };
-    simulate_release_build();
-    let repo = tempfile::tempdir().expect("repo tempdir");
-    let workspace = workspace_key(repo.path());
-    let mut app = test_app();
-    app.trust_state = TrustState::Pending {
-        workspace: workspace.clone(),
-    };
-    let _ = dispatch(Action::TrustFolder, &mut app);
-    assert!(matches!(app.trust_state, TrustState::Done));
-    assert!(
-        TrustStore::load().is_trusted(&workspace),
-        "accepting must persist the trust grant for the workspace",
-    );
-}
-/// When BOTH auth and trust are pending, `AuthComplete` must NOT replay the
-/// deferred startup -- the trust question renders next, and its answer drains
-/// it. Verifies the symmetric two-gate hand-off.
-#[test]
-fn auth_complete_defers_startup_until_trust_resolved() {
-    let mut app = test_app();
-    app.auth_state = AuthState::Authenticating {
-        request_seq: 1,
-        handle: None,
-        auth_url: None,
-        mode: AuthMode::Pending,
-    };
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
-    app.deferred_startup.session =
-        Some(crate::app::session_startup::DeferredSessionStartup::Load {
-            session_id: "deferred-session".into(),
-            session_cwd: None,
-            chat_kind: false,
-        });
-    let effects = dispatch(
-        Action::TaskComplete(TaskResult::AuthComplete {
-            request_seq: 1,
-            meta: None,
-        }),
-        &mut app,
-    );
-    assert!(matches!(app.auth_state, AuthState::Done));
-    assert!(
-        matches!(app.trust_state, TrustState::Pending { .. }),
-        "trust stays pending after auth completes",
-    );
-    assert!(
-        app.deferred_startup.session.is_some(),
-        "startup must remain deferred while trust is pending",
-    );
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, Effect::LoadSession { .. })),
-        "no session may load before trust is answered",
-    );
-    let effects = finish_trust(&mut app);
-    assert!(app.deferred_startup.session.is_none());
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::LoadSession { .. })),
-        "trust answer must replay the deferred startup",
-    );
-}
-/// Symmetric to the above: trust answered FIRST while auth is still pending
-/// exercises `finish_trust`'s `else` (deferred) branch -- it must NOT drain;
-/// the later `AuthComplete` (the last gate) drains.
-#[test]
-fn trust_answered_first_defers_startup_until_auth_completes() {
-    let mut app = test_app();
-    app.auth_state = AuthState::Authenticating {
-        request_seq: 1,
-        handle: None,
-        auth_url: None,
-        mode: AuthMode::Pending,
-    };
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
-    app.deferred_startup.session =
-        Some(crate::app::session_startup::DeferredSessionStartup::Load {
-            session_id: "deferred-session".into(),
-            session_cwd: None,
-            chat_kind: false,
-        });
-    let effects = finish_trust(&mut app);
-    assert!(matches!(app.trust_state, TrustState::Done));
-    assert!(
-        app.deferred_startup.session.is_some(),
-        "startup stays deferred while auth is still pending",
-    );
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, Effect::LoadSession { .. })),
-        "no session may load before auth completes",
-    );
-    let effects = dispatch(
-        Action::TaskComplete(TaskResult::AuthComplete {
-            request_seq: 1,
-            meta: None,
-        }),
-        &mut app,
-    );
-    assert!(matches!(app.auth_state, AuthState::Done));
-    assert!(app.deferred_startup.session.is_none());
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::LoadSession { .. })),
-        "auth completion replays the deferred startup",
-    );
 }
 /// Regression / negative-space: a session-creating dispatch (e.g. the
-/// global `Ctrl+N` `NewSession`, which bypasses the welcome interceptor) must
-/// NOT create a session while `TrustState::Pending` -- the dispatch
-/// chokepoint stashes it, and it replays exactly once when trust resolves.
+/// global `Ctrl+N` `NewSession`) must NOT create a session while auth is
+/// pending -- the dispatch chokepoint stashes it, and it replays exactly once
+/// when auth resolves.
 #[test]
-fn new_session_is_gated_while_trust_pending() {
+fn new_session_is_gated_while_auth_pending() {
     let mut app = test_app();
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
+    app.auth_state = AuthState::Pending { error: None };
     assert!(app.agents.is_empty());
     let effects = dispatch(Action::NewSession, &mut app);
     assert!(
         app.agents.is_empty(),
-        "no session may be created while trust is Pending",
+        "no session may be created while auth is pending",
     );
     assert!(
         app.deferred_startup.new_session,
         "the new-session intent must be stashed for replay",
     );
     assert!(effects.is_empty(), "a gated NewSession produces no effects");
-    let _ = finish_trust(&mut app);
-    assert!(matches!(app.trust_state, TrustState::Done));
+    app.auth_state = AuthState::Done;
+    let _ = drain_startup_actions(&mut app);
     assert!(
         !app.deferred_startup.new_session,
         "the stashed new-session intent is consumed on replay",
@@ -1202,7 +1028,7 @@ fn new_session_is_gated_while_trust_pending() {
     assert_eq!(
         app.agents.len(),
         1,
-        "the deferred new session replays exactly once after trust resolves",
+        "the deferred new session replays exactly once after auth resolves",
     );
 }
 /// Sticky `--chat` first create (NewSession) stamps chat_kind.
@@ -1223,7 +1049,7 @@ fn chat_mode_new_session_creates_with_chat_kind() {
     );
 }
 /// Atomicity: when several startup intents coexist (e.g. CLI
-/// `--resume` + an incidental `Ctrl+N` deferred during the trust question),
+/// `--resume` + an incidental `Ctrl+N` deferred during sign-in),
 /// `drain_startup_actions` replays the highest-priority one and leaves NO
 /// `startup_*` field set — no stale intent can fire on a later drain.
 #[test]
@@ -1257,16 +1083,14 @@ fn drain_clears_all_startup_fields_even_when_intents_coexist() {
 }
 /// The `--worktree <ref>` feature must keep
 /// working through the startup gate. A `NewWorktreeSession` carrying a
-/// `git_ref` dispatched while the trust gate is closed is stashed into
+/// `git_ref` dispatched while the auth gate is closed is stashed into
 /// `deferred_startup.worktree_ref` by the chokepoint; once the gate opens the drain
 /// replays it as the worktree's git ref and clears the field.
 #[test]
 fn deferred_worktree_ref_replays_through_gate() {
     let mut app = test_app();
     app.cwd_has_git_ancestor = true;
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
+    app.auth_state = AuthState::Pending { error: None };
     let effects = dispatch(
         Action::NewWorktreeSession {
             load_session_id: None,
@@ -1285,7 +1109,8 @@ fn deferred_worktree_ref_replays_through_gate() {
         "the --worktree <ref> must be stashed for replay",
     );
     assert!(app.deferred_startup.worktree);
-    let effects = finish_trust(&mut app);
+    app.auth_state = AuthState::Done;
+    let effects = drain_startup_actions(&mut app);
     assert!(
         effects.iter().any(|e| matches!(
             e,
@@ -1309,9 +1134,7 @@ fn deferred_worktree_ref_replays_through_gate() {
 fn gated_worktree_without_load_id_preserves_stashed_resume() {
     let mut app = test_app();
     app.cwd_has_git_ancestor = true;
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
+    app.auth_state = AuthState::Pending { error: None };
     let effects = dispatch(
         Action::LoadSession("resume-me".into(), None, false),
         &mut app,
@@ -1348,7 +1171,8 @@ fn gated_worktree_without_load_id_preserves_stashed_resume() {
         app.deferred_startup.worktree,
         "the worktree intent is stashed too"
     );
-    let effects = finish_trust(&mut app);
+    app.auth_state = AuthState::Done;
+    let effects = drain_startup_actions(&mut app);
     assert!(
         effects.iter().any(|e| matches!(
             e,
@@ -1370,9 +1194,7 @@ fn gated_worktree_without_load_id_preserves_stashed_resume() {
 fn gated_worktree_with_none_companions_preserves_stashed_label_and_ref() {
     let mut app = test_app();
     app.cwd_has_git_ancestor = true;
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/x"),
-    };
+    app.auth_state = AuthState::Pending { error: None };
     let effects = dispatch(
         Action::NewWorktreeSession {
             load_session_id: Some("mysess".into()),
@@ -1423,7 +1245,8 @@ fn gated_worktree_with_none_companions_preserves_stashed_label_and_ref() {
         "the blank worktree must preserve the stashed git ref",
     );
     assert!(app.deferred_startup.worktree);
-    let effects = finish_trust(&mut app);
+    app.auth_state = AuthState::Done;
+    let effects = drain_startup_actions(&mut app);
     assert!(
         effects.iter().any(|e| matches!(
             e,

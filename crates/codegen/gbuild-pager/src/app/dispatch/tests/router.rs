@@ -422,20 +422,14 @@ fn resume_foreign_session_without_hint_is_noop() {
     assert!(app.foreign_resume_hint().is_none());
 }
 #[test]
-fn resume_foreign_session_stashes_prompt_behind_trust_and_auth() {
+fn resume_foreign_session_stashes_prompt_behind_auth() {
     use gbuild_workspace::foreign_sessions::ForeignSessionTool;
-    for (tool, prompt, auth_pending) in [
-        (ForeignSessionTool::Codex, "/resume-codex native-id", false),
-        (ForeignSessionTool::Cursor, "/resume-cursor native-id", true),
+    for (tool, prompt) in [
+        (ForeignSessionTool::Codex, "/resume-codex native-id"),
+        (ForeignSessionTool::Cursor, "/resume-cursor native-id"),
     ] {
         let mut app = test_app();
-        if auth_pending {
-            app.auth_state = AuthState::Pending { error: None };
-        } else {
-            app.trust_state = TrustState::Pending {
-                workspace: std::path::PathBuf::from("/work/proj"),
-            };
-        }
+        app.auth_state = AuthState::Pending { error: None };
         seed_foreign_resume_hint(&mut app, tool);
         app.deferred_startup.session =
             Some(crate::app::session_startup::DeferredSessionStartup::Load {

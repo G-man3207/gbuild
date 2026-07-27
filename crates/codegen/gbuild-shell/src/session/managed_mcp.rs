@@ -42,7 +42,7 @@ fn refresh_context(
 /// configs (with a [`RefreshContext`] for proactive refresh). Single source for
 /// the auth-key dance across every managed-config fetch —
 /// [`crate::agent::MvpAgent::get_managed_mcp_configs`], the interactive
-/// folder-trust grant reload, agent-init MCP setup, and the reactive re-auth
+/// mid-session reload, agent-init MCP setup, and the reactive re-auth
 /// re-fetch — so the copies can't drift.
 /// Callers gate on `can_fetch_managed_mcps`/auth before calling.
 pub(crate) async fn fetch_managed_mcp_configs(
@@ -166,11 +166,6 @@ pub fn merge_managed_mcp_servers_with_policy(
     // plugin reload. Sorting by the dedup key keeps reloads a true no-op when
     // nothing changed.
     merged.sort_by_key(mcp_server_key);
-    // Folder-trust gate: when `cwd`'s workspace is untrusted, drop its
-    // repo-local (project-scoped) servers before they can be spawned. No-op for
-    // a trusted/unrecorded workspace. Composes with the managed-deny allowlist
-    // applied next (both filters run on the survivors).
-    let merged = crate::agent::folder_trust::filter_untrusted_project_mcp(cwd, merged);
     let allowlist = &gbuild_workspace::permission::resolution::managed_settings().mcp_allowlist;
     apply_mcp_server_policy(merged, &disabled, allowlist)
 }
@@ -859,53 +854,6 @@ enabled = false
                 acp::McpServer::Http(acp::McpServerHttp { name, .. }) if name == "github"
             )),
             "config.toml should block same-named lower-precedence HTTP servers"
-        );
-    }
-
-    /// End-to-end folder-trust gate through the public merge: an untrusted
-    /// workspace's project `.mcp.json` server is dropped before spawn (a
-    /// client-supplied server still survives), while a trusted workspace keeps
-    /// it. Existing merge tests record no decision, so the default-allowed gate
-    /// leaves them a no-op.
-    #[test]
-    fn untrusted_workspace_drops_project_mcp_servers() {
-        fn repo_with_project_server() -> tempfile::TempDir {
-            let cwd = tempfile::tempdir().unwrap();
-            git2::Repository::init(cwd.path()).unwrap();
-            std::fs::write(
-                cwd.path().join(".mcp.json"),
-                r#"{"mcpServers": {"projsrv": {"url": "https://proj.example.com/mcp"}}}"#,
-            )
-            .unwrap();
-            cwd
-        }
-        let compat = gbuild_tools::types::compat::CompatConfig::default();
-
-        let untrusted = repo_with_project_server();
-        crate::agent::folder_trust::record_for_test(untrusted.path(), false);
-        let client = vec![acp::McpServer::Http(
-            acp::McpServerHttp::new(
-                "clientsrv".to_string(),
-                "https://client.example.com/mcp".to_string(),
-            )
-            .headers(vec![]),
-        )];
-        let merged = merge_managed_mcp_servers(client, untrusted.path(), &[], None, &compat);
-        assert!(
-            !merged.iter().any(|s| mcp_server_name(s) == "projsrv"),
-            "untrusted workspace must drop its repo-local MCP server"
-        );
-        assert!(
-            merged.iter().any(|s| mcp_server_name(s) == "clientsrv"),
-            "client-supplied server must be retained when untrusted"
-        );
-
-        let trusted = repo_with_project_server();
-        crate::agent::folder_trust::record_for_test(trusted.path(), true);
-        let merged = merge_managed_mcp_servers(vec![], trusted.path(), &[], None, &compat);
-        assert!(
-            merged.iter().any(|s| mcp_server_name(s) == "projsrv"),
-            "trusted workspace must keep its repo-local MCP server"
         );
     }
 

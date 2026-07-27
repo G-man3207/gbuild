@@ -739,17 +739,12 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
             }
             true
         }
-        XaiSessionUpdate::HooksChanged {
-            hooks,
-            project_trusted,
-            load_errors,
-        } => {
+        XaiSessionUpdate::HooksChanged { hooks, load_errors } => {
             if let Some(ref mut modal) = agent.extensions_modal {
                 use crate::views::extensions_modal::TabDataState;
                 modal.hooks_data =
                     TabDataState::Loaded(xai_hooks_plugins_types::HooksListResponse {
                         hooks,
-                        project_trusted,
                         load_errors,
                     });
                 true

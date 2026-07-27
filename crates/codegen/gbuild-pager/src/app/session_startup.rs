@@ -32,7 +32,7 @@ pub enum DeferredSessionStartup {
         native_id: String,
     },
 }
-/// One owner for every action deferred behind auth/folder-trust startup gates.
+/// One owner for every action deferred behind the auth startup gate.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeferredStartupActions {
     pub session: Option<DeferredSessionStartup>,

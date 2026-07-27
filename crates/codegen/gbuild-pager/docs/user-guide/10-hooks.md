@@ -65,9 +65,9 @@ Hooks are discovered from several places (all are merged):
 | Global | `~/.gbuild/hooks/*.json` | Always | Personal hooks |
 | Global | `~/.claude/settings.json` (and `settings.local.json`) | Always | Claude Code compatibility (configurable) |
 | Global | `~/.cursor/hooks.json` | Always | Cursor compatibility (configurable) |
-| Project | `<project>/.gbuild/hooks/*.json` | Requires trust | Per-repo automation |
-| Project | `<project>/.claude/settings.json` (and `settings.local.json`) | Requires trust | Claude compatibility (configurable) |
-| Project | `<project>/.cursor/hooks.json` | Requires trust | Cursor compatibility (configurable) |
+| Project | `<project>/.gbuild/hooks/*.json` | Always | Per-repo automation |
+| Project | `<project>/.claude/settings.json` (and `settings.local.json`) | Always | Claude compatibility (configurable) |
+| Project | `<project>/.cursor/hooks.json` | Always | Cursor compatibility (configurable) |
 | Config | `~/.gbuild/config.toml` | Always | Your hooks alongside the rest of your config |
 | Config | `managed_config.toml` (`$GBUILD_HOME` and `/etc/gbuild`) | Always | Organization-distributed hooks (server-synced and on-device) |
 | Config | `requirements.toml` (user and system) | Always | Organization-distributed hooks in the requirements layer |
@@ -75,9 +75,7 @@ Hooks are discovered from several places (all are merged):
 
 Config-file hooks live in the same TOML your organization already controls; see [Hooks in Config Files](#hooks-in-config-files) for the format. The compatible vendor hook sources are scanned by default. To disable scanning for a specific vendor, set `[compat.<vendor>] hooks = false` in `~/.gbuild/config.toml` or the corresponding environment variable. See [Configuration](05-configuration.md#harness-compatibility) for details.
 
-**Trusting a project**: The first time you open a project with hooks, you must trust it before its project hooks will run -- until then they are silently skipped. Grant trust by running `/hooks-trust` (or launching with `--trust`); the decision is recorded in the unified folder-trust store (`~/.gbuild/trusted_folders.toml`), the same gate that governs repo-local MCP/LSP servers. Global hooks in `~/.gbuild/hooks/` are always trusted and need no entry. This prevents untrusted repos from running arbitrary code.
-
-Because hooks are unified under folder-trust, a `--trust` / `/hooks-trust` grant trusts the whole folder for **MCP, LSP, and hooks** together, and cascades to subdirectories. Conversely, disabling folder-trust (`GBUILD_FOLDER_TRUST=0` or `[folder_trust] enabled = false`) ungates project hooks along with MCP/LSP.
+Project hooks load automatically: gBuild always loads repo-local configuration (hooks, MCP, LSP, plugins) without a trust prompt.
 
 ---
 
@@ -393,13 +391,11 @@ Each hook shows:
 
 ```
 /hooks-list           # Show hooks loaded in this session
-/hooks-trust          # Trust this project for hook execution
 /hooks-add <path>     # Add a custom hook file or directory
 /hooks-remove <path>  # Remove a custom hook
-/hooks-untrust        # Revoke trust for this project
 ```
 
-In the TUI pager, the individual `/hooks-*` commands do not appear in the slash-command list. The `/hooks` modal covers listing, adding, removing, and enabling or disabling hooks; project trust is managed via `/hooks-trust` (or the modal's Trust action), which writes the unified folder-trust store described above.
+In the TUI pager, the individual `/hooks-*` commands do not appear in the slash-command list. The `/hooks` modal covers listing, adding, removing, and enabling or disabling hooks.
 
 ### Per-Hook Enable/Disable
 
@@ -457,7 +453,7 @@ echo '{"decision": "allow"}'
 ## Security Notes
 
 - Global hooks (`~/.gbuild/hooks/`) run with your user permissions -- treat them like shell scripts.
-- Project hooks require folder trust (`/hooks-trust` or `--trust`, the same gate as repo-local MCP/LSP) to prevent supply-chain attacks from malicious repos.
+- Project hooks load automatically and run with your user permissions -- only work in repositories you trust.
 - HTTP hooks send session data -- only use trusted endpoints.
 
 ---
@@ -475,6 +471,5 @@ echo '{"decision": "allow"}'
 ## Troubleshooting
 
 - **Hook not running?** Press `Ctrl+L` on non–VS Code family (or run `/hooks` anywhere) to see if it is loaded and matched.
-- **Project hooks ignored?** The folder may be untrusted. Run `/hooks-trust` (or relaunch with `--trust`).
 - **Script not found?** Check the path is relative to the `.json` file and executable (`chmod +x`).
 - **See errors?** Capture logs by launching with `RUST_LOG=debug GBUILD_LOG_FILE=/tmp/gbuild.log gbuild`, then check `/tmp/gbuild.log`.

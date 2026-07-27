@@ -526,7 +526,7 @@ static MARKER_CACHE: std::sync::RwLock<Option<bool>> = std::sync::RwLock::new(No
 /// or any other failure.
 ///
 /// Caching avoids a `read_to_string` + TOML parse on every gated call
-/// (`load_claude_env_with_project`, MCP loaders, hook discovery, etc.).
+/// (`load_claude_env`, MCP loaders, hook discovery, etc.).
 /// Trade-off: a user who manually flips the marker mid-session must restart to
 /// see the change — acceptable because reverting after import is rare. Use
 /// [`is_claude_import_marked_at`] in tests, which bypasses the cache.
@@ -1624,13 +1624,10 @@ mod tests {
         let _g = MarkerGuard;
         refresh_marker_cache(true);
         let dir = tempfile::tempdir().unwrap();
-        let env = gbuild_workspace::permission::claude_settings::load_claude_env_with_project(
-            dir.path(),
-            true,
-        );
+        let env = gbuild_workspace::permission::claude_settings::load_claude_env(dir.path());
         assert!(
             env.is_empty(),
-            "load_claude_env_with_project should be empty when marker set"
+            "load_claude_env should be empty when marker set"
         );
     }
 
@@ -1753,40 +1750,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn as_sources_gates_project_sources_on_trust() {
-        // Trust gating lives in `HookSourcePaths::as_sources`: project sources are
-        // dropped when untrusted and kept when trusted. Assert on project sources
-        // (git_root-relative) since global sources use the real, non-injectable home.
-        let _g = MarkerGuard;
-        refresh_marker_cache(false);
-        let dir = tempfile::tempdir().unwrap();
-        let compat = gbuild_tools::types::compat::CompatConfig::default();
-        let paths = crate::util::hooks::discover_hook_source_paths(Some(dir.path()), &compat);
-        assert!(
-            !paths.project.is_empty(),
-            "project source paths should be non-empty for a git_root"
-        );
-
-        let (global_untrusted, project) = paths.as_sources(false);
-        assert_eq!(
-            global_untrusted.len(),
-            paths.global.len(),
-            "global sources must survive untrusted"
-        );
-        assert!(
-            project.is_empty(),
-            "untrusted: as_sources(false) must drop all project sources"
-        );
-
-        let (_global, project) = paths.as_sources(true);
-        assert!(
-            !project.is_empty(),
-            "trusted: as_sources(true) must keep project sources"
-        );
-    }
-
-    #[test]
-    #[serial]
     fn discover_hooks_honors_claude_compat_gate() {
         // Pins the single load entry point every startup/reload site uses: with
         // `compat.claude.hooks = false` a project `.claude/settings.json` hook must
@@ -1819,18 +1782,17 @@ mod tests {
             })
         };
 
-        // Trusted so project sources are included; vary only the compat toggle.
         let mut compat = gbuild_tools::types::compat::CompatConfig::default();
 
         compat.claude.hooks = false;
-        let (reg, _errs) = crate::util::hooks::discover_hooks(Some(git_root.path()), &compat, true);
+        let (reg, _errs) = crate::util::hooks::discover_hooks(Some(git_root.path()), &compat);
         assert!(
             !has_probe(&reg),
             "compat.claude.hooks=false: project .claude hook must NOT be loaded"
         );
 
         compat.claude.hooks = true;
-        let (reg, _errs) = crate::util::hooks::discover_hooks(Some(git_root.path()), &compat, true);
+        let (reg, _errs) = crate::util::hooks::discover_hooks(Some(git_root.path()), &compat);
         assert!(
             has_probe(&reg),
             "compat.claude.hooks=true: project .claude hook must be loaded"
@@ -2124,7 +2086,6 @@ extra_rule_dirs = ["/c/rules"]
         let resolved =
             gbuild_workspace::permission::resolution::resolve_permissions_with_provenance(
                 dir.path(),
-                true,
             )
             .await;
         if let Some(r) = resolved {

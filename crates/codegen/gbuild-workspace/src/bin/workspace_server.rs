@@ -119,15 +119,6 @@ struct Args {
     /// instead of widening to the built-in default catalog.
     #[arg(long)]
     require_explicit_toolset: bool,
-    /// Trust project-scoped LSP servers from `<repo>/.gbuild/lsp.json`.
-    /// Defaults off; sandbox opts in only after workspace trust is established.
-    #[arg(
-        long,
-        env = "GBUILD_WORKSPACE_PROJECT_LSP_TRUSTED",
-        default_value_t = false,
-        action = clap::ArgAction::Set,
-    )]
-    project_lsp_trusted: bool,
     /// Confine `x.ai/fs/*` resolution to the workspace root (reject `..`,
     /// absolute-outside-root, symlink escapes). On by default: the standalone
     /// server always backs a remote-sandbox workspace, a real tenant boundary.
@@ -393,7 +384,6 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
         args.allow_insecure_ws,
         status_config,
         args.upload_queue_enabled,
-        args.project_lsp_trusted,
         Some(diag_handle.clone()),
         args.require_explicit_toolset,
         args.confine_fs_to_workspace_root,
@@ -703,15 +693,6 @@ mod tests {
         assert!(!args.capabilities);
         let args = Args::try_parse_from(["xai-workspace-server", "--capabilities"]).unwrap();
         assert!(args.capabilities);
-    }
-    #[test]
-    fn project_lsp_trust_defaults_off_and_is_opt_in() {
-        unsafe { std::env::remove_var("GBUILD_WORKSPACE_PROJECT_LSP_TRUSTED") };
-        let args = Args::try_parse_from(["xai-workspace-server"]).unwrap();
-        assert!(!args.project_lsp_trusted);
-        let args = Args::try_parse_from(["xai-workspace-server", "--project-lsp-trusted", "true"])
-            .unwrap();
-        assert!(args.project_lsp_trusted);
     }
     #[test]
     fn capabilities_manifest_shape() {

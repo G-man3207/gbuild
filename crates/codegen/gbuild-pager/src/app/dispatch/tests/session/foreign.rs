@@ -863,9 +863,7 @@ fn colliding_native_and_foreign_ids_use_source_at_initiation() {
 fn gated_foreign_pick_replaces_all_prior_startup_intents() {
     let mut app = test_app_with_agent();
     let old_id = AgentId(0);
-    app.trust_state = TrustState::Pending {
-        workspace: PathBuf::from("/repo"),
-    };
+    app.auth_state = AuthState::Pending { error: None };
     app.deferred_startup.session =
         Some(crate::app::session_startup::DeferredSessionStartup::Load {
             session_id: "must-not-load".into(),
@@ -900,7 +898,7 @@ fn gated_foreign_pick_replaces_all_prior_startup_intents() {
     assert!(app.deferred_startup.prompt.is_none());
     assert!(!app.deferred_startup.pending_chat);
 
-    app.trust_state = TrustState::Done;
+    app.auth_state = AuthState::Done;
     app.new_session_worktree_mode = crate::app::app_view::WorktreeMode::Always;
     let effects = drain_startup_actions(&mut app);
     assert!(

@@ -105,21 +105,13 @@ pub async fn discover_agents_md(root_cwd: &Path) -> Vec<Value> {
 /// plugin is converted to a JSON object with the essential fields
 /// that downstream consumers need (name, scope, root, trusted,
 /// has_skills, has_hooks, has_mcp).
-///
-/// `project_trusted` is the folder-trust verdict for `root_cwd`, threaded into
-/// discovery to gate Project-scope plugins.
 pub fn discover_plugins(
     root_cwd: &Path,
     config: &PluginDiscoveryConfig,
     trust_store: &PluginTrustStore,
-    project_trusted: bool,
 ) -> Vec<Value> {
-    let discovered = gbuild_agent::plugins::discover_plugins(
-        Some(root_cwd),
-        config,
-        trust_store,
-        project_trusted,
-    );
+    let discovered =
+        gbuild_agent::plugins::discover_plugins(Some(root_cwd), config, trust_store);
 
     discovered
         .into_iter()
@@ -204,18 +196,13 @@ fn toml_to_json(v: &toml::Value) -> Value {
 /// merges rules from requirements.toml, managed-settings.json,
 /// managed_config.toml, config.toml, and `.claude/settings.json`.
 ///
-/// `project_trusted` gates project-tier permission sources (same contract as
-/// env/hooks/plugins). Hub/cloud callers outside the local folder-trust model
-/// should pass `true`.
-///
 /// Returns a JSON object with `sources`, `loaded` (rule count), and
 /// `skipped` (unrecognized rules). Returns `Value::Null` if no
 /// permission sources are configured.
-pub async fn load_permissions(root_cwd: &Path, project_trusted: bool) -> Value {
+pub async fn load_permissions(root_cwd: &Path) -> Value {
     use crate::permission::resolution;
 
-    let Some(resolved) =
-        resolution::resolve_permissions_with_provenance(root_cwd, project_trusted).await
+    let Some(resolved) = resolution::resolve_permissions_with_provenance(root_cwd).await
     else {
         return Value::Null;
     };
@@ -436,7 +423,7 @@ mod tests {
 
         let trust = PluginTrustStore::load_from(tmp.path().join("trust"));
         let config = PluginDiscoveryConfig::default();
-        let plugins = discover_plugins(tmp.path(), &config, &trust, true);
+        let plugins = discover_plugins(tmp.path(), &config, &trust);
         let found = plugins
             .iter()
             .find(|p| p["name"].as_str() == Some("test-plugin"));
@@ -463,7 +450,7 @@ mod tests {
 
         let trust = PluginTrustStore::load_from(tmp.path().join("trust"));
         let config = PluginDiscoveryConfig::default();
-        let plugins = discover_plugins(tmp.path(), &config, &trust, true);
+        let plugins = discover_plugins(tmp.path(), &config, &trust);
         let p = plugins
             .iter()
             .find(|p| p["name"].as_str() == Some("field-test"))
@@ -550,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn load_permissions_returns_valid_json() {
         let tmp = tempfile::tempdir().unwrap();
-        let result = load_permissions(tmp.path(), true).await;
+        let result = load_permissions(tmp.path()).await;
         // Result is either Null (no sources) or an object with
         // sources, loaded, and skipped fields. Both branches assert
         // a definite pass criterion.
@@ -577,7 +564,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = load_permissions(tmp.path(), true).await;
+        let result = load_permissions(tmp.path()).await;
         assert!(result.is_object(), "should return an object, got {result}");
         assert!(result["sources"].is_array(), "sources should be an array");
         assert!(result["loaded"].is_number(), "loaded should be a number");

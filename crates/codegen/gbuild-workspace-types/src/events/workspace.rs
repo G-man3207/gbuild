@@ -77,15 +77,11 @@ pub enum WorkspaceEvent {
     PluginsChanged {
         /// Current plugin set.
         plugins: Vec<PluginInfo>,
-        /// Whether the project is trusted (gates plugin execution).
-        project_trusted: bool,
     },
     /// Hook discovery surfaced changes.
     HooksChanged {
         /// Current hook set.
         hooks: Vec<HookInfo>,
-        /// Whether the project is trusted (gates hook execution).
-        project_trusted: bool,
     },
     /// MCP server transitioned state.
     McpServerStateChanged {
@@ -257,14 +253,8 @@ mod tests {
                 added: vec![],
                 removed: vec![],
             },
-            WorkspaceEvent::PluginsChanged {
-                plugins: vec![],
-                project_trusted: true,
-            },
-            WorkspaceEvent::HooksChanged {
-                hooks: vec![],
-                project_trusted: true,
-            },
+            WorkspaceEvent::PluginsChanged { plugins: vec![] },
+            WorkspaceEvent::HooksChanged { hooks: vec![] },
             WorkspaceEvent::McpServerStateChanged {
                 server: "fs".into(),
                 status: McpServerStatus::Running,

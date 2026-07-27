@@ -47,7 +47,7 @@ use super::prompt::{
     input_can_trigger_project_picker,
 };
 use super::session::fork::build_child_fork_marker;
-use super::session::lifecycle::{dispatch_new_session_inner, drain_startup_actions, finish_trust};
+use super::session::lifecycle::{dispatch_new_session_inner, drain_startup_actions};
 use super::session::load::{dispatch_load_session_with_restore, reanchor_grouped_selection};
 use super::session::modal::{dispatch_rename_session, dispatch_sessions_confirm_close};
 use super::settings::setters::set_default_model_inner;
@@ -61,8 +61,7 @@ use crate::app::actions::{Action, Effect, SubagentKillOutcome, SwitchModelError,
 use crate::app::agent::{AgentId, AgentSession, AgentState};
 use crate::app::agent_view::{ActivePane, AgentView, PromptMode};
 use crate::app::app_view::{
-    ActiveView, AppView, AuthMode, AuthState, TrustState, VoiceState, VoiceTarget,
-    WelcomeAnnouncementState,
+    ActiveView, AppView, AuthMode, AuthState, VoiceState, VoiceTarget, WelcomeAnnouncementState,
 };
 use crate::scrollback::block::RenderBlock;
 use crate::scrollback::blocks::{SessionEvent, ToolCallBlock};
@@ -115,7 +114,6 @@ fn test_app() -> AppView {
         yolo_policy_block: None,
         yolo_launch_block_notice: None,
         screen_mode_switch_hint: None,
-        require_plan_approval: false,
         plan_mode: false,
         chat_mode: false,
         subagents: false,
@@ -140,7 +138,6 @@ fn test_app() -> AppView {
             "Grok".to_string(),
         ))],
         auth_state: AuthState::Done,
-        trust_state: TrustState::Done,
         login_label: None,
         login_method_id: None,
         auth_start_mode: AuthMode::Pending,

@@ -1001,7 +1001,6 @@ const PLUGIN_DIR_LEADER_WARNING: &str = "gbuild: --plugin-dir is ignored in lead
 async fn run_agent_command(
     agent_args: Box<gbuild_pager::app::AgentArgs>,
     permission_mode_flag: Option<String>,
-    trust: bool,
     no_auto_update: bool,
     disable_web_search: bool,
     update_config: &UpdateConfig,
@@ -1026,14 +1025,6 @@ async fn run_agent_command(
     init_tracing_simple("agent");
     let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
     gbuild_telemetry::instrumentation::install_panic_hook();
-    if trust {
-        match std::env::current_dir() {
-            Ok(cwd) => gbuild_shell::agent::folder_trust::grant_folder_trust(&cwd),
-            Err(e) => {
-                tracing::warn!(error = %e, "--trust: failed to resolve cwd; folder not trusted")
-            }
-        }
-    }
     let early_prefetch = gbuild_shell::agent::models::start_early_prefetch(None);
     gbuild_shell::agent::mvp_agent::warm_async_http_client();
     tokio::task::spawn_blocking(|| {});
@@ -1823,7 +1814,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 return run_agent_command(
                     agent_args,
                     args.permission_mode_flag.clone(),
-                    args.trust,
                     args.no_auto_update,
                     args.disable_web_search,
                     &update_config,
@@ -2010,7 +2000,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 resume_title_pinned: args.resume_target_pinned,
                 cwd: args.cwd,
                 yolo: launch_yolo.yolo,
-                trust: args.trust,
                 output_format: args.output_format,
                 json_schema,
                 model: args.model,

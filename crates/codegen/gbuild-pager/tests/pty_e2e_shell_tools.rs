@@ -27,16 +27,6 @@ mod edit_merge_parallel_pty;
 mod edit_merge_sequential_pty;
 #[path = "pty_e2e/file_path_with_space_emits_full_osc8_hyperlink.rs"]
 mod file_path_with_space_emits_full_osc8_hyperlink;
-#[path = "pty_e2e/folder_trust_cwd_is_home_git_repo_no_prompt.rs"]
-mod folder_trust_cwd_is_home_git_repo_no_prompt;
-#[path = "pty_e2e/folder_trust_decline_quits_without_grant.rs"]
-mod folder_trust_decline_quits_without_grant;
-#[path = "pty_e2e/folder_trust_feature_off_shows_no_question.rs"]
-mod folder_trust_feature_off_shows_no_question;
-#[path = "pty_e2e/folder_trust_home_git_repo_subdir_keys_on_subdir.rs"]
-mod folder_trust_home_git_repo_subdir_keys_on_subdir;
-#[path = "pty_e2e/folder_trust_question_renders_and_accept_persists_grant.rs"]
-mod folder_trust_question_renders_and_accept_persists_grant;
 #[path = "pty_e2e/managed_policy_gate_refusal_reaches_real_terminal.rs"]
 mod managed_policy_gate_refusal_reaches_real_terminal;
 #[path = "pty_e2e/mcp_menu_loads_servers_in_non_project_dir.rs"]

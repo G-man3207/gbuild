@@ -74,57 +74,6 @@ fn contextual_hints_group_sub_sheet_flow() {
     assert!(matches!(s.mode(), SettingsModalMode::Browse));
 }
 
-/// The permission_mode picker hides the "Auto" choice when the auto feature
-/// gate is off (matching the Shift+Tab cycle, which skips Auto when gated),
-/// and shows it when the gate is on. Other choices are unaffected.
-#[test]
-fn effective_enum_choices_hides_auto_for_permission_mode_when_gated_off() {
-    let reg = SettingsRegistry::defaults();
-    let meta = reg
-        .find("permission_mode")
-        .expect("permission_mode registered");
-    let SettingKind::Enum { choices, .. } = &meta.kind else {
-        panic!("permission_mode must be Enum");
-    };
-
-    let gated_off = PagerLocalSnapshot {
-        auto_mode_gate: false,
-        ..PagerLocalSnapshot::default()
-    };
-    let filtered = effective_enum_choices("permission_mode", choices, &gated_off);
-    assert!(
-        !filtered.iter().any(|c| c.canonical == "auto"),
-        "Auto must be hidden from the permission_mode picker when the gate is off"
-    );
-    assert!(
-        filtered.iter().any(|c| c.canonical == "ask"),
-        "non-Auto choices must remain"
-    );
-
-    let gated_on = PagerLocalSnapshot {
-        auto_mode_gate: true,
-        ..PagerLocalSnapshot::default()
-    };
-    let full = effective_enum_choices("permission_mode", choices, &gated_on);
-    assert!(
-        full.iter().any(|c| c.canonical == "auto"),
-        "Auto must be selectable when the gate is on"
-    );
-
-    // A non-gated key is never filtered.
-    let theme = reg.find("theme").expect("theme registered");
-    if let SettingKind::Enum {
-        choices: theme_choices,
-        ..
-    } = &theme.kind
-    {
-        assert_eq!(
-            effective_enum_choices("theme", theme_choices, &gated_off).len(),
-            theme_choices.len(),
-            "non-permission_mode keys are never filtered"
-        );
-    }
-}
 
 /// `voice_capture_mode`'s "hold" choice is gated off without key releases and
 /// available with them; "toggle" is never gated. Permission_mode's "auto"
@@ -665,8 +614,6 @@ fn rows_contain_categories_and_settings_through_pr_14() {
             "prompt_suggestions",
             // voice_keybind_enabled + voice_capture_mode + voice_stt_language
             // hidden when the voice gate is off.
-            // SHELL-owned permission_mode (Agent category).
-            "permission_mode",
             // SHELL-owned remember_tool_approvals (Agent category,
             // registered right after permission_mode).
             "remember_tool_approvals",

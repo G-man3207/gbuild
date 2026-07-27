@@ -1,26 +1,24 @@
-//! Minimal-mode sign-in / folder-trust rendering for the live region.
+//! Minimal-mode sign-in rendering for the live region.
 //!
-//! Before any agent session exists (unauthenticated / folder-trust pending) the
-//! minimal live region shows the sign-in flow itself — device or external-command
-//! flow, a sign-in error, the folder-trust question, or a brief "starting"
-//! transient once both gates are open — since minimal has no welcome screen.
-//! [`draw_live`](super::live::draw_live) computes a [`MinimalAuthHint`] from the
-//! app's [`AuthState`] + [`TrustState`] and renders it via [`render_auth`].
-
-use std::path::PathBuf;
+//! Before any agent session exists (unauthenticated) the minimal live region
+//! shows the sign-in flow itself — device or external-command flow, a sign-in
+//! error, or a brief "starting" transient once the auth gate is open — since
+//! minimal has no welcome screen. [`draw_live`](super::live::draw_live)
+//! computes a [`MinimalAuthHint`] from the app's [`AuthState`] and renders it
+//! via [`render_auth`].
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use gbuild_pager::app::app_view::{AuthState, TrustState};
+use gbuild_pager::app::app_view::AuthState;
 use gbuild_pager::theme::Theme;
 
 /// What the minimal live region shows when there is no active agent yet: the
-/// in-region sign-in flow (device or external-command), a sign-in error, the
-/// folder-trust question, or a brief "starting" transient once authenticated
-/// (and trusted). Computed before the draw closure so the closure can own it.
+/// in-region sign-in flow (device or external-command), a sign-in error, or a
+/// brief "starting" transient once authenticated. Computed before the draw
+/// closure so the closure can own it.
 pub(super) enum MinimalAuthHint {
     /// Interactive sign-in underway — show the URL (when known) and the device
     /// code (when the URL carries one). Covers device flow and the external
@@ -32,26 +30,12 @@ pub(super) enum MinimalAuthHint {
     },
     /// The last sign-in attempt failed; show the error.
     Failed(String),
-    /// Authenticated, but the cwd has untrusted repo-local config — ask before
-    /// creating a session. Input (y/Enter trust, n/Esc quit) is handled by the
-    /// welcome interceptor in `AppView::handle_input`; this is render-only.
-    TrustFolder { workspace: PathBuf },
-    /// Authenticated (+ trusted) — the session is being created (brief transient).
+    /// Authenticated — the session is being created (brief transient).
     Starting,
 }
 
-/// Map the app's auth + trust state to what the no-agent live region should show.
-///
-/// Mirrors the welcome screen's gate order: trust is only offered after auth is
-/// `Done`, when the user has access and is not ZDR-blocked (those gates already
-/// block sessions, and the input interceptor only answers trust under the same
-/// conditions).
-pub(super) fn minimal_auth_hint(
-    auth: &AuthState,
-    trust: &TrustState,
-    has_access: bool,
-    is_zdr_blocked: bool,
-) -> MinimalAuthHint {
+/// Map the app's auth state to what the no-agent live region should show.
+pub(super) fn minimal_auth_hint(auth: &AuthState) -> MinimalAuthHint {
     match auth {
         AuthState::Authenticating { auth_url, .. } => MinimalAuthHint::SigningIn {
             url: auth_url.clone(),
@@ -67,21 +51,12 @@ pub(super) fn minimal_auth_hint(
             url: None,
             code: None,
         },
-        AuthState::Done if has_access && !is_zdr_blocked => {
-            if let TrustState::Pending { workspace } = trust {
-                MinimalAuthHint::TrustFolder {
-                    workspace: workspace.clone(),
-                }
-            } else {
-                MinimalAuthHint::Starting
-            }
-        }
         AuthState::Done => MinimalAuthHint::Starting,
     }
 }
 
-/// Rows the no-agent live region needs for `hint` (before path wrap). Used by
-/// the overlay host so the viewport grows enough to show the trust question
+/// Rows the no-agent live region needs for `hint` (before URL wrap). Used by
+/// the overlay host so the viewport grows enough to show the sign-in flow
 /// instead of clipping to the idle prompt height.
 pub(super) fn auth_hint_rows(hint: &MinimalAuthHint, width: u16) -> u16 {
     match hint {
@@ -99,12 +74,6 @@ pub(super) fn auth_hint_rows(hint: &MinimalAuthHint, width: u16) -> u16 {
         }
         // "Sign-in failed" + blank + error
         MinimalAuthHint::Failed(_) => 3,
-        // question + path rows + blank + 2 warning + blank + 2 menu + blank + hint
-        MinimalAuthHint::TrustFolder { workspace } => {
-            let path = workspace.display().to_string();
-            let path_rows = wrapped_char_rows(&path, width);
-            1 + path_rows + 1 + 2 + 1 + 2 + 1 + 1
-        }
         MinimalAuthHint::Starting => 1,
     }
 }
@@ -185,8 +154,8 @@ fn render_url(
     y.saturating_add(1)
 }
 
-/// Render the sign-in / trust flow (or transient status) in the live region when
-/// no agent exists yet. Top-aligned in `area`; clips to its height.
+/// Render the sign-in flow (or transient status) in the live region when no
+/// agent exists yet. Top-aligned in `area`; clips to its height.
 pub(super) fn render_auth(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &MinimalAuthHint) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -286,77 +255,6 @@ pub(super) fn render_auth(buf: &mut Buffer, area: Rect, theme: &Theme, hint: &Mi
                 Line::from(Span::styled(err.clone(), gray)),
             );
         }
-        MinimalAuthHint::TrustFolder { workspace } => {
-            // Mirrors `render_welcome_trust` copy, flush-left for minimal.
-            y = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(Span::styled(
-                    "Do you trust the contents of this directory?",
-                    bold,
-                )),
-            );
-            y = render_url(
-                buf,
-                area,
-                y,
-                bottom,
-                &workspace.display().to_string(),
-                Style::default().fg(theme.accent_user).bg(Color::Reset),
-            );
-            y = put_line(buf, area, y, bottom, Line::default());
-            y = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(Span::styled(
-                    "gBuild may run or modify contents in this directory,",
-                    gray,
-                )),
-            );
-            y = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(Span::styled("posing security risks.", gray)),
-            );
-            y = put_line(buf, area, y, bottom, Line::default());
-            y = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(vec![
-                    Span::styled("y", bold),
-                    Span::styled("  Yes, proceed", gray),
-                ]),
-            );
-            y = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(vec![
-                    Span::styled("n", bold),
-                    Span::styled("  No, quit", gray),
-                ]),
-            );
-            y = put_line(buf, area, y, bottom, Line::default());
-            let _ = put_line(
-                buf,
-                area,
-                y,
-                bottom,
-                Line::from(Span::styled(
-                    "Enter or y to trust \u{00b7} n or Esc to quit",
-                    gray,
-                )),
-            );
-        }
         MinimalAuthHint::Starting => {
             let _ = put_line(
                 buf,
@@ -393,8 +291,6 @@ mod tests {
     fn auth_hint_maps_auth_state() {
         use gbuild_pager::app::app_view::AuthMode;
 
-        let trust_done = TrustState::Done;
-
         // Device flow → SigningIn carrying the URL and the parsed code.
         let st = AuthState::Authenticating {
             request_seq: 1,
@@ -402,7 +298,7 @@ mod tests {
             auth_url: Some("https://accounts.x.ai/device?user_code=ABCD-EFGH".into()),
             mode: AuthMode::Device,
         };
-        match minimal_auth_hint(&st, &trust_done, true, false) {
+        match minimal_auth_hint(&st) {
             MinimalAuthHint::SigningIn { url, code } => {
                 assert_eq!(
                     url.as_deref(),
@@ -420,7 +316,7 @@ mod tests {
             auth_url: Some("https://provider.example/login".into()),
             mode: AuthMode::Command,
         };
-        match minimal_auth_hint(&st, &trust_done, true, false) {
+        match minimal_auth_hint(&st) {
             MinimalAuthHint::SigningIn { url, code } => {
                 assert_eq!(url.as_deref(), Some("https://provider.example/login"));
                 assert!(code.is_none());
@@ -429,49 +325,14 @@ mod tests {
         }
 
         assert!(matches!(
-            minimal_auth_hint(&AuthState::Done, &trust_done, true, false),
+            minimal_auth_hint(&AuthState::Done),
             MinimalAuthHint::Starting
         ));
         assert!(matches!(
-            minimal_auth_hint(
-                &AuthState::Pending {
-                    error: Some("nope".into())
-                },
-                &trust_done,
-                true,
-                false
-            ),
+            minimal_auth_hint(&AuthState::Pending {
+                error: Some("nope".into())
+            }),
             MinimalAuthHint::Failed(_)
-        ));
-    }
-
-    #[test]
-    fn auth_hint_maps_pending_trust_after_auth() {
-        let trust = TrustState::Pending {
-            workspace: PathBuf::from("/tmp/untrusted-repo"),
-        };
-        match minimal_auth_hint(&AuthState::Done, &trust, true, false) {
-            MinimalAuthHint::TrustFolder { workspace } => {
-                assert_eq!(workspace, PathBuf::from("/tmp/untrusted-repo"));
-            }
-            _ => panic!("expected TrustFolder"),
-        }
-
-        // Access / ZDR gates suppress the trust question (matches welcome +
-        // the input interceptor).
-        assert!(matches!(
-            minimal_auth_hint(&AuthState::Done, &trust, false, false),
-            MinimalAuthHint::Starting
-        ));
-        assert!(matches!(
-            minimal_auth_hint(&AuthState::Done, &trust, true, true),
-            MinimalAuthHint::Starting
-        ));
-
-        // Trust is not offered while auth is still in flight.
-        assert!(matches!(
-            minimal_auth_hint(&AuthState::Pending { error: None }, &trust, true, false),
-            MinimalAuthHint::SigningIn { .. }
         ));
     }
 
@@ -493,41 +354,6 @@ mod tests {
             text.contains("Waiting for approval"),
             "waiting line: {text:?}"
         );
-    }
-
-    #[test]
-    fn render_auth_shows_trust_question() {
-        let theme = Theme::current();
-        let area = Rect::new(0, 0, 80, 14);
-        let mut buf = Buffer::empty(area);
-        let hint = MinimalAuthHint::TrustFolder {
-            workspace: PathBuf::from("/home/agent/project"),
-        };
-        render_auth(&mut buf, area, &theme, &hint);
-        let text = buffer_text(&buf, area);
-        assert!(
-            text.contains("Do you trust the contents of this directory?"),
-            "question: {text:?}"
-        );
-        assert!(
-            text.contains("/home/agent/project"),
-            "workspace path: {text:?}"
-        );
-        assert!(text.contains("Yes, proceed"), "yes option: {text:?}");
-        assert!(text.contains("No, quit"), "no option: {text:?}");
-        assert!(text.contains("Enter or y to trust"), "hint line: {text:?}");
-        assert!(text.contains("posing security risks"), "warning: {text:?}");
-    }
-
-    #[test]
-    fn auth_hint_rows_covers_trust_path_wrap() {
-        let long = "x".repeat(200);
-        let hint = MinimalAuthHint::TrustFolder {
-            workspace: PathBuf::from(long),
-        };
-        let rows = auth_hint_rows(&hint, 40);
-        // path alone needs 5 rows at width 40 (200/40); total well above base.
-        assert!(rows >= 12, "expected room for wrapped path, got {rows}");
     }
 
     fn buffer_text(buf: &Buffer, area: Rect) -> String {

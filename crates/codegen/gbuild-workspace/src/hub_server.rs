@@ -612,7 +612,6 @@ impl WorkspaceRpcHandler {
                     &cwd,
                     self.workspace.shared.plugin_discovery_config(),
                     &crate::discovery::PluginTrustStore::load(),
-                    true,
                 );
                 Ok(Value::Array(plugins))
             }
@@ -628,7 +627,7 @@ impl WorkspaceRpcHandler {
             }
             <LoadPermissionsReq as WorkspaceRpc>::METHOD => {
                 let cwd = self.workspace.root_cwd()?;
-                Ok(crate::discovery::load_permissions(&cwd, true).await)
+                Ok(crate::discovery::load_permissions(&cwd).await)
             }
             <LoadEnvrcReq as WorkspaceRpc>::METHOD => {
                 let cwd = self.workspace.root_cwd()?;
@@ -645,7 +644,6 @@ impl WorkspaceRpcHandler {
                     &cwd,
                     self.workspace.shared.plugin_discovery_config(),
                     &crate::discovery::PluginTrustStore::load(),
-                    true,
                 );
                 Ok(Value::Array(plugins))
             }

@@ -2307,52 +2307,8 @@ mod tests {
     }
 
     /// Gate open → both `/always-approve` and `/auto` offered + dispatchable.
-    /// Gate closed → `/auto` hard-hidden; `/always-approve` still offered.
-    #[test]
-    fn set_auto_mode_available_gates_only_auto() {
-        let mut ctrl = SlashController::with_builtins(std::path::PathBuf::from("."));
-        let visible = |ctrl: &SlashController, name: &str| ctrl.registry().get(name).is_some();
-        let dispatchable =
-            |ctrl: &SlashController, name: &str| ctrl.registry().get_for_dispatch(name).is_some();
-
-        ctrl.set_auto_mode_available(true);
-        assert!(visible(&ctrl, "always-approve"));
-        assert!(visible(&ctrl, "auto"));
-        assert!(dispatchable(&ctrl, "always-approve"));
-        assert!(dispatchable(&ctrl, "auto"));
-
-        ctrl.set_auto_mode_available(false);
-        assert!(visible(&ctrl, "always-approve"));
-        assert!(!visible(&ctrl, "auto"));
-        assert!(dispatchable(&ctrl, "always-approve"));
-        assert!(!dispatchable(&ctrl, "auto"));
-    }
 
     /// With the gate open, both permission-mode toggles appear in completion
-    /// for full-list, prefix, and exact-name queries.
-    #[test]
-    fn permission_mode_toggles_appear_in_completion_when_available() {
-        let mut ctrl = SlashController::with_builtins(std::path::PathBuf::from("."));
-        let state = SlashState::default();
-        let models = ModelState::default();
-        ctrl.set_auto_mode_available(true);
-
-        for (query, display) in [
-            ("/", "/always-approve"),
-            ("/alw", "/always-approve"),
-            ("/always-approve", "/always-approve"),
-            ("/", "/auto"),
-            ("/au", "/auto"),
-            ("/auto", "/auto"),
-        ] {
-            ctrl.refresh(&state, query, query.len(), &models);
-            let snapshot = state.snapshot();
-            assert!(
-                snapshot.matches.iter().any(|row| row.display == display),
-                "{display} missing from completion for query {query:?}"
-            );
-        }
-    }
 
     /// No-arg toggles are complete so Enter submits immediately.
     #[test]

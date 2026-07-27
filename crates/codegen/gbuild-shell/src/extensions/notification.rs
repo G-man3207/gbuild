@@ -500,11 +500,10 @@ pub enum SessionUpdate {
         prompt_id: Option<String>,
         runs: Vec<HookRunEntryDto>,
     },
-    /// Hooks registry changed (after reload or trust/untrust).
+    /// Hooks registry changed (after reload).
     /// Sent so the pager modal can auto-refresh if open.
     HooksChanged {
         hooks: Vec<xai_hooks_plugins_types::HookInfo>,
-        project_trusted: bool,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         load_errors: Vec<String>,
     },

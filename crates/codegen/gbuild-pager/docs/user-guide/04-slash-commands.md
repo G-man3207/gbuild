@@ -194,9 +194,9 @@ Save a note to memory immediately, without waiting for an automatic summary.
 
 ### `/hooks`
 
-Open the extensions modal on the Hooks tab, where you can view loaded hooks, add or remove custom ones, and toggle them individually. The modal does not grant project trust — see [10-hooks.md](10-hooks.md) for the trust model.
+Open the extensions modal on the Hooks tab, where you can view loaded hooks, add or remove custom ones, and toggle them individually.
 
-The shell also advertises individual `/hooks-list`, `/hooks-trust`, `/hooks-add`, `/hooks-remove`, and `/hooks-untrust` commands; in the TUI pager these are folded into the `/hooks` modal.
+The shell also advertises individual `/hooks-list`, `/hooks-add`, and `/hooks-remove` commands; in the TUI pager these are folded into the `/hooks` modal.
 
 ### `/plugins`
 

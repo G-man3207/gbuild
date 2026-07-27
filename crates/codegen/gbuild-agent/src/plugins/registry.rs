@@ -342,14 +342,11 @@ impl SharedPluginRegistryHandle {
     /// `_meta.pluginDirs` — same CliOverride scope and trust as `--plugin-dir`, but
     /// only for the session whose registry this builds.
     ///
-    /// `project_trusted` is the folder-trust verdict for `cwd`, threaded into
-    /// discovery to gate Project-scope plugins.
     pub fn build_for_cwd(
         &self,
         cwd: &std::path::Path,
         disk_config: &super::discovery::DiscoveryConfig,
         session_plugin_dirs: &[std::path::PathBuf],
-        project_trusted: bool,
     ) -> Option<std::sync::Arc<PluginRegistry>> {
         let mut config = disk_config.clone();
         // Merge startup CLI dirs back in (they're not in config.toml)
@@ -360,8 +357,7 @@ impl SharedPluginRegistryHandle {
             .cli_plugin_dirs
             .extend(session_plugin_dirs.iter().cloned());
         let trust_store = super::trust::TrustStore::load();
-        let discovered =
-            super::discovery::discover_plugins(Some(cwd), &config, &trust_store, project_trusted);
+        let discovered = super::discovery::discover_plugins(Some(cwd), &config, &trust_store);
         if discovered.is_empty() {
             // Keep an empty registry alive when session dirs exist, so per-session
             // rebuilds can still recover them (see `session_plugin_dirs` field docs).
@@ -390,12 +386,11 @@ impl SharedPluginRegistryHandle {
         cwd: &std::path::Path,
         disk_config: &super::discovery::DiscoveryConfig,
         session_plugin_dirs: &[std::path::PathBuf],
-        project_trusted: bool,
     ) -> Option<std::sync::Arc<PluginRegistry>> {
         let trust_store = super::trust::TrustStore::load();
         // Session spawn: cheap skip-unchanged (force=false).
         Self::run_local_refresh(&trust_store, false);
-        self.build_for_cwd(cwd, disk_config, session_plugin_dirs, project_trusted)
+        self.build_for_cwd(cwd, disk_config, session_plugin_dirs)
     }
 
     /// Re-copy trusted local installs from disk and log the outcome. `force`
@@ -421,9 +416,6 @@ impl SharedPluginRegistryHandle {
     ///
     /// Returns the count of plugins discovered.
     ///
-    /// `project_trusted` is the folder-trust verdict for `cwd`, threaded into
-    /// discovery to gate Project-scope plugins.
-    ///
     /// `force` controls the local-install refresh: only the explicit, user-initiated
     /// `/plugins reload` passes `true` (guaranteed full re-copy — the manual remedy);
     /// incidental rebuilds (boot, plugin enable/disable/add/remove) pass `false` for
@@ -432,7 +424,6 @@ impl SharedPluginRegistryHandle {
         &self,
         cwd: Option<&std::path::Path>,
         disk_config: &super::discovery::DiscoveryConfig,
-        project_trusted: bool,
         force: bool,
     ) -> usize {
         let mut config = disk_config.clone();
@@ -441,8 +432,7 @@ impl SharedPluginRegistryHandle {
             .extend(self.cli_plugin_dirs.iter().cloned());
         let trust_store = super::trust::TrustStore::load();
         Self::run_local_refresh(&trust_store, force);
-        let discovered =
-            super::discovery::discover_plugins(cwd, &config, &trust_store, project_trusted);
+        let discovered = super::discovery::discover_plugins(cwd, &config, &trust_store);
         let count = discovered.len();
         config.populate_plugin_lists(&discovered);
         let registry =

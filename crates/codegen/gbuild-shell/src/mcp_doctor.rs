@@ -102,17 +102,8 @@ fn discover_servers(cwd: &Path) -> (Vec<ConfigSourceStatus>, Vec<DiscoveredServe
             .unwrap_or_default();
     plugins_cfg.merge_claude_enabled_plugins(Some(cwd));
     let mut plugin_config = plugins_cfg.to_discovery_config();
-    // Route through the live folder-trust gate (matches actual hook/MCP/LSP
-    // gating) so the doctor report shows an untrusted folder's project plugin
-    // MCP as blocked; no session resolve has run for a one-shot doctor. Resolve
-    // and record the verdict, then gate plugins on it.
-    let project_trusted = crate::agent::folder_trust::resolve_and_record(cwd, None, false);
-    let discovered_plugins = gbuild_agent::plugins::discover_plugins(
-        Some(cwd),
-        &plugin_config,
-        &trust_store,
-        project_trusted,
-    );
+    let discovered_plugins =
+        gbuild_agent::plugins::discover_plugins(Some(cwd), &plugin_config, &trust_store);
     plugin_config.populate_plugin_lists(&discovered_plugins);
     let plugin_registry = gbuild_agent::plugins::PluginRegistry::from_discovered(
         discovered_plugins,
@@ -551,25 +542,6 @@ pub async fn run_doctor(cwd: &Path, name_filter: Option<&str>) -> DoctorReport {
 
     let disabled_names = crate::util::config::disabled_mcp_server_names(cwd);
 
-    // Folder-trust gate: `gbuild mcp doctor` actually STARTS each server
-    // (`check_server_start`), so in an untrusted clone it would spawn the repo's
-    // project-scoped servers. Resolve the doctor cwd once (no prompt), then skip
-    // (do not start) any project-scoped server when untrusted. Reuses the same
-    // name primitive as the session/agent-pool gates.
-    //
-    // `remote = None` is intentional: standalone `gbuild mcp doctor` has no loaded
-    // `RemoteSettings`, so a remote-only org `folder_trust_enabled = false`
-    // opt-out isn't seen here — gating conservatively (treating the feature as
-    // enabled) is the deliberate fail-secure direction. Local env/user/managed
-    // config disable is still honored by `feature_enabled`.
-    crate::agent::folder_trust::resolve_and_record(cwd, None, false);
-    let untrusted_project: std::collections::HashSet<String> =
-        if crate::agent::folder_trust::project_scope_allowed(cwd) {
-            std::collections::HashSet::new()
-        } else {
-            crate::agent::folder_trust::project_scoped_mcp_names(cwd)
-        };
-
     const PROBE_CONCURRENCY: usize = 8;
 
     use futures::StreamExt;
@@ -584,15 +556,8 @@ pub async fn run_doctor(cwd: &Path, name_filter: Option<&str>) -> DoctorReport {
                 .to_string()
             });
             let disabled = disabled_names.contains(&name);
-            let untrusted = untrusted_project.contains(&name);
             async move {
-                let skip_reason = if untrusted {
-                    Some(Check::fail(
-                        "folder untrusted",
-                        "repo-local (project-scoped) server not started for an untrusted folder",
-                        "re-run with --trust to allow repo-local servers",
-                    ))
-                } else if disabled {
+                let skip_reason = if disabled {
                     Some(Check::fail(
                         "disabled in config",
                         "server is disabled in config.toml",

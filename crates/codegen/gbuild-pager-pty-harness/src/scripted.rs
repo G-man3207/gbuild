@@ -42,9 +42,8 @@ pub struct ScriptedScenario {
     #[serde(default)]
     pub environment: EnvironmentConfig,
     /// Optional ephemeral workspace materialized into a temp dir and used as the
-    /// pager's cwd. Lets a scenario exercise repo-local behavior — e.g. the
-    /// folder-trust prompt, which only renders when `cwd` has a repo-local
-    /// config (`.mcp.json`). `None` inherits the test process cwd.
+    /// pager's cwd. Lets a scenario exercise repo-local behavior (e.g. a
+    /// repo-local `.mcp.json`). `None` inherits the test process cwd.
     #[serde(default)]
     pub workspace: Option<WorkspaceConfig>,
     #[serde(default)]
@@ -155,13 +154,12 @@ pub struct EnvVar {
 }
 
 /// Ephemeral workspace materialized for a scenario run: a temp dir seeded with
-/// declared files and optionally `git init`-ed, then used as the pager's cwd.
-/// The folder-trust prompt, for example, only renders when `cwd` contains a
-/// repo-local config (`.mcp.json`), so a scenario can declare one here.
+/// declared files and optionally `git init`-ed, then used as the pager's cwd,
+/// so a scenario can declare repo-local config (e.g. `.mcp.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     /// Run `git init` so the temp dir resolves as a git repository root — the
-    /// scope repo-local config discovery and folder-trust use to bound a repo.
+    /// scope repo-local config discovery uses to bound a repo.
     #[serde(default)]
     pub git_init: bool,
     /// Files to create in the workspace, keyed by path relative to its root.
@@ -2057,8 +2055,7 @@ mod tests {
     fn workspace_rejects_paths_outside_the_tempdir() {
         use std::collections::BTreeMap;
 
-        // A normal relative key (the folder-trust scenario's own `.mcp.json`)
-        // is accepted.
+        // A normal relative key (a repo-local `.mcp.json`) is accepted.
         let ok = WorkspaceConfig {
             git_init: false,
             files: BTreeMap::from([(".mcp.json".to_string(), "{}".to_string())]),

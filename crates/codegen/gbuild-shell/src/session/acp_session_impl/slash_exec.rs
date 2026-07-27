@@ -80,24 +80,6 @@ impl SessionActor {
                 ok_end_turn(0, None)
             }
             BuiltinAction::ContextInfo => ok_end_turn(0, None),
-            BuiltinAction::HooksTrust => {
-                let msg = match Self::do_hooks_trust_project(&self.session_info.cwd) {
-                    Ok(root) => {
-                        gbuild_telemetry::session_ctx::log_event(
-                            gbuild_telemetry::events::HookTrusted { success: true },
-                        );
-                        format!("Trusted: {}.", root.display())
-                    }
-                    Err(e) => {
-                        gbuild_telemetry::session_ctx::log_event(
-                            gbuild_telemetry::events::HookTrusted { success: false },
-                        );
-                        e
-                    }
-                };
-                self.send_host_turn_slash_command_output(&msg).await;
-                ok_end_turn(0, None)
-            }
             BuiltinAction::HooksList => {
                 let text = match &*self.hook_registry.borrow() {
                     Some(registry) => {
@@ -196,15 +178,6 @@ impl SessionActor {
                         }
                     }
                 }
-                ok_end_turn(0, None)
-            }
-            BuiltinAction::HooksUntrust => {
-                let msg = match Self::do_hooks_untrust_project(&self.session_info.cwd) {
-                    Ok((root, true)) => format!("Untrusted: {}.", root.display()),
-                    Ok((root, false)) => format!("Not currently trusted: {}", root.display()),
-                    Err(e) => e,
-                };
-                self.send_host_turn_slash_command_output(&msg).await;
                 ok_end_turn(0, None)
             }
             BuiltinAction::PluginsList => {

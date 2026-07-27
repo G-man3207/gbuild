@@ -90,7 +90,7 @@ fn open_voice_tier_upsell(app: &mut AppView) -> Vec<Effect> {
 /// into a prompt box: the active agent's prompt, or the dashboard's dispatch
 /// (new-agent) input. On the session-less welcome screen (first launch) a session
 /// is created first — via the gated [`dispatch_new_session`], so auth and
-/// folder-trust are respected — so voice works from a cold start in one press.
+/// gate is respected — so voice works from a cold start in one press.
 /// Any other surface with no visible box (off-screen, or the dashboard behind a
 /// popup) is a silent no-op.
 /// `from_hold` marks a Ctrl+Space hold-press start (`VoiceState::*::hold`) so the
@@ -111,7 +111,7 @@ pub(super) fn dispatch_enable_voice_mode(app: &mut AppView, from_hold: bool) -> 
         return open_voice_tier_upsell(app);
     }
     // The session-less welcome screen (first launch) has no prompt box, so create
-    // a session there — via the gated `dispatch_new_session`, so auth + folder-trust
+    // a session there — via the gated `dispatch_new_session`, so auth
     // hold — letting voice dictate into it from a cold start. `switch_to_agent`
     // makes the new agent the active view, which the target lookup below then binds.
     let mut effects = Vec::new();

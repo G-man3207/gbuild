@@ -214,8 +214,6 @@ pub struct HookInfo {
 #[serde(rename_all = "camelCase")]
 pub struct HooksListResponse {
     pub hooks: Vec<HookInfo>,
-    /// Whether the current project's git root is trusted for hook execution.
-    pub project_trusted: bool,
     /// Errors encountered while loading hook config files (parse failures, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_errors: Vec<String>,
@@ -529,8 +527,6 @@ pub struct HooksActionRequest {
 pub enum HooksAction {
     /// Re-discover and reload all hooks mid-session.
     Reload,
-    Trust,
-    Untrust,
     Add {
         path: String,
     },
@@ -652,9 +648,9 @@ mod tests {
 
     #[test]
     fn hooks_action_tagged_enum_format() {
-        let action = HooksAction::Trust;
+        let action = HooksAction::Reload;
         let json = serde_json::to_string(&action).unwrap();
-        assert_eq!(json, r#"{"type":"trust"}"#);
+        assert_eq!(json, r#"{"type":"reload"}"#);
 
         let action = HooksAction::Add {
             path: "/tmp/hooks".into(),

@@ -339,84 +339,8 @@ fn set_plan_mode_mutates_only_active_agent_not_others() {
 // ----------------------------------------------------------------
 
 /// Slash gate sync: both toggles stay offered while modes change; only the
-/// auto feature gate suppresses `/auto`.
-#[test]
-fn permission_mode_slash_gate_offers_toggles_subject_to_auto_feature() {
-    use crate::app::actions::PermissionModeKind;
-    let mut app = test_app_with_agent();
-    let id = AgentId(0);
-    app.auto_mode_gate = true;
-    app.sync_permission_mode_slash_gate();
-
-    let offered = |app: &AppView, name: &str| {
-        app.agents[&id]
-            .prompt
-            .slash_controller
-            .registry()
-            .get(name)
-            .is_some()
-    };
-
-    assert!(offered(&app, "always-approve"));
-    assert!(offered(&app, "auto"));
-
-    // Mode changes must not hide either toggle.
-    let _ = dispatch(Action::SetYoloMode(true), &mut app);
-    assert!(offered(&app, "always-approve"));
-    assert!(offered(&app, "auto"));
-
-    let _ = dispatch(
-        Action::SetPermissionMode(PermissionModeKind::Auto),
-        &mut app,
-    );
-    assert!(offered(&app, "always-approve"));
-    assert!(offered(&app, "auto"));
-
-    // Gate off → only `/auto` disappears.
-    app.auto_mode_gate = false;
-    app.sync_permission_mode_slash_gate();
-    assert!(offered(&app, "always-approve"));
-    assert!(!offered(&app, "auto"));
-}
 
 /// End-to-end via slash submission: `/always-approve` and `/auto` toggle off
-/// when re-run and cross-switch when the other is active.
-#[test]
-fn slash_always_approve_and_auto_toggle_and_cross_switch() {
-    let mut app = test_app_with_agent();
-    let id = AgentId(0);
-    app.auto_mode_gate = true;
-    app.sync_permission_mode_slash_gate();
-
-    // Off → always-approve.
-    let _ = dispatch(Action::SendPrompt("/always-approve".into()), &mut app);
-    assert!(app.agents[&id].session.is_yolo());
-    assert!(!app.agents[&id].session.is_auto());
-
-    // Always-approve → auto (cross-switch).
-    let _ = dispatch(Action::SendPrompt("/auto".into()), &mut app);
-    assert!(!app.agents[&id].session.is_yolo());
-    assert!(app.agents[&id].session.is_auto());
-
-    // Auto → ask (toggle off).
-    let _ = dispatch(Action::SendPrompt("/auto".into()), &mut app);
-    assert!(!app.agents[&id].session.is_yolo());
-    assert!(!app.agents[&id].session.is_auto());
-
-    // Off → auto.
-    let _ = dispatch(Action::SendPrompt("/auto".into()), &mut app);
-    assert!(app.agents[&id].session.is_auto());
-
-    // Auto → always-approve (cross-switch).
-    let _ = dispatch(Action::SendPrompt("/always-approve".into()), &mut app);
-    assert!(app.agents[&id].session.is_yolo());
-    assert!(!app.agents[&id].session.is_auto());
-
-    // Always-approve → ask (toggle off).
-    let _ = dispatch(Action::SendPrompt("/always-approve".into()), &mut app);
-    assert!(!app.agents[&id].session.is_yolo());
-    assert!(!app.agents[&id].session.is_auto());
-}
 
 #[test]
 fn set_yolo_mode_off_to_on_emits_persist_with_rollback() {

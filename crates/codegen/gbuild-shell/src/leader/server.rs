@@ -1103,8 +1103,6 @@ async fn handle_workspace_start(
     });
     let upload_queue_enabled =
         std::env::var("GBUILD_WORKSPACE_UPLOAD_QUEUE_ENABLED").as_deref() != Ok("false");
-    crate::agent::folder_trust::resolve_and_record(&cwd_path, None, false);
-    let project_lsp_trusted = crate::agent::folder_trust::project_scope_allowed(&cwd_path);
     let handle = gbuild_workspace::connect_local_workspace(
         cwd_path.clone(),
         url,
@@ -1115,7 +1113,6 @@ async fn handle_workspace_start(
         allow_insecure_ws,
         status_config,
         upload_queue_enabled,
-        project_lsp_trusted,
         None,
         false,
         false,

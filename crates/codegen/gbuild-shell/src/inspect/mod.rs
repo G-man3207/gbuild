@@ -58,9 +58,6 @@ pub struct InspectReport {
     pub channel: String,
     pub cwd: String,
     pub project_root: Option<String>,
-    /// Folder-trust verdict for `cwd`: when false, repo-local project hooks,
-    /// plugins, and MCP/LSP entries are gated out of the listings below.
-    pub project_trusted: bool,
     pub project_instructions: Vec<InstructionFile>,
     pub permissions: PermissionsReport,
     pub login_policy: LoginPolicyReport,
@@ -249,9 +246,6 @@ pub struct LspServerEntry {
     pub args: Vec<String>,
     pub source: ConfigSource,
     pub extensions: Vec<String>,
-    /// True when this project-scoped server would be skipped (untrusted folder).
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub untrusted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -311,14 +305,6 @@ async fn build_report(cwd: &Path) -> InspectReport {
         .ok()
         .and_then(|r| r.workdir().map(|p| p.to_path_buf()));
 
-    // Route through the live folder-trust gate rather than a raw store read; no
-    // session resolve has run for a one-shot `inspect`. The single verdict drives
-    // the top-level flag and gates the hooks, plugins, and MCP/LSP listings so
-    // they reflect runtime gating. `remote = None`: env/user/managed opt-out is
-    // honored, but a remote kill-switch is not consulted on this report-only path.
-    crate::agent::folder_trust::resolve_and_record(cwd, None, false);
-    let project_trusted = crate::agent::folder_trust::project_scope_allowed(cwd);
-
     let trust_store = gbuild_agent::plugins::TrustStore::load();
     let mut plugins_cfg: crate::agent::config::PluginsConfig = effective_config
         .get("plugins")
@@ -326,14 +312,8 @@ async fn build_report(cwd: &Path) -> InspectReport {
         .unwrap_or_default();
     plugins_cfg.merge_claude_enabled_plugins(Some(cwd));
     let mut plugin_config = plugins_cfg.to_discovery_config();
-    // Project plugins gate on the same folder-trust verdict as hooks and the live
-    // session/doctor sites, so the listing's `enabled` flags match runtime gating.
-    let discovered_plugins = gbuild_agent::plugins::discover_plugins(
-        Some(cwd),
-        &plugin_config,
-        &trust_store,
-        project_trusted,
-    );
+    let discovered_plugins =
+        gbuild_agent::plugins::discover_plugins(Some(cwd), &plugin_config, &trust_store);
     plugin_config.populate_plugin_lists(&discovered_plugins);
 
     let plugin_registry = gbuild_agent::plugins::PluginRegistry::from_discovered(
@@ -351,7 +331,7 @@ async fn build_report(cwd: &Path) -> InspectReport {
     // Discover with all vendors ON so inspect shows the full set on disk.
     let (mut instructions, permissions, mut skills) = tokio::join!(
         list_instructions(cwd),
-        list_permissions(cwd, project_trusted),
+        list_permissions(cwd),
         list_skills(cwd, &plugin_registry, &skills_config),
     );
 
@@ -366,7 +346,7 @@ async fn build_report(cwd: &Path) -> InspectReport {
             vendor_compat_status(&entry.vendor, "skills", &external_compat);
         entry.disabled |= entry.compatibility_status == Some(CompatEntryStatus::Disabled);
     }
-    let mut hooks = list_hooks(git_root.as_deref(), project_trusted, &discovered_plugins);
+    let mut hooks = list_hooks(git_root.as_deref(), &discovered_plugins);
     for entry in &mut hooks {
         entry.compatibility_status = vendor_compat_status(&entry.vendor, "hooks", &external_compat);
         entry.disabled |= entry.compatibility_status == Some(CompatEntryStatus::Disabled);
@@ -394,7 +374,6 @@ async fn build_report(cwd: &Path) -> InspectReport {
             .to_string(),
         cwd: cwd.display().to_string(),
         project_root: git_root.map(|p| p.display().to_string()),
-        project_trusted,
         project_instructions: instructions,
         permissions,
         login_policy: login_policy_report(parsed_config.as_ref()),
@@ -553,7 +532,7 @@ async fn list_instructions(cwd: &Path) -> Vec<InstructionFile> {
 
 /// Calls the production permission resolver (`resolve_permissions_with_provenance`)
 /// which handles both gBuild TOML and vendor settings fallback in one codepath.
-async fn list_permissions(cwd: &Path, project_trusted: bool) -> PermissionsReport {
+async fn list_permissions(cwd: &Path) -> PermissionsReport {
     use gbuild_workspace::permission::resolution;
 
     let ms = resolution::managed_settings();
@@ -608,8 +587,7 @@ async fn list_permissions(cwd: &Path, project_trusted: bool) -> PermissionsRepor
         }
     }
 
-    let Some(resolved) =
-        resolution::resolve_permissions_with_provenance(cwd, project_trusted).await
+    let Some(resolved) = resolution::resolve_permissions_with_provenance(cwd).await
     else {
         return PermissionsReport {
             sources: vec![],
@@ -666,7 +644,6 @@ fn login_policy_report(config: Option<&crate::agent::config::Config>) -> LoginPo
 /// Discovers hooks with every vendor enabled so compatibility can be annotated later.
 fn list_hooks(
     git_root: Option<&Path>,
-    project_trusted: bool,
     discovered_plugins: &[gbuild_agent::plugins::DiscoveredPlugin],
 ) -> Vec<HookEntry> {
     let all_on = gbuild_tools::types::compat::CompatConfig::default();
@@ -674,8 +651,7 @@ fn list_hooks(
     // (config.toml / managed_config.toml / requirements.toml) appear in `/hooks`
     // status alongside file hooks, each carrying its provenance name prefix.
     let config_layers = gbuild_config::hook_config_layers();
-    let (registry, _errors) =
-        crate::util::hooks::assemble_hooks(&config_layers, git_root, &all_on, project_trusted);
+    let (registry, _errors) = crate::util::hooks::assemble_hooks(&config_layers, git_root, &all_on);
 
     let mut entries: Vec<HookEntry> = registry
         .all_hooks()
@@ -974,25 +950,14 @@ fn list_lsp_servers(
         &inline_names,
     );
 
-    // Folder-trust gate (display-only): inspect never spawns servers, but mark the
-    // repo-local (project-scoped) entries a session would skip in an untrusted
-    // clone so the listing matches the live gate. `remote = None` mirrors
-    // `gbuild mcp doctor` (no loaded RemoteSettings in a standalone command).
-    crate::agent::folder_trust::resolve_and_record(cwd, None, false);
-    let project_allowed = crate::agent::folder_trust::project_scope_allowed(cwd);
-
     servers
         .into_iter()
-        .map(|(name, (cfg, source))| {
-            let untrusted = !project_allowed && matches!(source, ConfigSource::Project { .. });
-            LspServerEntry {
-                name,
-                command: cfg.command,
-                args: cfg.args,
-                source,
-                extensions: cfg.extensions.keys().cloned().collect(),
-                untrusted,
-            }
+        .map(|(name, (cfg, source))| LspServerEntry {
+            name,
+            command: cfg.command,
+            args: cfg.args,
+            source,
+            extensions: cfg.extensions.keys().cloned().collect(),
         })
         .collect()
 }
@@ -1303,10 +1268,6 @@ fn print_human(r: &InspectReport) {
     if let Some(ref root) = r.project_root {
         println!("  {TREE} Git root: {}", root);
     }
-    println!(
-        "  {TREE} Project trusted: {}",
-        if r.project_trusted { "yes" } else { "no" }
-    );
 
     print_section("Project Instructions", &r.project_instructions, |f| {
         let status = disabled_compat_tags(f.disabled, f.compatibility_status);
@@ -1479,10 +1440,7 @@ fn print_human(r: &InspectReport) {
         "LSP Servers",
         &r.lsp_servers,
         |l| format!("{} ({} {})", l.name, l.command, l.args.join(" ")),
-        |l| {
-            let untrusted = if l.untrusted { " [untrusted]" } else { "" };
-            format!("{}{}", l.source.display_label(), untrusted)
-        },
+        |l| l.source.display_label().to_string(),
     );
 
     print_columns(

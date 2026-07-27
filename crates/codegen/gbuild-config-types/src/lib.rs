@@ -537,13 +537,9 @@ pub struct RemoteSettings {
     pub grok_oauth_enabled: Option<bool>,
     #[serde(default)]
     pub lsp_tools_enabled: Option<bool>,
-    /// Folder-trust gate kill-switch / remote default. Gates whether repo-local
-    /// MCP/LSP servers (commands sourced from working-tree config files) require
-    /// a per-folder trust decision before they are spawned. `Some(true)`
-    /// enables, `Some(false)` is a kill-switch, `None` falls back to the client
-    /// default (on). Sits below env `GBUILD_FOLDER_TRUST`, user
-    /// `[folder_trust] enabled`, and managed config in the resolver chain. See
-    /// `agent::folder_trust::feature_enabled`.
+    /// Deprecated folder-trust kill-switch. The folder-trust subsystem was
+    /// removed (gBuild always loads repo-local configuration); this field is
+    /// retained only for wire compatibility and has no consumers.
     #[serde(default)]
     pub folder_trust_enabled: Option<bool>,
     #[serde(default)]

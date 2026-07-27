@@ -651,10 +651,6 @@ pub enum Action {
     ShowRawAuthUrl,
     /// Hide the raw auth URL and re-enable mouse capture.
     HideRawAuthUrl,
-    /// User accepted the folder-trust question: persist the grant for the cwd's
-    /// workspace, mark trust resolved, and replay any deferred session startup.
-    /// (Declining quits via [`Action::Quit`]; there is no decline action.)
-    TrustFolder,
     /// A spawned task completed.
     TaskComplete(TaskResult),
     /// Share the current session via URL.

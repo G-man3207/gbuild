@@ -339,12 +339,9 @@ pub(crate) async fn spawn_session_actor(
             WebFetchConfig::Enabled { params } => params.allowed_domains(),
             WebFetchConfig::Disabled => vec![],
         };
-        let project_trusted =
-            crate::agent::folder_trust::project_scope_allowed(tool_context.cwd.as_path());
         let mut permission_config =
             gbuild_workspace::permission::resolution::resolve_permission_config_with_fallback(
                 tool_context.cwd.as_path(),
-                project_trusted,
             )
             .await;
         let yolo_pin = gbuild_workspace::permission::resolution::yolo_disabled_by_policy();
@@ -1234,16 +1231,10 @@ pub(crate) async fn spawn_session_actor(
             Some(override_reg)
         } else {
             let cwd_path = std::path::Path::new(&session_info.cwd);
-            let project_trusted = crate::agent::folder_trust::resolve_and_record(
-                cwd_path,
-                remote_settings.as_ref(),
-                false,
-            );
             let git_root = gbuild_workspace::session::git::find_git_root_from_path(cwd_path).ok();
             let (registry, errors) = crate::util::hooks::discover_hooks(
                 git_root.as_deref(),
                 &rebuild_spec.compat,
-                project_trusted,
             );
             for e in &errors {
                 tracing::warn!(error = ?e, "hook loading error");

@@ -54,7 +54,6 @@ use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use crate::agent::auth_method;
 use crate::agent::config::{self, Config as AgentConfig, ModelEntry, resolve_credentials};
 use crate::agent::feedback_client::FeedbackClient;
-use crate::agent::folder_trust;
 use crate::agent::models::{resolve_catalog_key, selectable_catalog_key_for_persisted};
 use crate::agent::session_config;
 use gbuild_sampling_types::{
@@ -684,19 +683,6 @@ pub struct MvpAgent {
     /// as `client_type`.  Using `Cell<bool>` (not `RefCell`) so `.get()` is a
     /// plain copy with no borrow that could be held across an await point.
     code_nav_enabled: std::cell::Cell<bool>,
-    /// Whether the current client advertised `x.ai/folderTrust.interactive` (it
-    /// can render the interactive folder-trust prompt). Set on every
-    /// `initialize()` (last-client-wins, like `code_nav_enabled`); gates the
-    /// DORMANT agent→client trust round-trip in `new_session`/`load_session`.
-    /// `Cell<bool>` so `.get()` is a borrow-free copy across await points.
-    interactive_trust_client: std::cell::Cell<bool>,
-    /// Workspaces (canonical `workspace_key`) already prompted/decided for the
-    /// interactive folder-trust round-trip this process — dedups re-prompts on
-    /// `load_session` reconnect and concurrent same-workspace sessions. Agent-
-    /// owned (mirrors the `DECISIONS` cache, but not a process global), captured
-    /// into the detached prompt task; cleared for a workspace on GUI untrust
-    /// (`execute_hooks_action`) so a later re-open can re-prompt.
-    interactive_trust_prompted: Rc<RefCell<std::collections::HashSet<PathBuf>>>,
     /// Whether the user's subscription tier is in the remote settings `allowed_tiers`
     /// list. Set by `enforce_grok_code_access`; defaults to `true` (API-key and
     /// external-auth users bypass the check). When `false`, the pager shows a
@@ -810,9 +796,6 @@ pub struct MvpAgent {
     /// re-calling `std::env::current_dir()` (which could drift if the process
     /// cwd ever changes after startup).
     launch_cwd: PathBuf,
-    /// Memoizes the single [`folder_trust::resolve_launch_dir_trust`] gather for
-    /// the launch dir; see it for the dedup + TOCTOU contract.
-    launch_dir_trust: std::cell::OnceCell<bool>,
     /// Shared plugin registry handle.
     pub(crate) plugin_registry_handle: gbuild_agent::plugins::SharedPluginRegistryHandle,
     /// One-shot guard for the lazy launch-dir population of
@@ -1257,7 +1240,6 @@ impl Drop for SessionLoadGuard<'_> {
     }
 }
 mod code_nav;
-mod folder_trust_prompt;
 mod heap_profile;
 mod session_lifecycle;
 mod subagent_coordinator;
@@ -2165,18 +2147,12 @@ impl MvpAgent {
                 Some((std::path::PathBuf::from(&h.info.cwd), h.cmd_tx.clone()))
             })
             .collect();
-        let remote_settings = self.cfg.borrow().remote_settings.clone();
         for (cwd, cmd_tx) in targets {
-            let project_trusted = folder_trust::resolve_and_record(
-                cwd.as_path(),
-                remote_settings.as_ref(),
-                false,
-            );
             let disk_cfg = crate::config::resolve_effective_plugins_config(cwd.as_path())
                 .to_discovery_config();
             let registry = self
                 .plugin_registry_handle
-                .build_for_cwd(cwd.as_path(), &disk_cfg, &[], project_trusted);
+                .build_for_cwd(cwd.as_path(), &disk_cfg, &[]);
             let _ = cmd_tx
                 .send(crate::session::SessionCommand::ReloadPlugins {
                     registry,

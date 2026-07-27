@@ -72,52 +72,6 @@ const THEME_CHOICES: &[EnumChoice] = &[
     },
 ];
 
-// ---------------------------------------------------------------------------
-// Permission-mode catalog.
-//
-// Persisted values map onto runtime flags:
-//   "always-approve" ↔ yolo_mode = true  (auto-approve all)
-//   "auto"           ↔ auto_mode = true  (LLM classifier; not full yolo)
-//   "ask"            ↔ both false (interactive prompts)
-//   "default"        ↔ both false (agent's default — currently Ask)
-//
-// Canonical strings match `load_permission_mode`. `supports_preview:
-// false` because toggling YOLO drains the permission queue (unsafe
-// for per-keystroke preview).
-//
-// Adding new modes requires: (1) `PermissionModeKind` variant,
-// (2) `EnumChoice` here, (3) `set_yolo_mode_inner` update,
-// (4) `load_permission_mode` arm, (5) tests. `Plan` is excluded —
-// it lives on its own `plan_mode` setting.
-// ---------------------------------------------------------------------------
-
-// Choice order: safe → classifier → unsafe (Default → Ask → Auto → Always approve).
-// "Always approve" at the end creates a speed bump against
-// accidental selection.
-const PERMISSION_MODE_CHOICES: &[EnumChoice] = &[
-    // "default" = agent's default behavior. Same as "ask" at runtime;
-    // distinct on disk and in the modal indicator.
-    EnumChoice {
-        canonical: "default",
-        display: "Default",
-        description: "Use the agent's default permission behavior (currently equivalent to Ask).",
-    },
-    EnumChoice {
-        canonical: "ask",
-        display: "Ask",
-        description: "Prompt for permission before tool actions.",
-    },
-    EnumChoice {
-        canonical: "auto",
-        display: "Auto",
-        description: "LLM classifier approves safe tools; dangerous actions may still prompt or deny.",
-    },
-    EnumChoice {
-        canonical: "always-approve",
-        display: "Always approve",
-        description: "Auto-approve every tool action. Skips ALL permission prompts.",
-    },
-];
 
 // ---------------------------------------------------------------------------
 // Coding-data-sharing catalog.
@@ -762,38 +716,6 @@ pub fn default_settings() -> Vec<SettingMeta> {
             kind: SettingKind::Enum {
                 default: "auto",
                 choices: RENDER_MERMAID_CHOICES,
-                supports_preview: false,
-            },
-            restart_required: false,
-            hidden_in_minimal: false,
-        },
-        // Security-relevant: "always-approve" bypasses all permission prompts.
-        // Modal reads live state from `PagerLocalSnapshot.yolo_mode`
-        // (not `ui.permission_mode`) to reflect Ctrl+O toggles immediately.
-        SettingMeta {
-            key: "permission_mode",
-            category: SettingCategory::Agent,
-            owner: SettingOwner::Shell,
-            label: "Permission mode",
-            description: "Default uses the agent's built-in behavior; \
-                          Ask prompts for each tool action; \
-                          Auto uses an LLM classifier for risky tools; \
-                          Always approve grants all permissions automatically.",
-            keywords: &[
-                "permission",
-                "approve",
-                "yolo",
-                "agent",
-                "always",
-                "ask",
-                "auto",
-                "classifier",
-                "tool",
-                "danger",
-            ],
-            kind: SettingKind::Enum {
-                default: "ask",
-                choices: PERMISSION_MODE_CHOICES,
                 supports_preview: false,
             },
             restart_required: false,

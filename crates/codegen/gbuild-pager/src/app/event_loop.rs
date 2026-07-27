@@ -22,7 +22,7 @@ use xai_acp_lib::acp_send;
 
 use super::actions::{Action, Effect, TaskResult};
 use super::app_view::{
-    ActiveView, AppView, AuthState, InputOutcome, PasteProvenance, TrustState, VoiceState,
+    ActiveView, AppView, AuthState, InputOutcome, PasteProvenance, VoiceState,
 };
 use super::{PagerArgs, PagerTerminal, acp_handler, dispatch, effects};
 
@@ -173,48 +173,6 @@ fn reconnect_restore_outcome(
     let active_restored = init_ok
         && active_agent_id.is_some_and(|aid| pending_agent_ids.contains(&aid) && load_ok(&aid));
     (all_restored, active_restored)
-}
-
-/// Compute the folder-trust verdict for the session cwd and seed
-/// [`AppView::trust_state`]. Pager-side mirror of the agent's resolve: read the
-/// local store, scan for repo-local code-exec config, and run the pure
-/// [`decide`](gbuild_workspace::folder_trust::decide) precedence.
-///
-/// `TrustOutcome::Prompt` (interactive + untrusted + repo configs present)
-/// becomes `TrustState::Pending` (show the question); everything else becomes
-/// `TrustState::Done`. The feature-off fast path (kill-switch / opt-out /
-/// local build) short-circuits before any I/O.
-fn seed_trust_state(
-    app: &mut AppView,
-    remote: Option<&gbuild_shell::util::config::RemoteSettings>,
-) {
-    use gbuild_workspace::folder_trust::{
-        TrustOutcome, decide, decide_inputs_with_interactive, feature_enabled,
-    };
-    use gbuild_workspace::trust::workspace_key;
-    use std::io::IsTerminal;
-
-    let feature = feature_enabled(remote);
-    if !feature {
-        app.trust_state = TrustState::Done;
-        return;
-    }
-
-    // The cwd the user launched in == the process cwd == `app.cwd` (set at
-    // construction), matching the `--trust` grant's `std::env::current_dir()`.
-    let cwd = app.cwd.clone();
-    let key = workspace_key(&cwd);
-    // Reuse the canonical gather (store trust + repo-config scan) but pass the
-    // pager's stdin-only interactivity: the TUI prompts via the rendered
-    // question + crossterm keyboard, NOT stderr (the pager redirects native
-    // stderr at startup, so the engine's `stdin && stderr` would be false here
-    // and the question would never show). TTY stdin => user can answer;
-    // otherwise fail closed (no prompt).
-    let inputs = decide_inputs_with_interactive(&cwd, &key, std::io::stdin().is_terminal());
-    app.trust_state = match decide(feature, &inputs) {
-        TrustOutcome::Prompt => TrustState::Pending { workspace: key },
-        TrustOutcome::Trusted | TrustOutcome::Untrusted => TrustState::Done,
-    };
 }
 
 /// Pause terminal input and wait up to `timeout` for the reader to acknowledge.
@@ -812,7 +770,6 @@ pub(crate) async fn run(
         // Consumed by `switch_to_agent` once the first agent view opens.
         app.yolo_launch_block_notice = Some(warning);
     }
-    app.require_plan_approval = gbuild_shell::util::config::load_require_plan_approval();
     app.plan_mode = !args.no_plan;
     app.subagents = !args.no_subagents;
     app.ask_user = !args.no_ask_user;
@@ -1540,12 +1497,6 @@ pub(crate) async fn run(
     const RECAP_POLL_INTERVAL: Duration = Duration::from_secs(20);
     let mut recap_poll_at: Option<Instant> = Some(Instant::now() + RECAP_POLL_INTERVAL);
 
-    // Seed the folder-trust verdict BEFORE the first render and before any
-    // session is created (no repo-local MCP/LSP/hooks/plugins have loaded yet).
-    // Feature-off (kill-switch / opt-out / local build) resolves `Trusted`, so
-    // this stays `TrustState::Done`.
-    seed_trust_state(&mut app, remote_settings.as_ref());
-
     let mut presenter = Presenter::new();
     // A timed-out handoff stays queued but cannot synchronously retry until
     // this deadline fires. Feedback is one-shot per editor/pager request, even
@@ -1588,7 +1539,7 @@ pub(crate) async fn run(
 
     // Session startup from pre-materialized CLI intent.
     // These actions are dispatched UNCONDITIONALLY: the session-creating
-    // chokepoints self-gate when auth + folder trust is closed.
+    // chokepoints self-gate when auth is closed.
     use crate::app::session_startup::MaterializedStartup;
     let startup_action = match &materialized {
         MaterializedStartup::Resume {
@@ -1728,7 +1679,7 @@ pub(crate) async fn run(
         && !app.is_zdr_blocked()
     {
         if app.session_startup_allowed() {
-            // Already authenticated + trusted: open the empty session now so the
+            // Already authenticated: open the empty session now so the
             // user lands directly at the prompt.
             let effs = dispatch::dispatch(Action::NewSession, &mut app);
             if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
@@ -1736,12 +1687,11 @@ pub(crate) async fn run(
             }
             presenter.request_presentation(&mut app, terminal, false);
         } else {
-            // Sign-in (or folder-trust) still pending: minimal renders the
-            // device / external sign-in flow in its live region. Defer the
-            // empty-session creation so the post-auth (or post-trust) drain
-            // (`drain_startup_actions`) opens it — otherwise minimal would
-            // authenticate but never create a session, stranding the user on the
-            // sign-in screen.
+            // Sign-in still pending: minimal renders the device / external
+            // sign-in flow in its live region. Defer the empty-session creation
+            // so the post-auth drain (`drain_startup_actions`) opens it —
+            // otherwise minimal would authenticate but never create a session,
+            // stranding the user on the sign-in screen.
             app.deferred_startup.new_session = true;
         }
     }

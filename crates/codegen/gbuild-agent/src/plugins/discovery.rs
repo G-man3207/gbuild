@@ -244,8 +244,8 @@ fn project_plugins_dir_origin(plugins_dir: &Path) -> PluginOrigin {
 /// exist along the `cwd`→git-worktree-root walk (inclusive), or just `cwd`'s own
 /// when `cwd` is not inside a git repo, paired with the resolved git worktree
 /// root (when any). This is the exact set [`discover_plugins`] scans for
-/// `PluginScope::Project`; the folder-trust gate reuses the same chain via
-/// [`project_plugin_dirs_in`] so detection and discovery can never drift. The
+/// `PluginScope::Project`, shared via [`project_plugin_dirs_in`] so detection
+/// and discovery can never drift. The
 /// returned root lets `discover_plugins` reuse it for the marketplace
 /// `resolve(root)` branch instead of resolving the repo a second time.
 pub fn project_plugin_dirs(cwd: Option<&Path>) -> (Vec<PathBuf>, Option<PathBuf>) {
@@ -258,8 +258,7 @@ pub fn project_plugin_dirs(cwd: Option<&Path>) -> (Vec<PathBuf>, Option<PathBuf>
 
 /// Existing project plugin parent dirs (`.gbuild/plugins`, `.claude/plugins`)
 /// under each dir of a precomputed cwd→git-root chain
-/// ([`crate::repo::RepoDirChain`]). The folder-trust gate reuses its one shared
-/// chain here so detection and discovery can never drift.
+/// ([`crate::repo::RepoDirChain`]).
 pub fn project_plugin_dirs_in(chain_dirs: &[PathBuf]) -> Vec<PathBuf> {
     crate::repo::existing_subdirs_along(chain_dirs, &[".gbuild/plugins", ".claude/plugins"])
 }
@@ -267,15 +266,12 @@ pub fn project_plugin_dirs_in(chain_dirs: &[PathBuf]) -> Vec<PathBuf> {
 /// Discover all plugins from the filesystem.
 ///
 /// `cwd` is used to find the git worktree root for project-scope plugins.
-/// `project_trusted` is the folder-trust verdict for `cwd`; it gates
-/// `Project`-scope plugins (CLI/User/ConfigPath scopes are unaffected).
 /// Returns plugins deduplicated by canonical path, with name conflicts
 /// resolved by scope precedence.
 pub fn discover_plugins(
     cwd: Option<&Path>,
     config: &DiscoveryConfig,
     trust_store: &TrustStore,
-    project_trusted: bool,
 ) -> Vec<DiscoveredPlugin> {
     let _plugin_discovery_timer = crate::timing::timer("plugin_discovery");
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
@@ -289,7 +285,6 @@ pub fn discover_plugins(
                 PluginScope::CliOverride,
                 PluginOrigin::CliOverride,
                 trust_store,
-                project_trusted,
                 &mut seen_paths,
                 &mut candidates,
             );
@@ -299,7 +294,7 @@ pub fn discover_plugins(
     }
 
     // 2-3. Project plugins (.gbuild/plugins/, .claude/plugins/) — scan the SAME
-    // dirs the folder-trust gate detects, via the shared `project_plugin_dirs`
+    // dirs detected via the shared `project_plugin_dirs`
     // walk (cwd→git root), so discovery and gating can never drift.
     if let Some(cwd) = cwd {
         let (project_dirs, git_root) = project_plugin_dirs(Some(cwd));
@@ -310,7 +305,6 @@ pub fn discover_plugins(
                 PluginScope::Project,
                 origin,
                 trust_store,
-                project_trusted,
                 &mut seen_paths,
                 &mut candidates,
             );
@@ -328,7 +322,6 @@ pub fn discover_plugins(
                             marketplace: marketplace.name.clone(),
                         },
                         trust_store,
-                        project_trusted,
                         &mut seen_paths,
                         &mut candidates,
                     );
@@ -349,7 +342,6 @@ pub fn discover_plugins(
                 PluginScope::User,
                 origin,
                 trust_store,
-                project_trusted,
                 &mut seen_paths,
                 &mut candidates,
             );
@@ -369,7 +361,6 @@ pub fn discover_plugins(
                     marketplace: marketplace.name.clone(),
                 },
                 trust_store,
-                project_trusted,
                 &mut seen_paths,
                 &mut candidates,
             );
@@ -386,7 +377,6 @@ pub fn discover_plugins(
             &registry,
             PluginScope::User,
             trust_store,
-            project_trusted,
             &mut seen_paths,
             &mut candidates,
         );
@@ -410,7 +400,6 @@ pub fn discover_plugins(
                     PluginScope::User,
                     PluginOrigin::ClaudeInstalled { marketplace },
                     trust_store,
-                    project_trusted,
                     &mut seen_paths,
                     &mut candidates,
                 );
@@ -434,7 +423,6 @@ pub fn discover_plugins(
                 PluginScope::ConfigPath,
                 PluginOrigin::ConfigPath,
                 trust_store,
-                project_trusted,
                 &mut seen_paths,
                 &mut candidates,
             );
@@ -494,7 +482,6 @@ fn scan_plugin_dir(
     scope: PluginScope,
     origin: PluginOrigin,
     trust_store: &TrustStore,
-    project_trusted: bool,
     seen_paths: &mut HashSet<PathBuf>,
     candidates: &mut Vec<DiscoveredPlugin>,
 ) {
@@ -525,7 +512,6 @@ fn scan_plugin_dir(
             scope,
             origin.clone(),
             trust_store,
-            project_trusted,
             seen_paths,
             candidates,
         );
@@ -536,7 +522,6 @@ fn collect_installed_plugins(
     registry: &super::install_registry::InstallRegistry,
     scope: PluginScope,
     trust_store: &TrustStore,
-    project_trusted: bool,
     seen_paths: &mut HashSet<PathBuf>,
     candidates: &mut Vec<DiscoveredPlugin>,
 ) {
@@ -572,7 +557,6 @@ fn collect_installed_plugins(
                     scope,
                     origin.clone(),
                     trust_store,
-                    project_trusted,
                     seen_paths,
                     candidates,
                 );
@@ -600,7 +584,6 @@ fn collect_plugin(
     scope: PluginScope,
     origin: PluginOrigin,
     trust_store: &TrustStore,
-    project_trusted: bool,
     seen_paths: &mut HashSet<PathBuf>,
     candidates: &mut Vec<DiscoveredPlugin>,
 ) {
@@ -692,8 +675,7 @@ fn collect_plugin(
             TrustStore::is_config_path_auto_trusted(plugin_root)
                 || trust_store.is_trusted(plugin_root)
         }
-        // Project trust now comes from folder-trust (passed by the caller).
-        PluginScope::Project => project_trusted,
+        PluginScope::Project => true,
     };
 
     // Build PluginId
@@ -944,7 +926,6 @@ mod tests {
             PluginScope::CliOverride,
             PluginOrigin::CliOverride,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -986,7 +967,6 @@ mod tests {
             PluginScope::User,
             PluginOrigin::UserGBuild,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1010,7 +990,6 @@ mod tests {
             PluginScope::User,
             PluginOrigin::UserGBuild,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1089,7 +1068,6 @@ mod tests {
             &registry,
             PluginScope::User,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1195,7 +1173,6 @@ mod tests {
             &registry,
             PluginScope::User,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1302,7 +1279,6 @@ mod tests {
             &registry,
             PluginScope::User,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1332,7 +1308,6 @@ mod tests {
             PluginScope::CliOverride,
             PluginOrigin::CliOverride,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1341,7 +1316,6 @@ mod tests {
             PluginScope::CliOverride,
             PluginOrigin::CliOverride,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1374,7 +1348,6 @@ mod tests {
             PluginScope::CliOverride,
             PluginOrigin::CliOverride,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1384,7 +1357,6 @@ mod tests {
             PluginScope::User,
             PluginOrigin::UserGBuild,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1440,7 +1412,6 @@ mod tests {
             PluginScope::User,
             PluginOrigin::UserGBuild,
             &trust,
-            false,
             &mut seen,
             &mut candidates,
         );
@@ -1450,43 +1421,18 @@ mod tests {
     }
 
     #[test]
-    fn project_plugin_untrusted_by_default() {
+    fn project_plugin_is_trusted() {
         let tmp = tempfile::tempdir().unwrap();
         let plugin_dir = make_manifest_plugin(tmp.path(), "project-tool");
 
         let trust = TrustStore::load_from(tmp.path().join("trust"));
         let mut seen = HashSet::new();
         let mut candidates = Vec::new();
-        // Untrusted folder (project_trusted = false) blocks the Project plugin.
         collect_plugin(
             &plugin_dir,
             PluginScope::Project,
             PluginOrigin::ProjectGBuild,
             &trust,
-            false,
-            &mut seen,
-            &mut candidates,
-        );
-
-        assert_eq!(candidates.len(), 1);
-        assert!(!candidates[0].trusted);
-    }
-
-    #[test]
-    fn project_plugin_trusted_when_folder_trusted() {
-        let tmp = tempfile::tempdir().unwrap();
-        let plugin_dir = make_manifest_plugin(tmp.path(), "trusted-tool");
-
-        let trust = TrustStore::load_from(tmp.path().join("trust"));
-        let mut seen = HashSet::new();
-        let mut candidates = Vec::new();
-        // Trusted folder (project_trusted = true) allows the Project plugin.
-        collect_plugin(
-            &plugin_dir,
-            PluginScope::Project,
-            PluginOrigin::ProjectGBuild,
-            &trust,
-            true,
             &mut seen,
             &mut candidates,
         );
@@ -1496,9 +1442,9 @@ mod tests {
     }
 
     #[test]
-    fn non_project_scopes_unaffected_by_project_trusted() {
-        // project_trusted = false gates Project scope only: CLI/User stay
-        // auto-trusted and ConfigPath keeps using its own trust store.
+    fn non_project_scopes_stay_trusted() {
+        // CLI/User stay auto-trusted and ConfigPath keeps using its own trust
+        // store.
         let tmp = tempfile::tempdir().unwrap();
         let cli_dir = make_manifest_plugin(tmp.path(), "cli-tool");
         let user_dir = make_manifest_plugin(tmp.path(), "user-tool");
@@ -1527,7 +1473,6 @@ mod tests {
                 scope,
                 origin,
                 &trust,
-                false,
                 &mut seen,
                 &mut candidates,
             );
@@ -1536,16 +1481,15 @@ mod tests {
         assert_eq!(candidates.len(), 3);
         assert!(
             candidates.iter().all(|c| c.trusted),
-            "CLI/User/ConfigPath plugins must stay trusted under project_trusted=false"
+            "CLI/User/ConfigPath plugins must stay trusted"
         );
     }
 
     #[test]
-    fn discover_real_project_plugin_gated_on_project_trusted() {
+    fn discover_real_project_plugin_is_trusted() {
         // End-to-end through discover_plugins: a repo-local `.gbuild/plugins/<x>/`
-        // plugin with an MCP component is trusted iff the folder-trust verdict
-        // (project_trusted) allows it. Found by name so any user-scoped plugins
-        // on the test host are irrelevant.
+        // plugin with an MCP component is trusted. Found by name so any
+        // user-scoped plugins on the test host are irrelevant.
         let tmp = tempfile::tempdir().unwrap();
         let plugin_dir = tmp.path().join(".gbuild").join("plugins").join("proj-mcp");
         std::fs::create_dir_all(&plugin_dir).unwrap();
@@ -1555,23 +1499,14 @@ mod tests {
         let trust = TrustStore::load_from(tmp.path().join("trust"));
         let config = DiscoveryConfig::default();
 
-        // Untrusted folder: the project plugin comes back blocked.
-        let untrusted = discover_plugins(Some(tmp.path()), &config, &trust, false);
-        let p = untrusted
+        let discovered = discover_plugins(Some(tmp.path()), &config, &trust);
+        let p = discovered
             .iter()
             .find(|p| p.manifest.name == "proj-mcp")
             .expect("project plugin discovered");
         assert_eq!(p.scope, PluginScope::Project);
         assert_eq!(p.origin, PluginOrigin::ProjectGBuild);
-        assert!(!p.trusted, "untrusted folder must block the project plugin");
-
-        // Trusted folder: the same plugin is allowed.
-        let trusted = discover_plugins(Some(tmp.path()), &config, &trust, true);
-        let p = trusted
-            .iter()
-            .find(|p| p.manifest.name == "proj-mcp")
-            .expect("project plugin discovered");
-        assert!(p.trusted, "trusted folder must allow the project plugin");
+        assert!(p.trusted, "project plugin must be trusted");
     }
 
     #[test]
@@ -1590,7 +1525,7 @@ mod tests {
 
         let trust = TrustStore::load_from(tmp.path().join("trust"));
         let config = DiscoveryConfig::default();
-        let discovered = discover_plugins(Some(tmp.path()), &config, &trust, true);
+        let discovered = discover_plugins(Some(tmp.path()), &config, &trust);
         let p = discovered
             .iter()
             .find(|p| p.manifest.name == name)

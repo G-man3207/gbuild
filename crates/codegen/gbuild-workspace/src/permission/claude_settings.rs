@@ -363,9 +363,7 @@ pub fn find_claude_settings_paths(cwd: &Path) -> Vec<PathBuf> {
     paths
 }
 
-/// Global (user-tier) `~/.claude` settings paths, highest-priority-first. Split
-/// out of [`find_claude_settings_paths`] so [`claude_settings_paths_for_trust`]
-/// can load ONLY the user tier when a folder is untrusted.
+/// Global (user-tier) `~/.claude` settings paths, highest-priority-first.
 ///
 /// Use `dirs::home_dir()` to match the home-resolution strategy used by
 /// `claude_import.rs::scan_importable_settings` and `claude_import_state.rs`,
@@ -381,36 +379,31 @@ fn global_claude_settings_paths() -> Vec<PathBuf> {
     paths
 }
 
-/// Claude settings files to load under the folder-trust gate.
-///
-/// When `project_trusted` is true, same as [`find_claude_settings_paths`]
-/// (project tree + user `~/.claude`). When false, only user-tier `~/.claude`
-/// — the single choke point for env injection and permission resolution so
-/// the two cannot drift on which files an untrusted clone may contribute.
-pub(crate) fn claude_settings_paths_for_trust(cwd: &Path, project_trusted: bool) -> Vec<PathBuf> {
-    if project_trusted {
-        find_claude_settings_paths(cwd)
-    } else {
-        global_claude_settings_paths()
-    }
-}
-
 /// Whether a project-tree `.claude/settings.json` / `settings.local.json` exists
 /// anywhere along the SAME `cwd`→repo-root walk the env/permission loaders read
-/// ([`collect_project_claude_paths`]). The folder-trust detector calls this so
-/// detection can never drift from the loader: a settings file in a SUBDIR — whose
-/// `env` is injected into every spawned subprocess — must flip the folder
-/// untrusted, not just one at the git root.
+/// ([`collect_project_claude_paths`]). Detection shares one root resolution with
+/// the loader, so the two cannot drift on which files count as project-tier.
 pub fn project_claude_settings_present(cwd: &Path) -> bool {
     collect_project_claude_paths(cwd)
         .iter()
         .any(|p| p.is_file())
 }
 
+/// Whether `path` resolves to the user's home directory.
+fn is_home_dir(path: &Path) -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    canonicalize(path) == canonicalize(&home)
+}
+
+fn canonicalize(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Collect .claude settings file paths from cwd up to repo root.
 ///
-/// Resolves the repo root by `.git` EXISTENCE (not `git2` validity), kept
-/// separate from the folder-trust gate's shared `git2` walk on purpose: the
+/// Resolves the repo root by `.git` EXISTENCE (not `git2` validity): the
 /// env/permission loader ([`find_claude_settings_paths`]) and this detector both
 /// go through here, so they share ONE root resolution and can't drift — but a
 /// directory with a bare/empty `.git` (no valid repo) must still bound the walk.
@@ -421,7 +414,7 @@ fn collect_project_claude_paths(cwd: &Path) -> Vec<PathBuf> {
     // walk stays within the working dir. This is the shared choke point for both
     // `project_claude_settings_present` and `find_claude_settings_paths`.
     let repo_root = find_repo_root(cwd)
-        .filter(|root| !crate::trust::is_home_dir(root))
+        .filter(|root| !is_home_dir(root))
         .unwrap_or_else(|| cwd.to_path_buf());
 
     // Walk from cwd up to repo_root, collecting .claude paths (cwd-first priority).
@@ -461,8 +454,7 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
 // Environment Variables
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Load merged environment variables from Claude settings files, gating the
-/// repo-tree `.claude/settings.json` `env` on `project_trusted`.
+/// Load merged environment variables from Claude settings files.
 ///
 /// Like permissions, env vars are merged cumulatively across all settings files
 /// (later layers override earlier keys) — walking `find_claude_settings_paths()`
@@ -474,20 +466,13 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
 ///
 /// Within each directory, `settings.local.json` overrides `settings.json`.
 /// Higher-precedence keys override lower via `HashMap::extend`.
-///
-/// The repo-tree `env` is injected into every spawned subprocess (`BASH_ENV` /
-/// `GIT_SSH_COMMAND` / `PATH` / `LD_PRELOAD` …), so when `project_trusted` is
-/// false it is dropped — an untrusted clone must not contribute it; the user's
-/// own `~/.claude` env is always loaded.
-pub fn load_claude_env_with_project(cwd: &Path, project_trusted: bool) -> HashMap<String, String> {
+pub fn load_claude_env(cwd: &Path) -> HashMap<String, String> {
     // Phase 2 cutoff: if the user has imported, skip reading .claude/ at runtime.
-    if is_claude_import_marked_with_log("load_claude_env_with_project") {
+    if is_claude_import_marked_with_log("load_claude_env") {
         return HashMap::new();
     }
 
-    // Untrusted folder: load ONLY the user-tier `~/.claude` env, dropping the
-    // repo-tree (project) contribution.
-    let paths = claude_settings_paths_for_trust(cwd, project_trusted);
+    let paths = find_claude_settings_paths(cwd);
     let mut merged = HashMap::new();
 
     // Paths are ordered highest-priority-first. Process in reverse so that

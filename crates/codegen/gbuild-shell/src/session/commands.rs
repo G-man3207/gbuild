@@ -273,10 +273,9 @@ pub enum SessionCommand {
         registry: Option<std::sync::Arc<gbuild_agent::plugins::PluginRegistry>>,
     },
     /// Re-discover the session's own project hooks (`.gbuild/hooks`,
-    /// `.cursor/hooks.json`, …) mid-session, re-evaluating folder trust. Used by
-    /// the interactive folder-trust grant so a granted folder's repo-local hooks
-    /// start without a session restart (plugin-contributed hooks are handled by
-    /// `ReloadPlugins`; this covers the non-plugin project hook registry).
+    /// `.cursor/hooks.json`, …) mid-session (plugin-contributed hooks are
+    /// handled by `ReloadPlugins`; this covers the non-plugin project hook
+    /// registry).
     ReloadHooks,
     /// Re-discover skills from disk and update the session's skill baseline.
     RefreshSkillBaseline,

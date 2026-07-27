@@ -110,7 +110,7 @@ fn credit_limit_retry_preserves_image_submission_state() {
 fn is_max_tier_positive_match() {
     assert!(is_max_tier(Some("supergrok_heavy")));
     assert!(is_max_tier(Some("SuperGrok Heavy")));
-    assert!(is_max_tier(Some("SUPERGBUILD_HEAVY")));
+    assert!(is_max_tier(Some("SUPERGROK_HEAVY")));
 }
 
 #[test]

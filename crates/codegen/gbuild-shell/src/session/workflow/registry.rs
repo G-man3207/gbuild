@@ -118,9 +118,7 @@ impl WorkflowRegistry {
         merge_scope(&mut entries, builtin_entries);
 
         let mut dirs = Vec::new();
-        if let Some(cwd) = session_cwd
-            && crate::agent::folder_trust::project_scope_allowed(cwd)
-        {
+        if let Some(cwd) = session_cwd {
             dirs.push((
                 project_root(cwd).join(".gbuild").join("workflows"),
                 "project",
@@ -295,15 +293,6 @@ pub(crate) fn resolve_by_path(
     let in_project = project
         .as_ref()
         .is_some_and(|root| canonical.starts_with(root));
-    if in_project
-        && !in_user_or_session
-        && !crate::agent::folder_trust::project_scope_allowed(session_cwd)
-    {
-        return Err(ResolveError::UntrustedPath {
-            path: candidate.display().to_string(),
-            reason: "project workflows require folder trust".into(),
-        });
-    }
     if !in_project && !in_user_or_session {
         return Err(ResolveError::UntrustedPath {
             path: candidate.display().to_string(),
@@ -463,12 +452,6 @@ pub(crate) fn save_project_workflow(
     script: &str,
 ) -> Result<PathBuf, ResolveError> {
     validate_workflow_name(requested_name)?;
-    if !crate::agent::folder_trust::project_scope_allowed(session_cwd) {
-        return Err(ResolveError::UntrustedPath {
-            path: project_root(session_cwd).display().to_string(),
-            reason: "project workflows require folder trust".into(),
-        });
-    }
     if script.len() as u64 > MAX_WORKFLOW_SOURCE_BYTES {
         return Err(ResolveError::SourceTooLarge {
             path: "<saved workflow>".into(),
@@ -689,35 +672,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(resolved.meta.name, "alpha");
-    }
-
-    #[test]
-    fn project_workflows_follow_folder_trust() {
-        let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init(dir.path()).unwrap();
-        let workflows = dir.path().join(".gbuild/workflows");
-        std::fs::create_dir_all(&workflows).unwrap();
-        std::fs::write(workflows.join("project-only.rhai"), script("project-only")).unwrap();
-
-        crate::agent::folder_trust::record_for_test(dir.path(), false);
-        let untrusted = WorkflowRegistry::scan(Some(dir.path()));
-        assert!(
-            untrusted
-                .list()
-                .iter()
-                .all(|listing| listing.name != "project-only")
-        );
-        assert!(matches!(
-            untrusted.resolve_by_name("project-only"),
-            Err(ResolveError::UnknownName(_))
-        ));
-
-        crate::agent::folder_trust::record_for_test(dir.path(), true);
-        let trusted = WorkflowRegistry::scan(Some(dir.path()));
-        assert_eq!(
-            trusted.resolve_by_name("project-only").unwrap().meta.name,
-            "project-only"
-        );
     }
 
     #[test]

@@ -143,7 +143,7 @@ To hide the plugins and hooks interface entirely, set `disable_plugins = true` i
 
 Plugins run with your privileges, so treat them like any software you install: only add marketplaces and install plugins from sources you trust.
 
-Enabling a plugin loads its skills, commands, and agents. Trust is separate and controls whether a plugin's code runs: even when enabled, its hooks, MCP servers, and LSP servers stay inactive until you trust it. gBuild trusts plugins in `~/.gbuild/plugins/` automatically; project plugins in `.gbuild/plugins/` require trust. Install with `--trust` to grant it:
+Enabling a plugin loads its skills, commands, and agents. Trust is separate and controls whether a plugin's code runs: even when enabled, its hooks, MCP servers, and LSP servers stay inactive until you trust it. gBuild trusts plugins in `~/.gbuild/plugins/` automatically; project plugins in `.gbuild/plugins/` are trusted like the rest of the repo-local configuration. Install with `--trust` to grant it:
 
 ```bash
 gbuild plugin install <source> --trust

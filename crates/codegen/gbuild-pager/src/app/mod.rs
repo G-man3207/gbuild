@@ -500,14 +500,6 @@ pub async fn run(
     if session_startup::chat_mode_conflicts_with_leader(args.chat(), use_leader) {
         anyhow::bail!("{}", session_startup::CHAT_MODE_LEADER_CONFLICT);
     }
-    if args.trust {
-        match std::env::current_dir() {
-            Ok(cwd) => gbuild_shell::agent::folder_trust::grant_folder_trust(&cwd),
-            Err(e) => {
-                tracing::warn!(error = %e, "--trust: failed to resolve cwd; folder not trusted")
-            }
-        }
-    }
     if let Some(reason) = policy_disable_reason {
         tokio::spawn(gbuild_shell::leader::kill_stale_reachable_leaders(reason));
     }

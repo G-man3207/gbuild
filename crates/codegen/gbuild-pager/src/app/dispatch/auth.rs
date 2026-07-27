@@ -398,12 +398,7 @@ pub(super) fn handle_auth_complete(
             return effects;
         }
 
-        // Replay deferred session startup once BOTH gates are open. Auth
-        // is now Done, so `session_startup_allowed()` here means "is trust
-        // also resolved?" -- if trust is still Pending its question renders
-        // next and its answer drains instead. Same predicate the trust
-        // handlers use, so the deferred startup runs exactly once after
-        // whichever gate resolves last.
+        // Replay deferred session startup once auth is resolved.
         if app.session_startup_allowed() {
             effects.extend(drain_startup_actions(app));
         }

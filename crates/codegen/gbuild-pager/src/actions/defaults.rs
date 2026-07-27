@@ -515,23 +515,7 @@ pub(super) fn default_actions(
                 "Interrupts the agent's current turn and stops generation, keeping the session open.\nEsc cancels immediately while a turn is running in minimal mode or when vim scrollback mode is off (prompt or scrollback focused, even with a draft).\nCtrl+C cancels when the prompt is empty; with a non-empty draft it clears the prompt first and leaves the turn running.\nIt stops the turn, not the app; use the quit shortcut to exit.",
             ),
         },
-        ActionDef {
-            id: ActionId::CycleMode,
-            label: "mode",
-            description: "Cycle mode (Normal / Plan / Always-approve)",
-            // All Shift+Tab encodings — see `input::key::shift_tab_keys()`.
-            default_key: crate::input::key::shift_tab_keys()[0],
-            alt_keys: crate::input::key::shift_tab_keys()[1..].to_vec(),
-            category: Category::GettingStarted,
-            context: When::PromptFocused,
-            hint_priority: None,
-            hint_key_display: Some("Shift+Tab"),
-            requires_confirmation: false,
-            long_help: Some(
-                "Steps the session mode: Normal -> Plan -> Always-Approve -> Normal.\nPlan keeps the agent planning first and writes no files; Always-Approve runs every tool call without asking.\nCtrl+O toggles auto-approve directly.",
-            ),
-        },
-        // ── Panes (agent-level — toggle side panes) ─────────────────
+                // ── Panes (agent-level — toggle side panes) ─────────────────
         mode_ctrl_g_action(screen_mode),
         ActionDef {
             id: ActionId::ToggleTodos,
@@ -727,22 +711,6 @@ pub(super) fn default_actions(
             requires_confirmation: false,
             long_help: Some(
                 "Runs a shell command without leaving the chat: type ! at the start of an empty prompt, then the command.\nThe command output is captured into the scrollback.\nDelete the leading ! to go back to a normal prompt.",
-            ),
-        },
-        // ── Agent ────────────────────────────────────────────────────
-        ActionDef {
-            id: ActionId::ToggleYolo,
-            label: "yolo",
-            description: "Toggle always-approve",
-            default_key: key!('o', CONTROL),
-            alt_keys: vec![],
-            category: Category::Session,
-            context: When::AgentScreen,
-            hint_priority: None,
-            hint_key_display: None,
-            requires_confirmation: false,
-            long_help: Some(
-                "Turns auto-approve (YOLO) on or off for this session.\nWhile on, the agent runs every tool call (edits, shell, deletes) with no per-action confirmation.\nSame state as the Shift+Tab cycle's Always-Approve; use with care.",
             ),
         },
         ActionDef {
@@ -976,25 +944,7 @@ pub(super) fn default_actions(
                 "Stops the selected agent and removes its row from the dashboard; a running turn is interrupted first.\nUse it to clear finished or unwanted agents without attaching to them.\nThe in-overlay equivalent (Ctrl+X) confirms before stopping.",
             ),
         },
-        ActionDef {
-            id: ActionId::DashboardCycleMode,
-            label: "mode",
-            description: "Cycle dispatch mode",
-            // All Shift+Tab encodings — see `input::key::shift_tab_keys()`.
-            // Registry `matches` is exact-modifier, so the SHIFT-bearing
-            // forms must be alts.
-            default_key: crate::input::key::shift_tab_keys()[0],
-            alt_keys: crate::input::key::shift_tab_keys()[1..].to_vec(),
-            category: Category::Dashboard,
-            context: When::DashboardFocused,
-            hint_priority: None,
-            hint_key_display: Some("Shift+Tab"),
-            requires_confirmation: false,
-            long_help: Some(
-                "Cycles the dispatch mode for agents you launch from the dashboard: Normal, Plan, then Always-Approve.\nPlan has new agents plan before changing files; Always-Approve runs their tools without prompting.\nMirrors the in-session Shift+Tab cycle, applied to new dispatches.",
-            ),
-        },
-        ActionDef {
+                ActionDef {
             id: ActionId::DashboardToggleGrouping,
             label: "group",
             description: "Toggle row grouping",
@@ -1091,24 +1041,6 @@ pub(super) fn default_actions(
             ),
         },
         // Mirror of `ToggleYolo` (Ctrl+O) but scoped to the
-        // dashboard — flips the selected row's agent's
-        // always-approve / YOLO mode. Reachable from the dashboard
-        // view (and from inside the session overlay).
-        ActionDef {
-            id: ActionId::DashboardToggleAutoApprove,
-            label: "always-approve",
-            description: "Toggle always-approve",
-            default_key: key!('o', CONTROL),
-            alt_keys: vec![],
-            category: Category::Dashboard,
-            context: When::DashboardFocused,
-            hint_priority: None,
-            hint_key_display: Some("Ctrl+O"),
-            requires_confirmation: false,
-            long_help: Some(
-                "Toggles auto-approve (YOLO) for the selected agent right from the dashboard, without attaching to it.\nWhile on, that agent runs every tool call with no per-action confirmation.\nThe per-session equivalent is Ctrl+O inside a session.",
-            ),
-        },
         // Open the location picker — a floating modal to change the
         // working directory new dashboard sessions spawn in. Ctrl+L
         // ("location") is free under `DashboardFocused` (it only binds

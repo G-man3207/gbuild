@@ -207,40 +207,6 @@ pub(crate) async fn start_dual_agent_type_content() -> ContentController {
     .expect("start content with dual agent types")
 }
 
-// ── Folder-trust welcome sub-state e2e ──────────────────────────────────
-
-/// Title line of the folder-trust question (see `render_welcome_trust`).
-pub(crate) const TRUST_QUESTION_SENTINEL: &str = "Do you trust the contents of this directory";
-
-/// A `git init`'d temp dir containing a repo-local `.mcp.json` (code-exec
-/// config). `repo_configs_present` returns true for it, so an untrusted clone
-/// with the feature on resolves to `Prompt` => the trust question renders.
-pub(crate) fn git_repo_with_mcp_json() -> tempfile::TempDir {
-    let repo = tempfile::tempdir().expect("repo tempdir");
-    git2::Repository::init(repo.path()).expect("git init");
-    std::fs::write(repo.path().join(".mcp.json"), "{}").expect("write .mcp.json");
-    repo
-}
-
-/// Explicit overrides for a folder-trust run. A self-built gBuild auto-trusts,
-/// so `GBUILD_TEST_VERSION` simulates a release; the gate is pinned both ways.
-pub(crate) fn trust_env(feature_on: bool) -> [(&'static str, &'static str); 2] {
-    [
-        ("GBUILD_TEST_VERSION", "0.0.0-sim"),
-        ("GBUILD_FOLDER_TRUST", if feature_on { "1" } else { "0" }),
-    ]
-}
-
-/// Whether the isolated trust store has recorded a grant for `repo`'s workspace.
-pub(crate) fn folder_is_trusted(content: &ContentController, repo: &std::path::Path) -> bool {
-    let store_path = content
-        .home()
-        .join(".gbuild")
-        .join(gbuild_workspace::trust::TRUST_FILE_NAME);
-    let store = gbuild_workspace::trust::TrustStore::load_from(store_path);
-    store.is_trusted(&gbuild_workspace::trust::workspace_key(repo))
-}
-
 // ── Leader mode e2e ─────────────────────────────────────────────────────
 // The leader cluster cases (and their LEADER_TIMEOUT/STREAM_TIMEOUT/
 // submit_turn/inference_request_count helpers) moved to the dedicated

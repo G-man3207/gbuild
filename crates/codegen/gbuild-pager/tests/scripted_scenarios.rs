@@ -356,17 +356,6 @@ async fn scripted_goal_slash_presession_disabled() {
     run_scenario("goal_slash_presession_disabled.yaml").await;
 }
 
-/// Full folder-trust session: with `GBUILD_FOLDER_TRUST=1` and a git repo that
-/// ships a repo-local `.mcp.json` (declared via the scenario `workspace`), the
-/// trust question renders before any session, accepting it (`y`) lets the
-/// session proceed, and a submitted prompt streams the mock response. The
-/// declarative counterpart to the programmatic `folder_trust_*` PTY tests.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "scripted scenario; run with cargo test -- --ignored"]
-async fn scripted_folder_trust_prompt() {
-    run_scenario("folder_trust_prompt.yaml").await;
-}
-
 /// Dashboard `/model` list: mouse-clicking a model must accept the completion
 /// into the dispatch prompt and must not attach the session row under the
 /// dropdown (click-through regression).
@@ -522,7 +511,6 @@ fn scenarios_parse() {
         "path_space_hyperlink.yaml",
         "goal_slash_presession.yaml",
         "goal_slash_presession_disabled.yaml",
-        "folder_trust_prompt.yaml",
         "dashboard_model_list_click.yaml",
         "paste_chip_double_click.yaml",
         "paste_chip_repaste.yaml",

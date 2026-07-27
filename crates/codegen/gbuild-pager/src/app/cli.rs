@@ -452,9 +452,6 @@ pub struct PagerArgs {
         alias = "dangerously-skip-permissions"
     )]
     pub yolo: bool,
-    /// Trust this folder and persist the decision to the trust store.
-    #[arg(long = "trust", alias = "trust-folder", hide = true)]
-    pub trust: bool,
     /// Permission allow rule (compat alias: --allowedTools).
     #[arg(
         long = "allow",
@@ -1154,9 +1151,10 @@ mod tests {
             PagerArgs::resolve_startup_sandbox(Some("strict"), None),
             Apply(Some("strict".to_string()))
         );
+        // An explicit flag always applies, even when it matches the saved profile.
         assert_eq!(
             PagerArgs::resolve_startup_sandbox(Some("workspace"), Some("workspace".to_string())),
-            Apply(None)
+            Apply(Some("workspace".to_string()))
         );
         assert_eq!(
             PagerArgs::resolve_startup_sandbox(Some("read-only"), Some("workspace".to_string())),
@@ -1169,9 +1167,11 @@ mod tests {
             PagerArgs::resolve_startup_sandbox(None, Some("workspace".to_string())),
             Apply(Some("workspace".to_string()))
         );
+        // gBuild defaults to no sandbox: with neither flag nor saved profile,
+        // nothing is applied.
         assert_eq!(
             PagerArgs::resolve_startup_sandbox(None, None),
-            Apply(Some("workspace".to_string()))
+            Apply(None)
         );
         assert_eq!(
             PagerArgs::resolve_startup_sandbox(Some("readonly"), Some("read-only".to_string())),
@@ -1196,11 +1196,12 @@ mod tests {
                 .startup_sandbox_profile(None),
             SandboxStartup::Apply(None)
         );
+        // Sandbox is opt-in: a bare launch applies no profile.
         assert_eq!(
             PagerArgs::try_parse_from(["gbuild"])
                 .unwrap()
                 .startup_sandbox_profile(None),
-            SandboxStartup::Apply(Some("workspace".to_string()))
+            SandboxStartup::Apply(None)
         );
     }
     #[test]
@@ -1365,16 +1366,6 @@ mod tests {
         let c = PagerArgs::try_parse_from(["gbuild", "-w", "x"]).expect("-w x parses");
         assert_eq!(c.worktree.as_deref(), Some("x"));
         assert_eq!(c.initial_prompt(), None);
-    }
-    #[test]
-    fn trust_flag_parses_on_pager_and_alias() {
-        let bare = PagerArgs::try_parse_from(["gbuild"]).expect("bare gbuild parses");
-        assert!(!bare.trust);
-        let long = PagerArgs::try_parse_from(["gbuild", "--trust"]).expect("--trust parses");
-        assert!(long.trust);
-        let alias =
-            PagerArgs::try_parse_from(["gbuild", "--trust-folder"]).expect("--trust-folder parses");
-        assert!(alias.trust);
     }
     #[test]
     fn reasoning_effort_and_effort_alias_parse_same_field() {

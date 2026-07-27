@@ -482,16 +482,13 @@ impl SubagentsConfig {
         roles: &std::collections::HashMap<String, SubagentRole>,
         personas: &std::collections::HashMap<String, SubagentPersona>,
         cwd: &std::path::Path,
-        project_trusted: bool,
     ) -> (
         std::collections::HashMap<String, SubagentRole>,
         std::collections::HashMap<String, SubagentPersona>,
     ) {
         let mut project = Self::default();
-        if project_trusted {
-            project.discover_roles(cwd);
-            project.discover_personas(cwd);
-        }
+        project.discover_roles(cwd);
+        project.discover_personas(cwd);
         for (name, role) in roles {
             if role.source_dir.is_none() || !project.roles.contains_key(name) {
                 project.roles.insert(name.clone(), role.clone());
@@ -1435,14 +1432,11 @@ pub fn resolve_effective_plugins_config(
         .ok()
         .and_then(|t| extract(&t))
         .unwrap_or_default();
-    let project_trusted = crate::agent::folder_trust::project_scope_allowed(cwd);
     for config_path in find_project_configs(cwd) {
         if let Ok(toml_val) = load_config_file(&config_path)
             && let Some(proj) = extract(&toml_val)
         {
-            if project_trusted {
-                plugins_cfg.paths.extend(proj.paths);
-            }
+            plugins_cfg.paths.extend(proj.paths);
             plugins_cfg.disabled.extend(proj.disabled);
         }
     }

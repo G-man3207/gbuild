@@ -719,7 +719,6 @@ mod tests {
             &base.roles,
             &base.personas,
             &project_root,
-            true,
         );
         assert_eq!(
             personas

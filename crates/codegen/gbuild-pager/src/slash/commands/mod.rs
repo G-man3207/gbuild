@@ -3,9 +3,7 @@
 //! Each command lives in its own submodule. This module re-exports
 //! command structs and provides `builtin_commands()` for registry
 //! construction.
-pub mod always_approve;
 pub mod announcements;
-pub mod auto;
 pub mod btw;
 pub mod cd;
 pub mod compact;
@@ -97,8 +95,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(screen_mode_switch::ScreenModeSwitchCommand::fullscreen()),
         Arc::new(model::ModelCommand),
         Arc::new(effort::EffortCommand),
-        Arc::new(always_approve::AlwaysApproveCommand),
-        Arc::new(auto::AutoCommand),
         Arc::new(multiline::MultilineCommand),
         Arc::new(compact_mode::CompactModeCommand),
         Arc::new(vim_mode::VimModeCommand),

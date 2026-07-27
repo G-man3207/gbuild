@@ -7623,51 +7623,8 @@ mod tests {
     }
 
     /// Shift+Tab emits `DashboardCycleMode` regardless of how the terminal
-    /// encodes it — `BackTab` (with or without a SHIFT modifier) or
-    /// `Tab`+SHIFT. Guards the regression where the registry's exact-modifier
-    /// `key!(BackTab)` lookup silently failed on `BackTab`+SHIFT.
-    #[test]
-    fn shift_tab_emits_cycle_mode_for_all_encodings() {
-        let reg = crate::actions::ActionRegistry::defaults();
-        for key in [
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
-        ] {
-            let mut state = DashboardState::new();
-            let outcome = state.handle_key(&key, &reg);
-            assert!(
-                matches!(outcome, InputOutcome::Action(Action::DashboardCycleMode)),
-                "Shift+Tab ({key:?}) must emit DashboardCycleMode, got {outcome:?}",
-            );
-        }
-    }
 
     /// Multiline must not treat Shift+Tab as the submit chord (is_mod_enter
-    /// requires KeyCode::Enter).
-    #[test]
-    fn multiline_shift_tab_cycles_mode_with_non_empty_draft() {
-        let reg = crate::actions::ActionRegistry::defaults();
-        for key in [
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
-        ] {
-            let mut state = DashboardState::new();
-            state.multiline_mode = true;
-            state.dispatch.set_text("draft text");
-            let outcome = state.handle_key(&key, &reg);
-            assert!(
-                matches!(outcome, InputOutcome::Action(Action::DashboardCycleMode)),
-                "multiline + {key:?} must DashboardCycleMode, not send, got {outcome:?}",
-            );
-            assert_eq!(
-                state.dispatch.text(),
-                "draft text",
-                "draft must not be consumed by Shift+Tab"
-            );
-        }
-    }
 
     /// Shift+↑/↓ emits the reorder actions even with the peek open (the
     /// default state when a row is selected) and regardless of focus. Guards
@@ -7693,39 +7650,6 @@ mod tests {
         }
     }
 
-    /// Shift+Tab cycles the PEEKED agent's live mode while the peek is
-    /// open (emitting `DashboardPeekCycleMode`), but the new-session
-    /// staged mode (`DashboardCycleMode`) when no peek is shown.
-    #[test]
-    fn shift_tab_cycles_peeked_agent_mode_when_peek_open() {
-        let reg = crate::actions::ActionRegistry::defaults();
-        for key in [
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
-            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
-        ] {
-            let mut state = make_state_with_selection();
-            state.peek = Some(super::super::peek::PeekPanelState::new(
-                DashboardRowId::TopLevel(AgentId(0)),
-                peek_fields_for_test("Idle"),
-            ));
-            let outcome = state.handle_key(&key, &reg);
-            assert!(
-                matches!(
-                    outcome,
-                    InputOutcome::Action(Action::DashboardPeekCycleMode)
-                ),
-                "Shift+Tab ({key:?}) with peek open must emit DashboardPeekCycleMode, got {outcome:?}",
-            );
-        }
-        // No peek → still the new-session staged-mode cycle.
-        let mut state = DashboardState::new();
-        let outcome = state.handle_key(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE), &reg);
-        assert!(
-            matches!(outcome, InputOutcome::Action(Action::DashboardCycleMode)),
-            "Shift+Tab without peek must emit DashboardCycleMode, got {outcome:?}",
-        );
-    }
 
     /// Overview focused: Enter opens the focused row; Esc backs out of
     /// the selection (focuses `[+ New Agent]`) and STAYS on the list —

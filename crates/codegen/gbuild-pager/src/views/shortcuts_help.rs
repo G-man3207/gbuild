@@ -1547,25 +1547,38 @@ mod tests {
         }
     }
 
-    /// `DashboardCycleMode` carries Shift+Tab three times (the terminal
-    /// encoding variants `BackTab` / `BackTab`+SHIFT / `Tab`+SHIFT).
-    /// The cheatsheet must collapse identically-rendered keys instead
-    /// of showing "Shift+Tab / Shift+Tab / Shift+Tab".
+    /// An action carrying Shift+Tab three times (the terminal encoding
+    /// variants `BackTab` / `BackTab`+SHIFT / `Tab`+SHIFT) must collapse to
+    /// one rendered key in the cheatsheet instead of showing
+    /// "Shift+Tab / Shift+Tab / Shift+Tab".
     #[test]
     fn build_entries_dedupes_identically_rendered_alt_keys() {
-        let registry = crate::actions::ActionRegistry::defaults();
+        let shift_tab = crate::input::key::shift_tab_keys();
+        let registry = crate::actions::ActionRegistry::new(vec![crate::actions::ActionDef {
+            id: crate::actions::ActionId::DashboardTogglePin,
+            label: "test",
+            description: "ShiftTab test action",
+            default_key: shift_tab[0],
+            alt_keys: shift_tab[1..].to_vec(),
+            category: crate::actions::Category::Dashboard,
+            context: crate::actions::When::DashboardFocused,
+            hint_priority: None,
+            hint_key_display: None,
+            requires_confirmation: false,
+            long_help: None,
+        }]);
         let entries = build_entries(&[When::DashboardFocused], &registry, false);
         let item = entries
             .iter()
             .find_map(|e| match e {
                 ShortcutsHelpEntry::Hint { item, .. }
-                    if item.description.as_deref() == Some("Cycle dispatch mode") =>
+                    if item.description.as_deref() == Some("ShiftTab test action") =>
                 {
                     Some(item)
                 }
                 _ => None,
             })
-            .expect("DashboardCycleMode must be listed");
+            .expect("test action must be listed");
         assert_eq!(
             hint_key_pretty(item),
             "Shift+Tab",

@@ -213,13 +213,12 @@ fn load_requirements_permissions() -> Vec<Sourced<PermissionRule>> {
 ///
 ///   * `~/.gbuild/config.toml` (lowest priority)
 ///   * Each `.gbuild/config.toml` from the git repo root down to `cwd`
-///     (highest priority last) — same walk as folder-trust's
-///     [`crate::project_config::find_project_configs`] so detector and loader
-///     cannot disagree on which project configs exist.
+///     (highest priority last) — the [`crate::project_config::find_project_configs`]
+///     walk.
 ///
 /// Returns the rules tagged with `RequirementSource::Config`. Empty if no
 /// config file contains a `[permission]` section.
-fn load_config_toml_permissions(cwd: &Path, project_trusted: bool) -> Vec<Sourced<PermissionRule>> {
+fn load_config_toml_permissions(cwd: &Path) -> Vec<Sourced<PermissionRule>> {
     let mut rules = Vec::new();
 
     // Global `~/.gbuild/config.toml` first (lowest priority within this layer).
@@ -240,18 +239,14 @@ fn load_config_toml_permissions(cwd: &Path, project_trusted: bool) -> Vec<Source
         }
     }
 
-    // Project-scoped configs walking from git root down to cwd, gated on trust.
-    // An untrusted clone must not contribute allow/deny/ask rules via
-    // `.gbuild/config.toml` (same gate as project `.claude/settings.json`).
-    if project_trusted {
-        for path in crate::project_config::find_project_configs(cwd) {
-            match gbuild_config::load_config_file(&path) {
-                Ok(value) => rules.extend(extract_toml_permissions(&value, || {
-                    RequirementSource::Config { path: path.clone() }
-                })),
-                Err(e) => {
-                    warn!(path = %path.display(), error = %e, "Failed to load project config.toml")
-                }
+    // Project-scoped configs walking from git root down to cwd.
+    for path in crate::project_config::find_project_configs(cwd) {
+        match gbuild_config::load_config_file(&path) {
+            Ok(value) => rules.extend(extract_toml_permissions(&value, || {
+                RequirementSource::Config { path: path.clone() }
+            })),
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "Failed to load project config.toml")
             }
         }
     }
@@ -283,15 +278,10 @@ fn managed_config_permissions(
 /// `defaultMode: "acceptEdits"` in Claude settings generates a synthetic
 /// `Allow Edit` rule appended to the Claude rules.
 ///
-/// `project_trusted` gates project-tier `.claude/settings.json` and
-/// `.gbuild/config.toml` permission rules (mirrors [`load_claude_env_with_project`]).
-/// Global/user/admin tiers always load. Callers pass the folder-trust bridge
-/// verdict for local sessions; hub/cloud defaults trusted.
-pub async fn resolve_permission_config_with_fallback(
-    cwd: &Path,
-    project_trusted: bool,
-) -> Option<PermissionConfig> {
-    resolve_permissions_with_provenance(cwd, project_trusted)
+/// Project-tier `.claude/settings.json` and `.gbuild/config.toml` permission
+/// rules always load (mirrors [`load_claude_env`]).
+pub async fn resolve_permission_config_with_fallback(cwd: &Path) -> Option<PermissionConfig> {
+    resolve_permissions_with_provenance(cwd)
         .await
         .map(|r| r.config)
 }
@@ -412,21 +402,16 @@ struct ResolveInputs<'a> {
     policy_block: Option<&'static str>,
     managed: &'a ManagedSettings,
     managed_config_rules: Vec<Sourced<PermissionRule>>,
-    /// Folder-trust verdict for `cwd`. When false, project-tier
-    /// `.claude/settings.json` / `.gbuild/config.toml` permission rules are dropped
-    /// (global/user/admin tiers still load).
-    project_trusted: bool,
 }
 
 impl ResolveInputs<'static> {
-    fn live(project_trusted: bool) -> Self {
+    fn live() -> Self {
         Self {
             policy_block: yolo_disabled_by_policy(),
             managed: managed_settings(),
             managed_config_rules: managed_config_permissions(
                 &gbuild_config::managed_config_layers(),
             ),
-            project_trusted,
         }
     }
 }
@@ -451,15 +436,10 @@ impl ResolveInputs<'static> {
 /// (`[ui] disable_bypass_permissions_mode = true`). Pair managed `dontAsk` with
 /// that pin when org policy must not be bypassable by `--always-approve`.
 ///
-/// `project_trusted` gates project-tier Claude settings and `.gbuild/config.toml`
-/// permission rules the same way [`load_claude_env_with_project`] gates env.
-/// Without this, an untrusted clone can ship `defaultMode: bypassPermissions`
-/// or broad allow rules and disable approval prompts.
-pub async fn resolve_permissions_with_provenance(
-    cwd: &Path,
-    project_trusted: bool,
-) -> Option<ResolvedPermissions> {
-    resolve_permissions_with_provenance_inner(cwd, ResolveInputs::live(project_trusted)).await
+/// Project-tier Claude settings and `.gbuild/config.toml` permission rules
+/// always load (the same sources [`load_claude_env`] reads).
+pub async fn resolve_permissions_with_provenance(cwd: &Path) -> Option<ResolvedPermissions> {
+    resolve_permissions_with_provenance_inner(cwd, ResolveInputs::live()).await
 }
 
 async fn resolve_permissions_with_provenance_inner(
@@ -470,9 +450,8 @@ async fn resolve_permissions_with_provenance_inner(
         policy_block,
         managed,
         managed_config_rules,
-        project_trusted,
     } = inputs;
-    let config_toml_rules = load_config_toml_permissions(cwd, project_trusted);
+    let config_toml_rules = load_config_toml_permissions(cwd);
 
     // Managed defaultMode wins; skip user-tier defaultMode application so a
     // project acceptEdits cannot loosen a managed dontAsk/auto/default.
@@ -489,7 +468,7 @@ async fn resolve_permissions_with_provenance_inner(
     let settings_json = if skip_claude {
         None
     } else {
-        resolve_claude_settings_inner(cwd, project_trusted, policy_block, user_mode_load)
+        resolve_claude_settings_inner(cwd, policy_block, user_mode_load)
     };
 
     let mut all_rules: Vec<Sourced<PermissionRule>> = Vec::new();
@@ -577,11 +556,8 @@ async fn resolve_permissions_with_provenance_inner(
 ///
 /// Synthetic rules are appended last as fallbacks (explicit deny still wins).
 /// `policy_block` is threaded for testability; prod passes the live pin.
-/// When `project_trusted` is false, only global `~/.claude` settings load —
-/// project-tree rules and `defaultMode` are dropped (same gate as env injection).
 fn resolve_claude_settings_inner(
     cwd: &Path,
-    project_trusted: bool,
     policy_block: Option<&'static str>,
     user_mode_load: UserDefaultModeLoad,
 ) -> Option<(PermissionConfig, Vec<SkippedPermission>, PathBuf)> {
@@ -596,8 +572,8 @@ fn resolve_claude_settings_inner(
     let mut prompt_policy = PromptPolicy::default();
     let mut files_with_rules: u32 = 0;
 
-    // Same path set as env injection ([`claude_settings_paths_for_trust`]).
-    for path in claude_settings_paths_for_trust(cwd, project_trusted) {
+    // Same path set as env injection ([`find_claude_settings_paths`]).
+    for path in find_claude_settings_paths(cwd) {
         let Some(settings) = load_claude_settings(&path) else {
             continue;
         };
@@ -1766,7 +1742,7 @@ mod tests {
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 2);
         // Explicit permission rule comes first
@@ -1789,7 +1765,7 @@ mod tests {
         .unwrap();
 
         let (cfg, skipped, _) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.rules[0].action, RuleAction::Allow);
@@ -1809,7 +1785,7 @@ mod tests {
         .unwrap();
 
         let (cfg, skipped, path) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.rules[0].tool, ToolFilter::Bash);
@@ -1821,7 +1797,7 @@ mod tests {
     fn no_claude_settings_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .is_none()
         );
     }
@@ -1838,7 +1814,7 @@ mod tests {
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 2);
         // Explicit Deny Edit wins over the synthetic Allow (deny > ask > allow)
@@ -1956,7 +1932,7 @@ mod tests {
         )
         .unwrap();
 
-        let env = load_claude_env_with_project(tmp.path(), true);
+        let env = load_claude_env(tmp.path());
         assert_eq!(env.get("SHARED"), Some(&"from-local".to_string()));
         assert_eq!(env.get("PROJECT_ONLY"), Some(&"yes".to_string()));
         assert_eq!(env.get("LOCAL_ONLY"), Some(&"yes".to_string()));
@@ -1973,44 +1949,8 @@ mod tests {
         let _real_home_guard = EnvVarGuard::set("HOME", home.path());
         let _marker_guard = EnvVarGuard::unset("_GBUILD_CLAUDE_MARKER_OVERRIDE");
         let tmp = tempfile::tempdir().unwrap();
-        let env = load_claude_env_with_project(tmp.path(), true);
+        let env = load_claude_env(tmp.path());
         assert!(env.is_empty());
-    }
-
-    #[test]
-    fn load_claude_env_with_project_drops_repo_env_when_untrusted() {
-        // The repo-tree `.claude/settings.json` env is injected into every spawned
-        // subprocess (BASH_ENV / GIT_SSH_COMMAND / …), so an untrusted folder must
-        // drop it. Isolate GBUILD_HOME so the claude-import marker reads clean (an
-        // imported dev machine would otherwise early-return an empty map); the
-        // unique key keeps it independent of the host's real `~/.claude`.
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        let _home_guard = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GBUILD_CLAUDE_MARKER_OVERRIDE");
-        let tmp = tempfile::tempdir().unwrap();
-        let claude_dir = tmp.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
-        std::fs::write(
-            claude_dir.join("settings.json"),
-            r#"{"env": {"REPO_TREE_ENV_GATED": "1"}}"#,
-        )
-        .unwrap();
-
-        // Trusted (preserves the original behavior): repo-tree env IS merged.
-        let trusted = load_claude_env_with_project(tmp.path(), true);
-        assert_eq!(
-            trusted.get("REPO_TREE_ENV_GATED"),
-            Some(&"1".to_string()),
-            "trusted folder must merge repo-tree .claude env"
-        );
-
-        // Untrusted: the repo-tree env is dropped.
-        let untrusted = load_claude_env_with_project(tmp.path(), false);
-        assert!(
-            !untrusted.contains_key("REPO_TREE_ENV_GATED"),
-            "untrusted folder must drop repo-tree .claude env"
-        );
     }
 
     // ── requirements.toml / managed-settings.json permission tests ────
@@ -2700,7 +2640,7 @@ mod tests {
 
         // Resolve from sub_dir — should merge BOTH files
         let (cfg, _, _) =
-            resolve_claude_settings_inner(&sub_dir, true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(&sub_dir, None, UserDefaultModeLoad::Apply)
                 .unwrap();
 
         // Should have all 3 rules: Edit(src/**) + Bash(*) + Read(*)
@@ -2748,7 +2688,7 @@ mod tests {
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(&sub_dir, true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(&sub_dir, None, UserDefaultModeLoad::Apply)
                 .unwrap();
 
         // Should have 2 rules: deny Bash(rm*) + allow Bash(*)
@@ -2796,7 +2736,7 @@ mod tests {
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(&sub_dir, true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(&sub_dir, None, UserDefaultModeLoad::Apply)
                 .unwrap();
 
         // Sub-dir's "default" mode should prevent the repo's acceptEdits
@@ -2842,7 +2782,7 @@ mod tests {
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(&sub_dir, true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(&sub_dir, None, UserDefaultModeLoad::Apply)
                 .unwrap();
 
         // Repo's acceptEdits should apply (since sub-dir didn't override it)
@@ -2877,168 +2817,12 @@ mod tests {
         .unwrap();
 
         let (cfg, _, path) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 2);
         assert!(path.ends_with(".claude/settings.json"));
     }
 
-    /// Untrusted clone must not honor project `.claude/settings.json` permission
-    /// rules or `defaultMode` (including bypassPermissions).
-    #[test]
-    fn untrusted_project_claude_permissions_are_not_honored() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        let _home_guard = EnvVarGuard::set("HOME", home.path());
-        let _gbuild_guard = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GBUILD_CLAUDE_MARKER_OVERRIDE");
-
-        // Global user-tier allow (must survive untrusted project).
-        let global_claude = home.path().join(".claude");
-        std::fs::create_dir_all(&global_claude).unwrap();
-        std::fs::write(
-            global_claude.join("settings.json"),
-            r#"{"permissions": {"allow": ["Bash(git status)"]}}"#,
-        )
-        .unwrap();
-
-        let tmp = tempfile::tempdir().unwrap();
-        let claude_dir = tmp.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
-        std::fs::write(
-            claude_dir.join("settings.json"),
-            r#"{"defaultMode": "bypassPermissions", "permissions": {"allow": ["Bash(cargo build)", "Bash(cargo test)"]}}"#,
-        )
-        .unwrap();
-
-        // Untrusted: project file dropped; only global Bash(git status) remains.
-        let (cfg, _, _) =
-            resolve_claude_settings_inner(tmp.path(), false, None, UserDefaultModeLoad::Apply)
-                .unwrap();
-        assert_eq!(cfg.rules.len(), 1, "only global rule should load");
-        assert_eq!(cfg.rules[0].tool, ToolFilter::Bash);
-        assert_eq!(cfg.rules[0].pattern.as_deref(), Some("git status"));
-        assert!(
-            !cfg.rules
-                .iter()
-                .any(|r| r.action == RuleAction::Allow && r.tool == ToolFilter::Any),
-            "bypassPermissions catch-all must not load from untrusted project"
-        );
-
-        // Trusted: project bypass + allows honored (plus global).
-        let (cfg, _, _) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
-                .unwrap();
-        assert!(
-            cfg.rules
-                .iter()
-                .any(|r| r.action == RuleAction::Allow && r.tool == ToolFilter::Any),
-            "trusted folder must honor project bypassPermissions"
-        );
-        assert!(
-            cfg.rules.iter().any(|r| {
-                r.tool == ToolFilter::Bash && r.pattern.as_deref() == Some("cargo build")
-            }),
-            "trusted folder must honor project allow rules"
-        );
-    }
-
-    /// Untrusted clone must not contribute project `.gbuild/config.toml` [permission].
-    ///
-    /// Sync + `block_on` so `ENV_LOCK` is not held across `.await` (clippy
-    /// `await_holding_lock`). Does not assert exact global rule counts:
-    /// `gbuild_config::gbuild_home()` is a process-wide `OnceLock`, so under
-    /// single-process `cargo test` an earlier test may have already pinned
-    /// `GBUILD_HOME`. Project-rule filtering is independent of that; global
-    /// survival is checked only when our temp home is the live `user_gbuild_home()`.
-    #[test]
-    fn untrusted_project_config_toml_permissions_are_not_honored() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let home = tempfile::tempdir().unwrap();
-        let _home_guard = EnvVarGuard::set("HOME", home.path());
-        let _gbuild_guard = EnvVarGuard::set("GBUILD_HOME", home.path());
-        let _marker_guard = EnvVarGuard::unset("_GBUILD_CLAUDE_MARKER_OVERRIDE");
-
-        // Global allow (survives untrusted project when GBUILD_HOME resolves here).
-        std::fs::write(
-            home.path().join("config.toml"),
-            r#"[permission]
-allow = ["Bash(git status)"]
-"#,
-        )
-        .unwrap();
-
-        let tmp = tempfile::tempdir().unwrap();
-        // Bound project discovery to this temp dir (canonical walker uses git root).
-        git2::Repository::init(tmp.path()).expect("git init");
-        let gbuild = tmp.path().join(".gbuild");
-        std::fs::create_dir_all(&gbuild).unwrap();
-        std::fs::write(
-            gbuild.join("config.toml"),
-            r#"[permission]
-allow = ["Bash(evil *)"]
-"#,
-        )
-        .unwrap();
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("test runtime");
-        // Untrusted may be None when no global rules load (GBUILD_HOME OnceLock
-        // already pinned by another test) — empty after dropping project is OK.
-        let untrusted = rt.block_on(resolve_permissions_with_provenance_inner(
-            tmp.path(),
-            inputs_trusted(None, false),
-        ));
-        assert!(
-            untrusted.as_ref().is_none_or(|r| {
-                r.config
-                    .rules
-                    .iter()
-                    .all(|rule| rule.pattern.as_deref() != Some("evil *"))
-            }),
-            "untrusted project config.toml allow must not load"
-        );
-
-        let trusted = rt
-            .block_on(resolve_permissions_with_provenance_inner(
-                tmp.path(),
-                inputs_trusted(None, true),
-            ))
-            .expect("trusted project rules resolve");
-        assert!(
-            trusted
-                .config
-                .rules
-                .iter()
-                .any(|r| r.pattern.as_deref() == Some("evil *")),
-            "trusted folder must load project config.toml allow"
-        );
-
-        // Global survival only when this process's OnceLock points at our temp home.
-        let global_live = gbuild_config::user_gbuild_home()
-            .is_some_and(|g| g == home.path() || g.starts_with(home.path()));
-        if global_live {
-            let untrusted = untrusted.expect("global rules present when GBUILD_HOME is live");
-            assert!(
-                untrusted
-                    .config
-                    .rules
-                    .iter()
-                    .any(|r| r.pattern.as_deref() == Some("git status")),
-                "global config.toml allow must survive untrusted project"
-            );
-            assert!(
-                trusted
-                    .config
-                    .rules
-                    .iter()
-                    .any(|r| r.pattern.as_deref() == Some("git status")),
-                "trusted folder still loads global config.toml allow"
-            );
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // bypassPermissions defaultMode tests
@@ -3057,7 +2841,7 @@ allow = ["Bash(evil *)"]
 
         // pin=None keeps this hermetic on machines whose real policy pins yolo.
         let (cfg, _, path) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.rules[0].action, RuleAction::Allow);
@@ -3084,7 +2868,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 2);
         // Deny rule exists
@@ -3123,7 +2907,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, _, _) =
-            resolve_claude_settings_inner(&sub_dir, true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(&sub_dir, None, UserDefaultModeLoad::Apply)
                 .unwrap();
         // Should produce Allow Any (bypassPermissions), NOT Allow Edit (acceptEdits)
         assert_eq!(cfg.rules.len(), 1);
@@ -3135,19 +2919,11 @@ allow = ["Bash(evil *)"]
     /// Hermetic resolver inputs: default managed settings, no managed-config
     /// rules, so tests never read the host's real managed files.
     fn inputs(policy_block: Option<&'static str>) -> ResolveInputs<'static> {
-        inputs_trusted(policy_block, true)
-    }
-
-    fn inputs_trusted(
-        policy_block: Option<&'static str>,
-        project_trusted: bool,
-    ) -> ResolveInputs<'static> {
         static DEFAULT_MANAGED: std::sync::OnceLock<ManagedSettings> = std::sync::OnceLock::new();
         ResolveInputs {
             policy_block,
             managed: DEFAULT_MANAGED.get_or_init(ManagedSettings::default),
             managed_config_rules: Vec::new(),
-            project_trusted,
         }
     }
 
@@ -3160,7 +2936,6 @@ allow = ["Bash(evil *)"]
             policy_block,
             managed,
             managed_config_rules: Vec::new(),
-            project_trusted: true,
         }
     }
 
@@ -3178,7 +2953,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, skipped, _) =
-            resolve_claude_settings_inner(tmp.path(), true, Some(PIN), UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), Some(PIN), UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 1, "only the explicit deny survives");
         assert_eq!(cfg.rules[0].action, RuleAction::Deny);
@@ -3207,7 +2982,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, skipped, path) =
-            resolve_claude_settings_inner(tmp.path(), true, Some(PIN), UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), Some(PIN), UserDefaultModeLoad::Apply)
                 .unwrap();
         assert!(cfg.rules.is_empty(), "no synthetic rule under the pin");
         assert_eq!(cfg.prompt_policy, PromptPolicy::Ask);
@@ -3234,7 +3009,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, skipped, _) =
-            resolve_claude_settings_inner(tmp.path(), true, Some(PIN), UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), Some(PIN), UserDefaultModeLoad::Apply)
                 .unwrap();
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.rules[0].action, RuleAction::Allow);
@@ -3733,7 +3508,7 @@ allow = ["Bash(evil *)"]
         )
         .unwrap();
 
-        let cfg = resolve_permission_config_with_fallback(tmp.path(), true)
+        let cfg = resolve_permission_config_with_fallback(tmp.path())
             .await
             .unwrap();
         assert_eq!(cfg.prompt_policy, PromptPolicy::Deny);
@@ -3752,7 +3527,7 @@ allow = ["Bash(evil *)"]
         )
         .unwrap();
 
-        let cfg = resolve_permission_config_with_fallback(tmp.path(), true)
+        let cfg = resolve_permission_config_with_fallback(tmp.path())
             .await
             .unwrap();
         assert_eq!(
@@ -3773,7 +3548,7 @@ allow = ["Bash(evil *)"]
         )
         .unwrap();
 
-        let cfg = resolve_permission_config_with_fallback(tmp.path(), true)
+        let cfg = resolve_permission_config_with_fallback(tmp.path())
             .await
             .unwrap();
         assert_eq!(
@@ -3855,7 +3630,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, skipped, source) =
-            resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+            resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                 .expect("skip-only invalid permissions must resolve, not panic or None");
         assert!(cfg.rules.is_empty(), "no valid rules");
         assert_eq!(skipped.len(), 2, "both parse failures recorded as skips");
@@ -3905,7 +3680,7 @@ allow = ["Bash(evil *)"]
         .unwrap();
 
         let (cfg, skipped, _) =
-            resolve_claude_settings_inner(&sub, true, None, UserDefaultModeLoad::Apply).unwrap();
+            resolve_claude_settings_inner(&sub, None, UserDefaultModeLoad::Apply).unwrap();
         assert_eq!(
             cfg.prompt_policy,
             PromptPolicy::Ask,
@@ -4065,7 +3840,7 @@ allow = ["Bash(evil *)"]
         )
         .unwrap();
 
-        let cfg = resolve_permission_config_with_fallback(tmp.path(), true)
+        let cfg = resolve_permission_config_with_fallback(tmp.path())
             .await
             .unwrap();
         assert_eq!(cfg.prompt_policy, PromptPolicy::Deny);
@@ -4163,7 +3938,7 @@ allow = ["Bash(evil *)"]
             .unwrap();
 
             let (cfg, _, _) =
-                resolve_claude_settings_inner(tmp.path(), true, None, UserDefaultModeLoad::Apply)
+                resolve_claude_settings_inner(tmp.path(), None, UserDefaultModeLoad::Apply)
                     .unwrap();
             // Should have only the explicit rule, no synthetic
             assert_eq!(

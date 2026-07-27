@@ -6,7 +6,6 @@ pub mod config;
 pub mod config_model_override_parse;
 mod ext_parsers;
 pub mod feedback_client;
-pub mod folder_trust;
 pub(crate) mod handlers;
 pub mod init;
 pub mod model_providers;

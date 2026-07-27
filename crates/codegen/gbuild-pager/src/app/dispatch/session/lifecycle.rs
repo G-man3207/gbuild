@@ -1,4 +1,4 @@
-//! New, exit, cloud, and worktree session dispatchers plus trust and startup actions.
+//! New, exit, cloud, and worktree session dispatchers plus startup actions.
 use super::fork::{dispatch_startup_fork_session, worktree_persist_options};
 use super::load::dispatch_load_session;
 use super::modal::remove_agent_and_cleanup;
@@ -7,7 +7,7 @@ use crate::acp::tracker::AcpUpdateTracker;
 use crate::app::actions::{Action, Effect, SwitchModelError};
 use crate::app::agent::{AgentCommand, AgentId, AgentSession, AgentState};
 use crate::app::agent_view::{ActivePane, AgentView, McpInitProgress};
-use crate::app::app_view::{ActiveView, AppView, TrustState};
+use crate::app::app_view::{ActiveView, AppView};
 use crate::app::dispatch::ctx::{
     SwitchCause, get_active_agent, reseed_tip_for_new_session, show_welcome, switch_to_agent,
 };
@@ -390,29 +390,6 @@ pub(in crate::app::dispatch) fn dispatch_exit_session(app: &mut AppView) -> Vec<
     app.exit_session_pending = None;
     effects
 }
-/// Handle the user accepting the folder-trust question: persist the grant for
-/// the workspace (writes `~/.gbuild/trusted_folders.toml`), mark trust resolved,
-/// then replay any deferred session startup (only if auth is also done).
-pub(in crate::app::dispatch) fn dispatch_trust_folder(app: &mut AppView) -> Vec<Effect> {
-    if let TrustState::Pending { workspace } = &app.trust_state {
-        gbuild_workspace::folder_trust::grant_folder_trust(workspace);
-    }
-    finish_trust(app)
-}
-/// Tail of accepting the folder-trust question (via [`dispatch_trust_folder`];
-/// declining quits instead): resolve `trust_state` to `Done`, focus the welcome
-/// prompt, and replay the deferred session startup once auth is also resolved.
-/// Drains iff [`AppView::session_startup_allowed`] -- the same predicate
-/// `AuthComplete` uses, so whichever gate resolves last drains exactly once.
-pub(in crate::app::dispatch) fn finish_trust(app: &mut AppView) -> Vec<Effect> {
-    app.trust_state = TrustState::Done;
-    app.welcome_prompt_focused = !app.is_access_blocked();
-    if app.session_startup_allowed() {
-        drain_startup_actions(app)
-    } else {
-        vec![]
-    }
-}
 /// Clear EVERY deferred `startup_*` action without replaying any. Used on the
 /// paths that must not run startup at all — ZDR-blocked login, and mid-session
 /// re-auth (`auth_return_view`) where a session already exists — so a stash
@@ -421,11 +398,9 @@ pub(in crate::app::dispatch) fn finish_trust(app: &mut AppView) -> Vec<Effect> {
 pub(in crate::app::dispatch) fn clear_startup_actions(app: &mut AppView) {
     let _ = app.deferred_startup.take();
 }
-/// Replay the session-startup actions deferred until auth + trust both resolved
+/// Replay the session-startup actions deferred until auth resolved
 /// (`--resume` / `--worktree` / initial-prompt / `gbuild dashboard`). Extracted
-/// from the `AuthComplete` handler so the folder-trust answer can run the SAME
-/// machinery; whichever gate resolves last drains it (each call site guards on
-/// the other gate being `Done`, so it runs exactly once).
+/// from the `AuthComplete` handler.
 pub(in crate::app::dispatch) fn drain_startup_actions(app: &mut AppView) -> Vec<Effect> {
     use crate::app::session_startup::{DeferredSessionStartup, DeferredStartupActions};
     debug_assert!(

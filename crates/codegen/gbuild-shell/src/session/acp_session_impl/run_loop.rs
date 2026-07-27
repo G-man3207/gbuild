@@ -781,16 +781,8 @@ pub(super) async fn run_session(
                                 None => Vec::new(),
                             };
 
-                            // Report the folder-trust verdict so the flag matches
-                            // the gated registry built above.
-                            let project_trusted =
-                                crate::agent::folder_trust::project_scope_allowed(
-                                    std::path::Path::new(&session.session_info.cwd),
-                                );
-
                             let _ = respond_to.send(xai_hooks_plugins_types::HooksListResponse {
                                 hooks,
-                                project_trusted,
                                 load_errors: session.hook_load_errors.borrow().clone(),
                             });
                         }
@@ -1033,10 +1025,9 @@ pub(super) async fn run_session(
                             }
                         }
                         SessionCommand::ReloadHooks => {
-                            // Re-discover the session's project hooks on the
-                            // now-flipped folder-trust verdict (e.g. after an
-                            // interactive trust grant). Reuses the same path as
-                            // `/hooks reload`; subagents inherit via the parent.
+                            // Re-discover the session's project hooks. Reuses
+                            // the same path as `/hooks reload`; subagents
+                            // inherit via the parent.
                             // Run INLINE on the serialized command loop (not a
                             // spawned task) like `ReloadPlugins`: `reload_hooks_impl`
                             // mutates `hook_registry`, and this actor's safety

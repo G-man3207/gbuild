@@ -104,33 +104,6 @@ pub fn load_servers_with_plugins_sourced(
     servers
 }
 
-/// Drop repo-local (project-scoped) LSP servers from a sourced map when the
-/// workspace is untrusted; keep user/plugin. Warns per drop. The trust verdict is
-/// passed in (the folder-trust engine lives in the shell, out of this crate).
-///
-/// Single source of truth for the folder-trust LSP load gate, shared by the
-/// workspace build path and the shell's per-session gate.
-pub fn filter_project_lsp_when_untrusted(
-    sourced: BTreeMap<String, (LspServerConfig, crate::types::config_source::ConfigSource)>,
-    project_trusted: bool,
-) -> BTreeMap<String, LspServerConfig> {
-    use crate::types::config_source::ConfigSource;
-    sourced
-        .into_iter()
-        .filter_map(|(name, (cfg, source))| {
-            if !project_trusted && matches!(source, ConfigSource::Project { .. }) {
-                tracing::warn!(
-                    server = %name,
-                    "folder untrusted: skipping repo-local (project-scoped) LSP server"
-                );
-                None
-            } else {
-                Some((name, cfg))
-            }
-        })
-        .collect()
-}
-
 /// Load LSP server configs from `~/.gbuild/lsp.json` and `<cwd>/.gbuild/lsp.json`.
 /// Project config overrides user config for the same server name.
 pub fn load_servers(cwd: &Path) -> BTreeMap<String, LspServerConfig> {
@@ -277,61 +250,3 @@ impl LspServerConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{LspServerConfig, filter_project_lsp_when_untrusted};
-    use crate::types::config_source::ConfigSource;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    fn sourced() -> BTreeMap<String, (LspServerConfig, ConfigSource)> {
-        let mut m = BTreeMap::new();
-        m.insert(
-            "proj".to_string(),
-            (
-                LspServerConfig::default(),
-                ConfigSource::Project {
-                    path: PathBuf::from("/repo/.gbuild/lsp.json"),
-                },
-            ),
-        );
-        m.insert(
-            "usr".to_string(),
-            (
-                LspServerConfig::default(),
-                ConfigSource::User {
-                    path: PathBuf::from("/home/.gbuild/lsp.json"),
-                },
-            ),
-        );
-        m.insert(
-            "plug".to_string(),
-            (
-                LspServerConfig::default(),
-                ConfigSource::Plugin {
-                    plugin_name: "p".to_string(),
-                    path: PathBuf::from("/plug/lsp.json"),
-                },
-            ),
-        );
-        m
-    }
-
-    #[test]
-    fn untrusted_drops_only_project_keeps_user_and_plugin() {
-        let kept = filter_project_lsp_when_untrusted(sourced(), false);
-        assert_eq!(kept.len(), 2);
-        assert!(!kept.contains_key("proj"));
-        assert!(kept.contains_key("usr"));
-        assert!(kept.contains_key("plug"));
-    }
-
-    #[test]
-    fn trusted_keeps_all_including_project() {
-        let kept = filter_project_lsp_when_untrusted(sourced(), true);
-        assert_eq!(kept.len(), 3);
-        assert!(kept.contains_key("proj"));
-        assert!(kept.contains_key("usr"));
-        assert!(kept.contains_key("plug"));
-    }
-}

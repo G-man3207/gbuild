@@ -757,11 +757,6 @@ pub struct WorkspaceConfig {
     pub server_metadata: Option<serde_json::Value>,
     /// Runtime-tunable timing/threshold config for the tool server.
     pub status_config: crate::status_config::StatusConfig,
-    /// Folder-trust verdict for repo-local (project-scoped) LSP servers from
-    /// `<cwd>/.gbuild/lsp.json`: `false` drops them at load, `true` keeps them. The
-    /// shell caller resolves the verdict and threads it in; callers without a
-    /// folder-trust decision pass `true`.
-    pub project_lsp_trusted: bool,
     /// Fail `session.bind`s without an explicit toolset closed instead of
     /// widening to `default_tool_config`. Set by sandbox-launched standalone
     /// servers; local/CLI embedders keep the default-catalog fallback.
@@ -857,7 +852,6 @@ impl WorkspaceConfig {
             auth_provider: Some(auth_provider),
             hub_config: Some(hub_config),
             server_metadata,
-            project_lsp_trusted: true,
             require_explicit_toolset: false,
             confine_fs_to_workspace_root: false,
             status_config,

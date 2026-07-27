@@ -163,7 +163,6 @@ pub struct HeadlessOptions {
     pub resume_title_pinned: bool,
     pub cwd: Option<PathBuf>,
     pub yolo: bool,
-    pub trust: bool,
     pub output_format: OutputFormat,
     pub json_schema: Option<serde_json::Value>,
     pub model: Option<String>,
@@ -508,14 +507,15 @@ fn auto_respond_to_permissions(
 /// "Not signed in" error message, tailored to the session type.
 fn auth_required_message(interactive: bool) -> String {
     if interactive {
-        "Not signed in. Run `gbuild login` to authenticate \
-         (or `gbuild login --device-code` if no browser is available)."
+        "No credentials configured. Run `gbuild login` to authenticate, \
+         or set a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, \
+         OPENROUTER_API_KEY, XAI_API_KEY, …)."
             .to_string()
     } else {
-        "Not signed in. To authenticate without a browser, run:\n  \
-         gbuild login --device-code\n\n\
-         Alternatively, set the XAI_API_KEY environment variable \
-         or run `gbuild login` on a machine with a browser."
+        "No credentials configured. Set a provider API key before running headless:\n  \
+         ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, …\n\n\
+         Alternatively, run `gbuild login` (or `gbuild login --device-code` \
+         without a browser) for an xAI session."
             .to_string()
     }
 }
@@ -912,11 +912,6 @@ pub async fn run_single_turn(
             })
             .transpose()?,
     };
-
-    // Persist an explicit --trust grant before the agent starts.
-    if options.trust {
-        gbuild_shell::agent::folder_trust::grant_folder_trust(&cwd);
-    }
 
     let cancel = CancellationToken::new();
     let memory_config = agent_config.memory_config.clone();
@@ -1526,20 +1521,19 @@ fn handle_headless_acp_message(
             let _ = boxed.response_tx.send(Ok(()));
         }
         AcpClientMessageBox::RequestPermission(req) => {
-            if yolo {
-                if let Some(resp) = auto_respond_to_permissions(
-                    &req.request,
-                    &[
-                        acp::PermissionOptionKind::AllowOnce,
-                        acp::PermissionOptionKind::AllowAlways,
-                    ],
-                ) {
-                    let _ = req.response_tx.send(Ok(resp));
-                } else {
-                    let _ = req.response_tx.send(Ok(acp::RequestPermissionResponse::new(
-                        acp::RequestPermissionOutcome::Cancelled,
-                    )));
-                }
+            // gBuild runs unrestricted: headless always auto-approves. The
+            // agent-side permission manager is in always-approve too, so this
+            // path is a defensive fallback for prompt kinds the manager still
+            // emits (e.g. MCP tool scopes).
+            let _ = yolo;
+            if let Some(resp) = auto_respond_to_permissions(
+                &req.request,
+                &[
+                    acp::PermissionOptionKind::AllowOnce,
+                    acp::PermissionOptionKind::AllowAlways,
+                ],
+            ) {
+                let _ = req.response_tx.send(Ok(resp));
             } else {
                 let _ = req.response_tx.send(Ok(acp::RequestPermissionResponse::new(
                     acp::RequestPermissionOutcome::Cancelled,

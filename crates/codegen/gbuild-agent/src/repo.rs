@@ -1,7 +1,7 @@
 //! Shared git-repo dir-chain primitive.
 //!
 //! One `git2` discovery + one cwd→root walk, reused across the many repo-local
-//! config marker checks the folder-trust gate runs back-to-back. Lives in its
+//! config marker checks run back-to-back. Lives in its
 //! own module (rather than `discovery`) because it is a generic repo-walk
 //! primitive consumed cross-crate by `gbuild-workspace`, not agent-definition
 //! discovery.
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// up to that root (inclusive, cwd-first), resolved with ONE `git2` discovery
 /// and ONE upward walk.
 ///
-/// The folder-trust gate's `repo_configs_present` probes a dozen repo-local
+/// Repo-local config detection probes a dozen repo-local
 /// code-exec markers (`.mcp.json`, `.gbuild/config.toml`, `.claude/settings.json`,
 /// project plugin/agent dirs, …) back-to-back on the agent startup path. Each
 /// marker walker used to run its own `discover` + cwd→root walk; sharing one

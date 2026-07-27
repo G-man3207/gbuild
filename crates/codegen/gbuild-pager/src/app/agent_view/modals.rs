@@ -2444,7 +2444,6 @@ mod extensions_action_target_tests {
         let mut modal = ExtensionsModalState::new(ExtensionsTab::Hooks);
         modal.hooks_data = TabDataState::Loaded(xai_hooks_plugins_types::HooksListResponse {
             hooks,
-            project_trusted: true,
             load_errors: Vec::new(),
         });
         modal.entry_data_indices = vec![Some(0)];
@@ -3092,7 +3091,6 @@ mod extensions_modal_confirmation_tests {
         let mut hooks = ExtensionsModalState::new(ExtensionsTab::Hooks);
         hooks.hooks_data = TabDataState::Loaded(xai_hooks_plugins_types::HooksListResponse {
             hooks: vec![hook_info("hook-a", source)],
-            project_trusted: true,
             load_errors: Vec::new(),
         });
         hooks.entry_data_indices = vec![Some(0)];
