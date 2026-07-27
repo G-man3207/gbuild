@@ -15,6 +15,7 @@ endpoint on top.
 | Anthropic | Claude Sonnet 4.6, Claude Opus 4.6 | `ANTHROPIC_API_KEY` |
 | OpenAI | GPT-5.5 | `OPENAI_API_KEY` |
 | ChatGPT Codex | GPT-5.3 Codex, GPT-5.2 Codex | browser sign-in (`gbuild login --provider codex`) |
+| GitHub Copilot | GPT-5.3 Codex, Claude Sonnet 4.6 | device-code sign-in (`gbuild login --provider copilot`) |
 | Google | Gemini 3.1 Pro | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | OpenRouter | OpenRouter Auto (add specific slugs via config) | `OPENROUTER_API_KEY` or browser sign-in (`gbuild login --provider openrouter`) |
 | OpenCode Go | GLM 5.1 | `OPENCODE_API_KEY` |
@@ -62,6 +63,10 @@ Two more browser sign-ins exist for subscription accounts:
   with a paste-the-URL fallback for remote machines); the access token,
   refresh token, and account id are stored in `~/.gbuild/auth.json` and
   refreshed automatically at the start of each turn.
+- **GitHub Copilot** (`gbuild login --provider copilot`) signs in with a
+  GitHub device code (works headless — no loopback needed) and unlocks the
+  Copilot-routed models. The long-lived GitHub token stays on disk; the
+  short-lived Copilot API token is re-exchanged automatically when stale.
 
 Stored keys and environment variables satisfy the startup gate, so the login
 screen only appears when nothing at all is configured.

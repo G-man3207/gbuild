@@ -4311,6 +4311,26 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
             auth_scheme: info.auth_scheme,
         };
     }
+    if info
+        .base_url
+        .starts_with(crate::auth::copilot::COPILOT_BACKEND_BASE_URL)
+    {
+        let home = crate::util::gbuild_home::gbuild_home();
+        let token = crate::auth::copilot::load_copilot_token(&home);
+        if token.is_none() {
+            tracing::info!(
+                model = %info.model,
+                "copilot model selected without a usable GitHub Copilot token; \
+                 run `gbuild login --provider copilot` (or wait for the turn-time refresh)"
+            );
+        }
+        return ResolvedCredentials {
+            api_key: token,
+            base_url: info.base_url.clone(),
+            auth_type: xai_chat_state::AuthType::ApiKey,
+            auth_scheme: info.auth_scheme,
+        };
+    }
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
             Some(key),

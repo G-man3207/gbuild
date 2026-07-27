@@ -46,6 +46,11 @@ pub const PROVIDER_KEY_SPECS: &[ProviderKeySpec] = &[
         env_vars: &[],
     },
     ProviderKeySpec {
+        id: "copilot",
+        display: "GitHub Copilot (subscription)",
+        env_vars: &[],
+    },
+    ProviderKeySpec {
         id: "google",
         display: "Google Gemini",
         env_vars: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -183,6 +188,11 @@ pub fn clear_provider_key(gbuild_home: &Path, provider_id: &str) -> std::io::Res
             format!("unknown provider '{provider_id}'"),
         )
     })?;
+    if spec.id == crate::auth::copilot::COPILOT_PROVIDER_ID {
+        // Copilot also owns a derived session-token scope.
+        crate::auth::copilot::clear_copilot(gbuild_home)?;
+        return Ok(());
+    }
     let path = gbuild_home.join("auth.json");
     if let Ok(mut map) = storage::read_auth_json(&path) {
         map.remove(&scope_for(spec.id));

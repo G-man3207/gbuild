@@ -1753,6 +1753,11 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                         gbuild_shell::auth::codex::run_codex_login().await?;
                         gbuild_shell::instrumentation::finalize_and_exit(0);
                     }
+                    if api_key.is_none() && spec.id == "copilot" {
+                        // GitHub Copilot subscription sign-in (device flow).
+                        gbuild_shell::auth::copilot::run_copilot_login().await?;
+                        gbuild_shell::instrumentation::finalize_and_exit(0);
+                    }
                     let key = match api_key {
                         Some(k) if !k.trim().is_empty() => k,
                         _ => rpassword::prompt_password(format!("{} API key: ", spec.display))

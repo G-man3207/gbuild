@@ -177,6 +177,36 @@
       "auto_compact_threshold_percent": 80
     },
     {
+      "id": "copilot-gpt-5.3-codex",
+      "model": "gpt-5.3-codex",
+      "name": "GPT-5.3 Codex (GitHub Copilot)",
+      "description": "GPT-5.3 Codex via GitHub Copilot subscription (/login copilot)",
+      "base_url": "https://api.githubcopilot.com",
+      "extra_headers": {
+        "Copilot-Integration-Id": "vscode-chat",
+        "Editor-Version": "vscode/1.99.0"
+      },
+      "context_window": 400000,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "GPT-5.3 Codex",
+      "auto_compact_threshold_percent": 80
+    },
+    {
+      "id": "copilot-claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "name": "Claude Sonnet 4.6 (GitHub Copilot)",
+      "description": "Claude Sonnet 4.6 via GitHub Copilot subscription (/login copilot)",
+      "base_url": "https://api.githubcopilot.com",
+      "extra_headers": {
+        "Copilot-Integration-Id": "vscode-chat",
+        "Editor-Version": "vscode/1.99.0"
+      },
+      "context_window": 200000,
+      "api_backend": "chat_completions",
+      "system_prompt_label": "Claude",
+      "auto_compact_threshold_percent": 80
+    },
+    {
       "id": "openrouter-auto",
       "model": "openrouter/auto",
       "name": "OpenRouter Auto",

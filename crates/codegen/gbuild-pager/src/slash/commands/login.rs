@@ -14,9 +14,10 @@ fn provider_menu() -> String {
     let mut out = String::from("Sign in with a provider:\n\n");
     out.push_str("  /login grok                 xAI browser sign-in (OAuth)\n");
     out.push_str("  /login codex                ChatGPT Codex subscription (browser OAuth)\n");
+    out.push_str("  /login copilot              GitHub Copilot subscription (device code)\n");
     out.push_str("  /login openrouter           OpenRouter browser sign-in (OAuth)\n");
     for spec in gbuild_shell::auth::provider_keys::PROVIDER_KEY_SPECS {
-        if matches!(spec.id, "openrouter" | "codex") {
+        if matches!(spec.id, "openrouter" | "codex" | "copilot") {
             continue;
         }
         let configured = spec
@@ -114,6 +115,13 @@ impl SlashCommand for LoginCommand {
                         "Run `gbuild login --provider codex` in a shell for the ChatGPT \
                          subscription sign-in (browser OAuth). Then select gpt-5.3-codex or \
                          gpt-5.2-codex with /model."
+                            .to_string(),
+                    );
+                }
+                if spec.id == "copilot" {
+                    return CommandResult::Message(
+                        "Run `gbuild login --provider copilot` in a shell for the GitHub \
+                         Copilot sign-in (device code). Then select a copilot model with /model."
                             .to_string(),
                     );
                 }

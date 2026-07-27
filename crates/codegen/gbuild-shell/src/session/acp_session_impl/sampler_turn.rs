@@ -455,7 +455,19 @@ impl SessionActor {
         } else {
             None
         };
+        let is_copilot_backend = cfg
+            .base_url
+            .starts_with(crate::auth::copilot::COPILOT_BACKEND_BASE_URL);
+        let copilot_fresh = if is_copilot_backend {
+            // Eager per-turn re-exchange for the short-lived Copilot token.
+            crate::auth::copilot::ensure_fresh_copilot(&crate::util::gbuild_home::gbuild_home())
+                .await
+        } else {
+            None
+        };
         let api_key = if let Some((token, _)) = &codex_fresh {
+            Some(token.clone())
+        } else if let Some(token) = &copilot_fresh {
             Some(token.clone())
         } else if use_bearer_resolver {
             self.auth_manager
