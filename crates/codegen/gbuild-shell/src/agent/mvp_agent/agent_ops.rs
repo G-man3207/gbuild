@@ -1092,7 +1092,15 @@ impl MvpAgent {
         }
     }
     pub(super) fn prepare_web_search_sampling_config(&self) -> Option<SamplingConfig> {
-        let model_id = self.cfg.borrow().web_search_model.clone();
+        let configured = self.cfg.borrow().web_search_model.clone();
+        // Empty (the default) means "follow the session model", so web search
+        // rides whichever provider the user actually configured instead of
+        // always targeting xAI.
+        let model_id = if configured.is_empty() {
+            self.sampling_config.borrow().model.clone()
+        } else {
+            configured
+        };
         let models = self.models_manager.models();
         let session = self.current_or_buffered_auth();
         let alpha_test_key = self.cfg.borrow().endpoints.alpha_test_key.clone();
@@ -1106,6 +1114,26 @@ impl MvpAgent {
             client_version,
             &self.cfg.borrow().endpoints,
         )?;
+        // The web-search tool speaks the Responses API shape; on providers
+        // without a Responses endpoint it cannot work, so stay disabled.
+        if !matches!(
+            cfg.api_backend,
+            gbuild_sampling_types::ApiBackend::Responses
+        ) {
+            tracing::info!(
+                model = %model_id,
+                backend = ?cfg.api_backend,
+                "web search unavailable: provider has no Responses API endpoint"
+            );
+            return None;
+        }
+        if cfg.api_key.is_none() {
+            tracing::info!(
+                model = %model_id,
+                "web search unavailable: no credentials for the resolved model"
+            );
+            return None;
+        }
         inject_proxy_headers(
             &mut cfg.extra_headers,
             cfg.client_version.as_deref(),

@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(full_logo_line_count_for(false), count_lines(LOGO));
         assert_eq!(full_logo_visual_width_for(false), visual_width(LOGO));
         assert!(full_logo_line_count_for(false) > count_lines(LOGO_SMALL));
-        assert!(full_logo_visual_width_for(false) > visual_width(LOGO_SMALL));
+        assert!(full_logo_visual_width_for(false) >= visual_width(LOGO_SMALL));
     }
 
     #[test]

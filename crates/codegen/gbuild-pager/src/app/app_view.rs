@@ -6552,7 +6552,7 @@ pub(crate) mod tests {
         assert!(app.usage_visible);
     }
     #[test]
-    fn apply_auth_meta_api_key_enables_voice_and_skips_tier_gate() {
+    fn apply_auth_meta_api_key_keeps_voice_gated_and_skips_tier_gate() {
         let mut app = test_app();
         advertise_media_tools(&mut app);
         assert!(!app.voice_mode_enabled);
@@ -6566,14 +6566,20 @@ pub(crate) mod tests {
         assert!(app.tier_restricted_commands.is_empty());
         assert_tier_restricted_commands_present(&app);
         assert!(!app.is_voice_tier_restricted());
-        assert!(app.voice_mode_enabled);
+        assert!(
+            !app.voice_mode_enabled,
+            "voice stays disabled until it has service-scoped credentials"
+        );
         let mut app = test_app();
         app.apply_auth_meta(&gbuild_shell::auth::AuthMeta {
             subscription_tier: Some("api_key".into()),
             ..Default::default()
         });
         assert!(app.is_api_key_auth);
-        assert!(app.voice_mode_enabled);
+        assert!(
+            !app.voice_mode_enabled,
+            "voice stays disabled even for API-key sessions"
+        );
         assert!(app.tier_restricted_commands.is_empty());
         app.apply_auth_meta(&gbuild_shell::auth::AuthMeta {
             auth_mode: Some("Oidc".into()),

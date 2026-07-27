@@ -2811,11 +2811,11 @@ mod tests {
 
     #[test]
     fn hero_box_inactive_when_warning_would_overflow() {
-        // Regression: the box is forced to the full 7-row logo, so even a
-        // 3-item menu needs 11 box rows. A startup warning (error_height = 2)
-        // pushes the total past height 19, so the gate must fall back to the
-        // stacked layout instead of overflowing by a row.
-        let area = Rect::new(0, 0, 90, 19);
+        // A startup warning (error_height = 2) adds rows to the fit gate, so a
+        // terminal that fits the hero box normally must fall back to the
+        // stacked layout while the warning is shown.
+        let needed = hero_box::min_content_height(2, 3, 0);
+        let area = Rect::new(0, 0, 90, needed - 1);
         let with_warning = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
             error_height: 2,
@@ -2897,9 +2897,9 @@ mod tests {
 
     #[test]
     fn hero_box_height_accounts_for_borders_and_padding() {
-        // At h >= 26, logo07 is used (7 lines). With menu_height=3:
-        // right_col = 2 + 0 + 0 + 1 + 3 = 6, inner = max(7, 6) = 7.
-        // hero_box_height = 2 (borders) + 2 (v_pad) + 7 = 11.
+        // At h >= 26 the full logo is used. With menu_height=3:
+        // right_col = 2 + 0 + 0 + 1 + 3 = 6, inner = max(logo_rows, 6).
+        // hero_box_height = 2 (borders) + 2 (v_pad) + inner.
         let area = Rect::new(0, 0, 100, 50);
         let layout = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
@@ -2907,7 +2907,8 @@ mod tests {
             ..Default::default()
         });
         assert!(layout.has_hero_box());
-        assert_eq!(layout.hero_box.height, 11);
+        let expected_inner = logo::full_logo_line_count().max(6);
+        assert_eq!(layout.hero_box.height, 2 + 2 + expected_inner);
     }
 
     #[test]

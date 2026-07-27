@@ -1541,7 +1541,7 @@ impl Default for Config {
             auto_wake_enabled: true,
             compat_resolved: CompatConfig::default(),
             requirements: Requirements::default(),
-            web_search_model: crate::models::default_web_search_model().to_owned(),
+            web_search_model: String::new(),
             session_summary_model: None,
             image_description_model: None,
             prompt_suggest_model_pin: crate::config::PromptSuggestModelPin::Unpinned,

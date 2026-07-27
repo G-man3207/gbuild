@@ -575,7 +575,9 @@ pub struct ModelOverrideConfig {
 impl Default for ModelOverrideConfig {
     fn default() -> Self {
         Self {
-            web_search: crate::models::default_web_search_model().to_owned(),
+            // Empty = follow the session model: web search rides whichever
+            // provider the user actually configured instead of targeting xAI.
+            web_search: String::new(),
             session_summary: None,
             image_description: None,
             prompt_suggestion: PromptSuggestModelPin::Unpinned,

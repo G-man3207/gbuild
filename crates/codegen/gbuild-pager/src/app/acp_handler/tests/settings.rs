@@ -29,26 +29,26 @@
     }
 
     #[test]
-    fn settings_api_key_keeps_voice_despite_remote_false() {
-        // Remote false alone must not disable an already API-key session.
+    fn settings_api_key_voice_stays_gated_off() {
+        // Voice is gated OFF in this fork regardless of auth method: an
+        // API-key stamp and a remote voice flag must not enable it.
         let mut app = make_app_with_agent("sess-api-key");
         app.is_api_key_auth = true;
-        app.apply_voice_mode_enabled(true);
-        app.voice_ui_active = true;
+        app.apply_voice_mode_enabled(false);
         assert!(handle_ext_notification(
             &voice_settings_update(false),
             &mut app
         ));
-        assert!(app.voice_mode_enabled);
-        assert!(app.voice_ui_active);
+        assert!(!app.voice_mode_enabled);
+        assert!(!app.voice_ui_active);
 
-        // Same update can stamp API Key while remote settings sends voice false.
+        // Same update can stamp API Key while remote settings sends voice true.
         let mut app = make_app_with_agent("sess-combined");
         let notif = acp::ExtNotification::new(
             "x.ai/settings/update",
             std::sync::Arc::from(
                 serde_json::value::to_raw_value(&serde_json::json!({
-                    "voice_mode_enabled": false,
+                    "voice_mode_enabled": true,
                     "subscription_tier_display": "API Key"
                 }))
                 .unwrap(),
@@ -56,7 +56,10 @@
         );
         assert!(handle_ext_notification(&notif, &mut app));
         assert!(app.is_api_key_auth);
-        assert!(app.voice_mode_enabled);
+        assert!(
+            !app.voice_mode_enabled,
+            "voice stays disabled until it has service-scoped credentials"
+        );
         assert!(app.tier_restricted_commands.is_empty());
     }
 
@@ -70,7 +73,10 @@
         assert!(app.is_api_key_auth);
         assert!(!app.usage_visible);
         assert!(app.tier_restricted_commands.is_empty());
-        assert!(app.voice_mode_enabled);
+        assert!(
+            !app.voice_mode_enabled,
+            "voice stays disabled even for API-key sessions"
+        );
 
         // Later personal Free stamp must not keep API-key bypass or force-on voice.
         assert!(handle_ext_notification(
@@ -82,24 +88,29 @@
         assert!(!app.tier_restricted_commands.is_empty());
         assert!(!app.voice_mode_enabled);
 
-        // Paid tier after API Key must not force voice off (omit voice field).
+        // Paid tier after API Key: voice remains gated off in this fork.
         let mut app = make_app_with_agent("sess-paid-keep-voice");
         assert!(handle_ext_notification(
             &tier_settings_update("API Key"),
             &mut app
         ));
-        assert!(app.voice_mode_enabled);
+        assert!(!app.voice_mode_enabled);
         assert!(handle_ext_notification(
             &tier_settings_update("SuperGrok"),
             &mut app
         ));
         assert!(!app.is_api_key_auth);
-        assert!(app.voice_mode_enabled);
+        assert!(
+            !app.voice_mode_enabled,
+            "voice stays disabled until it has service-scoped credentials"
+        );
         assert!(app.tier_restricted_commands.is_empty());
     }
 
     #[test]
-    fn voice_remote_true_re_enables_after_kill_switch() {
+    fn voice_remote_true_does_not_re_enable() {
+        // Remote true must NOT re-enable voice in this fork: the feature is
+        // gated off at resolve_voice_mode_enabled regardless of remote/auth.
         let mut app = make_app_with_agent("sess-1");
         app.apply_voice_mode_enabled(false);
         assert!(!app.voice_mode_enabled);
@@ -108,8 +119,8 @@
 
         assert!(affected);
         assert!(
-            app.voice_mode_enabled,
-            "remote true lifts the kill switch (env unset)"
+            !app.voice_mode_enabled,
+            "voice stays disabled until it has service-scoped credentials"
         );
     }
 
