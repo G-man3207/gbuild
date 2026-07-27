@@ -32,6 +32,8 @@ const CALLBACK_PORT: u16 = 1455;
 pub const CODEX_BACKEND_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 /// Refresh a token expiring within this window.
 const REFRESH_SKEW_SECS: i64 = 120;
+/// Give up waiting for the user to authorize after this long.
+const SIGN_IN_TIMEOUT_SECS: u64 = 15 * 60;
 
 fn generate_pkce() -> (String, String) {
     let random_bytes: [u8; 32] = rand::random();
@@ -166,19 +168,12 @@ async fn refresh_codex(home: &Path, prev: &GrokAuth, refresh_token: &str) -> any
     Ok(auth)
 }
 
-/// Run the full browser sign-in: loopback callback on port 1455 (with a
-/// stdin-paste fallback for remote machines), PKCE exchange, account-id
-/// capture, and storage under `provider::openai-codex`.
+/// Run the full browser sign-in: loopback callback on port 1455 when it can
+/// be bound, otherwise paste-only; a stdin paste of the redirected URL (or
+/// bare code) always works, including over SSH with no browser on the box.
 pub async fn run_codex_login() -> anyhow::Result<()> {
     let (verifier, challenge) = generate_pkce();
     let state = uuid::Uuid::now_v7().to_string();
-    let listener = TcpListener::bind(("127.0.0.1", CALLBACK_PORT)).map_err(|e| {
-        anyhow::anyhow!(
-            "cannot bind 127.0.0.1:{CALLBACK_PORT} ({e}); the Codex sign-in needs that port free \
-             (another Codex login may be running)"
-        )
-    })?;
-    listener.set_nonblocking(true)?;
     let redirect_uri = format!("http://localhost:{CALLBACK_PORT}/auth/callback");
     let auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}\
@@ -192,12 +187,21 @@ pub async fn run_codex_login() -> anyhow::Result<()> {
         urlencoding::encode(&state),
     );
 
+    let listener = match TcpListener::bind(("127.0.0.1", CALLBACK_PORT)) {
+        Ok(l) => Some(l),
+        Err(e) => {
+            tracing::warn!(error = %e, "codex: loopback port busy; falling back to paste-only");
+            eprintln!("(loopback port {CALLBACK_PORT} unavailable — paste the URL instead)");
+            None
+        }
+    };
+
     eprintln!();
     eprintln!("Signing in with ChatGPT (Codex subscription)...");
     if let Err(e) = webbrowser::open(&auth_url) {
         tracing::debug!(error = %e, "codex: failed to open browser");
     }
-    eprintln!("Open this URL to sign in:");
+    eprintln!("Open this URL to sign in (on any machine):");
     eprintln!("  {auth_url}");
 
     let code = wait_for_code(listener, &state).await?;
@@ -221,19 +225,24 @@ pub async fn run_codex_login() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn wait_for_code(listener: TcpListener, expected_state: &str) -> anyhow::Result<String> {
-    let use_stdin = std::io::stdin().is_terminal();
-    if use_stdin {
-        eprintln!();
-        eprintln!("Paste the redirected URL here if the browser can't connect:");
-    }
+async fn wait_for_code(listener: Option<TcpListener>, expected_state: &str) -> anyhow::Result<String> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let loopback_tx = tx.clone();
-    let state_owned = expected_state.to_string();
-    tokio::task::spawn_blocking(move || loopback_listener(listener, loopback_tx, &state_owned));
-    if use_stdin {
+    if let Some(listener) = listener {
+        listener.set_nonblocking(true)?;
+        let loopback_tx = tx.clone();
+        let state_owned = expected_state.to_string();
+        tokio::task::spawn_blocking(move || loopback_listener(listener, loopback_tx, &state_owned));
+    }
+    // The paste path works on any stdin we can read a line from — an
+    // interactive SSH session, a pipe, or a here-doc. A closed/empty stdin
+    // yields no line and simply never fires.
+    {
         let stdin_tx = tx;
         let state_stdin = expected_state.to_string();
+        if std::io::stdin().is_terminal() {
+            eprintln!();
+            eprintln!("Paste the redirected URL here after signing in:");
+        }
         tokio::task::spawn_blocking(move || {
             let stdin = std::io::stdin();
             let mut line = String::new();
@@ -247,9 +256,15 @@ async fn wait_for_code(listener: TcpListener, expected_state: &str) -> anyhow::R
             }
         });
     }
-    rx.recv()
+    match tokio::time::timeout(std::time::Duration::from_secs(SIGN_IN_TIMEOUT_SECS), rx.recv())
         .await
-        .ok_or_else(|| anyhow::anyhow!("sign-in cancelled"))
+    {
+        Ok(Some(code)) => Ok(code),
+        _ => anyhow::bail!(
+            "timed out waiting for sign-in. Re-run and paste the redirected URL, \
+             or use OPENAI_API_KEY with the api.openai.com models instead"
+        ),
+    }
 }
 
 fn extract_code_and_check_state(url: &str, expected_state: &str) -> Option<String> {

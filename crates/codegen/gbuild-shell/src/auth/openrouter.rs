@@ -27,10 +27,14 @@ fn generate_pkce() -> (String, String) {
 /// and store it under the `openrouter` provider. Returns the key.
 pub async fn run_openrouter_login() -> anyhow::Result<String> {
     let (verifier, challenge) = generate_pkce();
-    let listener = TcpListener::bind(("127.0.0.1", 0))?;
-    listener.set_nonblocking(true)?;
-    let port = listener.local_addr()?.port();
-    let callback_url = format!("http://127.0.0.1:{port}");
+    let listener = TcpListener::bind(("127.0.0.1", 0)).ok();
+    let callback_url = match &listener {
+        Some(l) => format!("http://127.0.0.1:{}", l.local_addr()?.port()),
+        None => {
+            eprintln!("(loopback unavailable — paste the code after signing in)");
+            "http://127.0.0.1".to_string()
+        }
+    };
     let auth_url = format!(
         "{}?callback_url={}&code_challenge={}&code_challenge_method=S256",
         AUTHORIZE_URL,
@@ -48,29 +52,31 @@ pub async fn run_openrouter_login() -> anyhow::Result<String> {
 
     let code = wait_for_code(listener).await?;
     let key = exchange_code(&code, &verifier).await?;
-
     let home = crate::util::gbuild_home::gbuild_home();
     crate::auth::provider_keys::store_provider_key(&home, "openrouter", &key)?;
     eprintln!("OpenRouter API key stored in {}/auth.json", home.display());
     Ok(key)
 }
 
-/// Wait for the loopback callback, racing a pasted code on stdin when the
-/// session is interactive (remote VMs can't receive the 127.0.0.1 redirect).
-async fn wait_for_code(listener: TcpListener) -> anyhow::Result<String> {
-    let use_stdin = std::io::stdin().is_terminal();
-    if use_stdin {
+/// Wait for the loopback callback, racing a pasted code on stdin. The paste
+/// path works on any readable stdin (SSH session, pipe, here-doc), so the
+/// flow completes on machines with no browser.
+async fn wait_for_code(listener: Option<TcpListener>) -> anyhow::Result<String> {
+    if std::io::stdin().is_terminal() {
         eprintln!();
         eprintln!("Paste the code here if the browser can't connect:");
     }
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    // Loopback path.
-    let loopback_tx = tx.clone();
-    tokio::task::spawn_blocking(move || loopback_listener(listener, loopback_tx));
+    // Loopback path (when a port could be bound).
+    if let Some(listener) = listener {
+        listener.set_nonblocking(true)?;
+        let loopback_tx = tx.clone();
+        tokio::task::spawn_blocking(move || loopback_listener(listener, loopback_tx));
+    }
 
-    // Stdin paste path.
-    if use_stdin {
+    // Stdin paste path (any readable stdin; a closed/empty stdin never fires).
+    {
         let stdin_tx = tx;
         tokio::task::spawn_blocking(move || {
             let stdin = std::io::stdin();
@@ -86,9 +92,18 @@ async fn wait_for_code(listener: TcpListener) -> anyhow::Result<String> {
         });
     }
 
-    rx.recv()
-        .await
-        .ok_or_else(|| anyhow::anyhow!("sign-in cancelled"))
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(15 * 60),
+        rx.recv(),
+    )
+    .await
+    {
+        Ok(Some(code)) => Ok(code),
+        _ => anyhow::bail!(
+            "timed out waiting for sign-in. Re-run and paste the code, \
+             or use OPENROUTER_API_KEY directly instead"
+        ),
+    }
 }
 
 /// Extract `code` from a pasted callback URL, if it is one.

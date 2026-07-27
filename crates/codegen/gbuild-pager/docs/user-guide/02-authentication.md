@@ -46,6 +46,25 @@ Running `gbuild login` starts the sign-in flow again, replacing your cached sess
 
 To sign out, run `gbuild logout` — it clears your cached xAI session. To remove one stored provider key, run `gbuild logout --provider <id>`.
 
+---
+
+## Headless and remote environments
+
+Every sign-in works without a browser on the machine gBuild runs on:
+
+| Provider | Headless path |
+| -------- | ------------- |
+| xAI | `gbuild login --device-auth` (device code), or `XAI_API_KEY` |
+| ChatGPT Codex | `gbuild login --provider codex` — open the printed URL on any machine, then paste the redirected URL back (or just the code). Falls back to paste-only when the loopback port is unavailable. Or use `OPENAI_API_KEY` with the api.openai.com models. |
+| GitHub Copilot | `gbuild login --provider copilot` — device code by design; nothing to paste, works over any SSH session. |
+| OpenRouter | `gbuild login --provider openrouter` — open the printed URL anywhere, paste the code back. Or `OPENROUTER_API_KEY`. |
+| All API-key providers | Set the env var, or `gbuild login --provider <id> --api-key <key>`. The interactive prompt also reads piped stdin, so `echo "$KEY" \| gbuild login --provider anthropic` works in scripts. |
+
+Browser flows never hang indefinitely: if no code arrives within 15
+minutes, the command exits with instructions. Headless runs
+(`gbuild -p ...`) never start a login flow — configure keys first, and the
+run proceeds with no prompts at all.
+
 ### Storing provider API keys
 
 `gbuild login --provider <id>` stores a third-party provider's API key in
