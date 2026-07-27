@@ -14,7 +14,41 @@ pub use mcp::*;
 mod permission;
 pub use permission::*;
 mod pool;
-use gbuild_announcements::RemoteAnnouncement;
+/// Announcement entry as delivered inside [`RemoteSettings`]. Kept only for
+/// wire compatibility with the (no longer fetched) `/v1/settings` payload —
+/// this fork renders no announcements.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteAnnouncement {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub severity: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub cta: Option<AnnouncementCta>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub dismissible: Option<bool>,
+    #[serde(default)]
+    pub persistent: Option<bool>,
+}
+
+/// Optional call-to-action on an announcement. See [`RemoteAnnouncement`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnouncementCta {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub caption: Option<String>,
+}
 pub use pool::*;
 use serde::{Deserialize, Serialize};
 /// A remote `campaigns[]` entry: an `id` gate plus a full-power

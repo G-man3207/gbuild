@@ -386,34 +386,19 @@ pub fn wire_otel_deployment_key(key: String) {
         sync_external_otel_identity();
     }
 }
-/// Bootstrap helper: build the full [`OtelLayerConfig`] that both
-/// `gbuild-pager` and `xai-gbuild-tui` need at tracing init time.
+/// Bootstrap helper: install the process-wide OTel credential provider at
+/// tracing init time so the external OTEL stream can stamp identity
+/// attributes once auth is wired.
 ///
 /// The credential provider starts in bootstrap mode (disk-read-only).
 /// Call [`wire_otel_auth_manager`] after agent init to upgrade to the
 /// live `AuthManager` with active refresh.
-pub fn build_default_otel_layer_config() -> gbuild_telemetry::otel_layer::OtelLayerConfig {
-    let endpoints = crate::agent::config::EndpointsConfig::default();
+pub fn bootstrap_otel_credential_provider() {
     let grok_com_config = crate::auth::GrokComConfig::default();
-    let exporter = gbuild_telemetry::otel_layer::OtelExporterConfig {
-        traces_url: endpoints.resolve_otlp_traces_endpoint(),
-        extra_headers: endpoints.resolve_otlp_headers(),
-        export_interval: endpoints.resolve_otlp_export_interval(),
-        timeout: endpoints.resolve_otlp_timeout(),
-        enabled: endpoints.resolve_traces_export_enabled()
-            && !crate::agent::config::is_telemetry_explicitly_disabled_sync(),
-    };
-    let token_header_value = grok_com_config.token_header.clone();
     let gbuild_home = crate::util::gbuild_home::gbuild_home();
     let bootstrap = Arc::new(AuthManager::new(&gbuild_home, grok_com_config));
     let provider = Arc::new(OtelAuthCredentialProvider::new(bootstrap));
-    let _ = OTEL_PROVIDER.set(provider.clone());
-    gbuild_telemetry::otel_layer::OtelLayerConfig {
-        credentials: provider as Arc<dyn AuthCredentialProvider>,
-        token_header_value,
-        alpha_test_key: None,
-        exporter,
-    }
+    let _ = OTEL_PROVIDER.set(provider);
 }
 #[cfg(test)]
 mod tests {

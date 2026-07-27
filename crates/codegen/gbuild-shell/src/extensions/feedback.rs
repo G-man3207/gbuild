@@ -1,12 +1,9 @@
-//! `x.ai/feedback`, `x.ai/feedback/dismiss`, `x.ai/btw`, and `x.ai/review/*`
-//! extension handlers.
+//! `x.ai/feedback`, `x.ai/feedback/dismiss`, and `x.ai/btw` extension handlers.
 //!
-//! - `feedback`/`feedback/dismiss`: persist user ratings/text locally and
-//!   forward to cli-chat-proxy.
+//! - `feedback`/`feedback/dismiss`: persist user ratings/text locally (the
+//!   cli-chat-proxy forwarding has been removed from this fork).
 //! - `btw`: dispatch a side question to the active session via
 //!   `SessionCommand::SideQuestion` and return the answer.
-//! - `review/comment` and `review/comment/delete`: record inline code review
-//!   events to cloud storage.
 
 use std::sync::Arc;
 
@@ -17,12 +14,8 @@ use super::{ExtResult, parse_params};
 use crate::agent::MvpAgent;
 use crate::session::persistence::{LocalFeedbackEntry, UserFeedbackEntry};
 use crate::session::{
-    ClientFeedbackInput, CommentDeleteRequest, CommentDeleteResponse, CommentRequest,
-    CommentResponse, FeedbackRequestDismiss, FeedbackResponse, SessionCommand,
+    ClientFeedbackInput, FeedbackRequestDismiss, FeedbackResponse, SessionCommand,
 };
-use crate::upload::gcs::WithAuth as _;
-use gbuild_telemetry::id::agent_id;
-use xai_file_utils::gcs::upload_bytes;
 
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
@@ -34,10 +27,6 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
         "x.ai/feedback" | "x.ai/feedback/dismiss" => {
             tracing::info!("handling user feedback");
             handle_feedback(agent, args).await
-        }
-        m if m.starts_with("x.ai/review") => {
-            tracing::info!("handling review comment");
-            handle_review(agent, args).await
         }
         _ => Err(acp::Error::method_not_found()),
     }
@@ -211,12 +200,6 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                         .current_or_expired()
                         .is_some_and(|a| a.is_zdr_team())
             };
-            let client = agent.feedback_client();
-            if client.is_none() {
-                tracing::warn!(
-                    "no feedback client available (missing proxy credentials); feedback saved locally only"
-                );
-            }
             // Read the live feedback.user config (the session-actor path uses its
             // spawn-time snapshot); both dedupe through the same process-wide
             // identity cache, so a stable config resolves identically either way.
@@ -224,9 +207,8 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
             let user_cfg = agent.cfg.borrow().feedback.user.clone();
             let author_identity =
                 crate::util::user_identity::cached_identity(user_cfg.as_ref()).await;
-            let outcome = crate::session::feedback_manager::submit_feedback_workflow(
+            crate::session::feedback_manager::submit_feedback_workflow(
                 &mut submission,
-                client.as_ref(),
                 session_handle.as_ref().map(|h| &h.persistence_tx),
                 crate::session::feedback_manager::SubmitFeedbackOptions {
                     solicited: feedback_input.is_solicited(),
@@ -235,20 +217,6 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 },
             )
             .await;
-
-            match &outcome {
-                crate::session::feedback_manager::SubmitOutcome::Submitted => {
-                    tracing::info!("feedback submitted to proxy successfully");
-                }
-                crate::session::feedback_manager::SubmitOutcome::LocalOnly => {
-                    tracing::warn!("feedback saved locally only (no proxy client)");
-                }
-                crate::session::feedback_manager::SubmitOutcome::Failed(e) => {
-                    tracing::error!(error = %e, "feedback submission to proxy failed");
-                    return Err(acp::Error::internal_error()
-                        .data(format!("Feedback submission failed: {e}")));
-                }
-            }
 
             let value = serde_json::to_value(FeedbackResponse { success: true })
                 .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
@@ -306,175 +274,13 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 }
             }
 
-            let request_id = dismiss_input.request_id.clone();
-            let client = agent
-                .feedback_client()
-                .ok_or_else(|| acp::Error::internal_error().data("No credentials for feedback"))?;
-            let feedback_base_url = agent.cfg.borrow().endpoints.resolve_feedback_base_url();
-            match client.dismiss_request(&request_id).await {
-                Ok(response) => {
-                    tracing::info!(
-                        request_id = %response.request_id,
-                        status = %response.status,
-                        feedback_url = %feedback_base_url,
-                        "Feedback request dismissed"
-                    );
-                    let value = serde_json::to_value(&response)
-                        .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
-                        .expect("to work")
-                        .expect("to work");
-                    Ok(acp::ExtResponse::new(value))
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        request_id = %request_id,
-                        feedback_url = %feedback_base_url,
-                        "Failed to dismiss feedback request"
-                    );
-                    Err(acp::Error::internal_error()
-                        .data(format!("Failed to dismiss feedback request: {e}")))
-                }
-            }
-        }
-        _ => Err(acp::Error::method_not_found()),
-    }
-}
-
-/// Record inline code review events.
-///
-/// Methods:
-/// - `x.ai/review/comment`: record a new inline code comment to cloud storage
-/// - `x.ai/review/comment/delete`: record a tombstone event for a deleted comment
-async fn handle_review(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
-    match args.method.as_ref() {
-        "x.ai/review/comment" => {
-            let request: CommentRequest = parse_params(args)?;
-
-            let comment_id = uuid::Uuid::now_v7().to_string();
-
-            tracing::info!(
-                comment_id = %comment_id,
-                session_id = %request.session_id,
-                prompt_index = request.prompt_index,
-                path = %request.citation.path,
-                lines = %format!("{}-{}", request.citation.start_line, request.citation.end_line),
-                "Comment received"
-            );
-
-            let record = serde_json::json!({
-                "event": "create",
-                "commentId": comment_id,
-                "sessionId": request.session_id,
-                "promptIndex": request.prompt_index,
-                "comment": null,
-                "citation": request.citation,
-                "agentId": agent_id().to_string(),
-                "clientType": format!("{:?}", agent.client_type()),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            });
-
-            if let Some(gcs_config) = agent
-                .build_gcs_config(format!("{}/comments", request.session_id))
-                .await
-            {
-                let json_bytes = serde_json::to_vec_pretty(&record)
-                    .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
-                let gcs_path = format!(
-                    "{}/{}.json",
-                    gcs_config.gcs_prefix.as_deref().unwrap_or("comments"),
-                    comment_id
-                );
-
-                let auth_manager = Some(agent.auth_manager.clone());
-                tokio::spawn(async move {
-                    match upload_bytes(
-                        &gcs_config.with_auth(auth_manager),
-                        &gcs_path,
-                        &json_bytes,
-                        "application/json",
-                    )
-                    .await
-                    {
-                        Ok(gcs_url) => {
-                            tracing::info!(gcs_url = %gcs_url, "Comment uploaded to GCS");
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, gcs_path, "Failed to upload comment to GCS");
-                        }
-                    }
-                });
-            }
-
-            let value = serde_json::to_value(CommentResponse {
-                comment_id,
-                recorded: true,
-            })
-            .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
-            .expect("to work")
-            .expect("to work");
-            Ok(acp::ExtResponse::new(value))
-        }
-        "x.ai/review/comment/delete" => {
-            let request: CommentDeleteRequest = parse_params(args)?;
-
-            tracing::info!(
-                comment_id = %request.comment_id,
-                session_id = %request.session_id,
-                "Comment delete received"
-            );
-
-            let record = serde_json::json!({
-                "event": "delete",
-                "commentId": request.comment_id,
-                "sessionId": request.session_id,
-                "agentId": agent_id().to_string(),
-                "clientType": format!("{:?}", agent.client_type()),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            });
-
-            if let Some(gcs_config) = agent
-                .build_gcs_config(format!("{}/comments", request.session_id))
-                .await
-            {
-                let json_bytes = serde_json::to_vec_pretty(&record)
-                    .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
-                let event_id = uuid::Uuid::now_v7().to_string();
-                let gcs_path = format!(
-                    "{}/{}.json",
-                    gcs_config.gcs_prefix.as_deref().unwrap_or("comments"),
-                    event_id
-                );
-
-                let auth_manager = Some(agent.auth_manager.clone());
-                tokio::spawn(async move {
-                    match upload_bytes(
-                        &gcs_config.with_auth(auth_manager),
-                        &gcs_path,
-                        &json_bytes,
-                        "application/json",
-                    )
-                    .await
-                    {
-                        Ok(gcs_url) => {
-                            tracing::info!(gcs_url = %gcs_url, "Comment delete event uploaded to GCS");
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, gcs_path, "Failed to upload comment delete event to GCS");
-                        }
-                    }
-                });
-            }
-
-            let value = serde_json::to_value(CommentDeleteResponse {
-                comment_id: request.comment_id,
-                deleted: true,
-            })
-            .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
-            .expect("to work")
-            .expect("to work");
+            let value = serde_json::to_value(FeedbackResponse { success: true })
+                .map(|value| serde_json::value::to_raw_value(&value).map(Arc::from))
+                .expect("to work")
+                .expect("to work");
             Ok(acp::ExtResponse::new(value))
         }
         _ => Err(acp::Error::method_not_found()),
     }
 }
+

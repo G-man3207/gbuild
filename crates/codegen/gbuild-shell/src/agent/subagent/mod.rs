@@ -20,11 +20,6 @@ use crate::session::{
 };
 use crate::terminal::AsyncTerminalRunner;
 use crate::tools::ToolContext;
-use crate::upload::trace::{
-    GCS_SCHEMA_VERSION, PromptMetadata, TurnResultMetadata, local_sandbox_telemetry,
-    upload_metadata, upload_session_state, upload_subagent_metadata, upload_turn_result,
-};
-use crate::upload::turn::{PromptTraceContext, complete_prompt_trace};
 use agent_client_protocol as acp;
 use gbuild_agent::config::{McpInheritance, ModelOverride, PermissionMode};
 use gbuild_sampling_types::conversation::ConversationItem;
@@ -244,9 +239,7 @@ pub(crate) struct SubagentSpawnContext {
     /// GCS bucket URL for trace uploads.
     /// For proxy upload mode this is a placeholder — the actual bucket
     /// is determined by the proxy from user ACLs.
-    pub gcs_bucket_url: Option<String>,
     /// GCS upload method (direct or proxy).
-    pub gcs_upload_method: Option<crate::session::repo_changes::UploadMethod>,
     pub hook_registry: Option<std::sync::Arc<gbuild_hooks::discovery::HookRegistry>>,
     pub permission_handle: Option<gbuild_workspace::permission::PermissionHandle>,
     pub worktree_type: crate::util::config::WorktreeType,
@@ -297,9 +290,6 @@ pub(crate) struct SubagentSpawnContext {
     /// Shared completion reservations held by auto-wake prompts.
     pub task_completion_reservations:
         Option<gbuild_tools::reminders::task_completion::TaskCompletionReservations>,
-    /// Channel for requesting trace uploads for synthetic auto-wake turns.
-    pub synthetic_trace_tx:
-        Option<tokio::sync::mpsc::UnboundedSender<crate::upload::turn::SyntheticTurnTraceRequest>>,
     /// Resolved name of the `BackgroundTaskAction` tool in the parent's toolset.
     pub task_output_tool_name: String,
     /// Whether auto-wake is enabled. When `false`, subagent completions
@@ -451,8 +441,6 @@ pub(crate) struct ShellCompletionData {
         Option<gbuild_tools::reminders::task_completion::TaskCompletionReservations>,
     parent_cmd_tx: Option<mpsc::UnboundedSender<SessionCommand>>,
     task_output_tool_name: String,
-    synthetic_trace_tx:
-        Option<mpsc::UnboundedSender<crate::upload::turn::SyntheticTurnTraceRequest>>,
     goal_loop_active: Arc<std::sync::atomic::AtomicBool>,
     telemetry_tokens: u64,
     spawned_notification_emitted: bool,
@@ -465,7 +453,6 @@ impl ShellCompletionData {
             task_completion_reservations: ctx.task_completion_reservations.clone(),
             parent_cmd_tx: ctx.parent_cmd_tx.clone(),
             task_output_tool_name: ctx.task_output_tool_name.clone(),
-            synthetic_trace_tx: ctx.synthetic_trace_tx.clone(),
             goal_loop_active: Arc::clone(&ctx.goal_loop_active),
             telemetry_tokens: 0,
             spawned_notification_emitted: false,
@@ -481,14 +468,11 @@ impl ShellCompletionData {
 }
 pub(crate) struct SubagentPresentation {
     is_turn_active: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) synthetic_trace_tx:
-        Option<mpsc::UnboundedSender<crate::upload::turn::SyntheticTurnTraceRequest>>,
 }
 impl SubagentPresentation {
     pub(crate) fn new() -> Self {
         Self {
             is_turn_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            synthetic_trace_tx: None,
         }
     }
     pub(crate) fn turn_active_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
@@ -547,7 +531,6 @@ pub(crate) fn present_child_completion(
             &completion_data.task_completion_reservations,
             completion_data.parent_cmd_tx.as_ref(),
             &completion_data.task_output_tool_name,
-            &completion_data.synthetic_trace_tx,
         );
     }
 }
@@ -1807,9 +1790,6 @@ fn inject_subagent_completed_prompt(
     >,
     parent_cmd_tx: Option<&mpsc::UnboundedSender<SessionCommand>>,
     task_output_tool_name: &str,
-    synthetic_trace_tx: &Option<
-        mpsc::UnboundedSender<crate::upload::turn::SyntheticTurnTraceRequest>,
-    >,
 ) {
     let Some(cmd_tx) = parent_cmd_tx else {
         return;
@@ -1824,23 +1804,13 @@ fn inject_subagent_completed_prompt(
     );
     let wrapped = gbuild_tools::reminders::wrap_reminder(&message);
     let prompt_id = format!("subagent-completed-{subagent_id}");
-    let before_rx = if synthetic_trace_tx.is_some() {
-        let (before_tx, before_rx) = tokio::sync::oneshot::channel();
-        let _ = cmd_tx.send(SessionCommand::CopyFile {
-            respond_to: before_tx,
-        });
-        Some(before_rx)
-    } else {
-        None
-    };
-    let (respond_to, completion_rx) = tokio::sync::oneshot::channel();
+    let (respond_to, _completion_rx) = tokio::sync::oneshot::channel();
     let prompt_blocks = vec![acp::ContentBlock::Text(acp::TextContent::new(wrapped))];
     if cmd_tx
         .send(SessionCommand::Prompt {
             prompt_id: prompt_id.clone(),
             prompt_blocks,
             prompt_mode: crate::session::plan_mode::PromptMode::Agent,
-            artifact_upload_ctx: None,
             client_identifier: None,
             screen_mode: None,
             verbatim: true,
@@ -1859,15 +1829,6 @@ fn inject_subagent_completed_prompt(
             reservations.release(subagent_id);
         }
         return;
-    }
-    if let Some(trace_tx) = synthetic_trace_tx {
-        let _ = trace_tx.send(crate::upload::turn::SyntheticTurnTraceRequest {
-            session_id: acp::SessionId::new(request.parent_session_id.clone()),
-            prompt_id,
-            completion_rx,
-            before_session_copy_rx: before_rx
-                .expect("before_rx set when synthetic_trace_tx is Some"),
-        });
     }
 }
 fn failure_result(request: &SubagentRequest, error: &str) -> SubagentResult {
@@ -1907,7 +1868,6 @@ fn fail_subagent(
     child_session_id: &acp::SessionId,
     subagent_meta_dir: &Path,
     duration_ms: u64,
-    gcs_ctx: &GcsUploadContext,
 ) -> SubagentResult {
     let result = SubagentResult {
         success: false,
@@ -1917,7 +1877,7 @@ fn fail_subagent(
         duration_ms,
         ..Default::default()
     };
-    persist_subagent_completion(subagent_meta_dir, &result, gcs_ctx);
+    persist_subagent_completion(subagent_meta_dir, &result);
     result
 }
 /// Tear down a child whose pending-to-active promotion lost to cancellation.
@@ -1929,7 +1889,6 @@ async fn cancel_pending_shell_child(
     worktree_path: Option<&Path>,
     worktree_freshly_created: bool,
     duration_ms: u64,
-    gcs_ctx: &GcsUploadContext,
 ) -> SubagentResult {
     let _ = child_cmd_tx.send(SessionCommand::Shutdown);
     if worktree_freshly_created
@@ -1952,7 +1911,7 @@ async fn cancel_pending_shell_child(
         duration_ms,
         ..Default::default()
     };
-    persist_subagent_completion(subagent_meta_dir, &result, gcs_ctx);
+    persist_subagent_completion(subagent_meta_dir, &result);
     result
 }
 fn emit_subagent_notification(
@@ -2358,22 +2317,6 @@ pub(crate) fn read_subagent_output(dir: &Path) -> Option<String> {
     let file: OutputFile = serde_json::from_str(&data).ok()?;
     (file.schema_version == SUBAGENT_OUTPUT_SCHEMA_VERSION).then_some(file.output)
 }
-/// Extra runtime context for GCS artifact upload. `SubagentMeta` doesn't
-/// persist these fields, so they're carried from the spawn site.
-#[derive(Clone)]
-struct GcsUploadContext {
-    bucket_url: Option<String>,
-    upload_method: Option<crate::session::repo_changes::UploadMethod>,
-    model_id: Option<String>,
-    cwd: Option<String>,
-    isolation_mode: Option<String>,
-    capability_mode: Option<String>,
-    reasoning_effort: Option<String>,
-    role_name: Option<String>,
-    parent_prompt_id: Option<String>,
-    depth: u32,
-    auth_manager: std::sync::Arc<crate::auth::AuthManager>,
-}
 /// Persist the durable worktree `snapshot_ref` into the on-disk `meta.json`
 /// after completion, so `resumable_source_for` can rehydrate the disposed
 /// worktree on resume. Returns `true` only when the ref is persisted to disk;
@@ -2406,7 +2349,7 @@ fn persist_subagent_output(dir: &Path, result: &SubagentResult) -> Option<PathBu
     (result.success && !result.output.is_empty() && write_subagent_output(dir, &result.output))
         .then(|| dir.to_path_buf())
 }
-fn persist_subagent_completion(dir: &Path, result: &SubagentResult, gcs_ctx: &GcsUploadContext) {
+fn persist_subagent_completion(dir: &Path, result: &SubagentResult) {
     let meta_path = dir.join("meta.json");
     if let Ok(data) = std::fs::read_to_string(&meta_path)
         && let Ok(mut meta) = serde_json::from_str::<SubagentMeta>(&data)
@@ -2418,26 +2361,6 @@ fn persist_subagent_completion(dir: &Path, result: &SubagentResult, gcs_ctx: &Gc
         meta.turns = Some(result.turns);
         meta.error = result.error.clone();
         write_subagent_meta(dir, &meta);
-        if let (Some(bucket), Some(method)) = (&gcs_ctx.bucket_url, &gcs_ctx.upload_method) {
-            let gcs_meta = SubagentSessionMetadata::from_meta(
-                &meta,
-                gcs_ctx.model_id.as_deref(),
-                gcs_ctx.cwd.as_deref(),
-                result.worktree_path.as_deref(),
-                gcs_ctx.isolation_mode.as_deref(),
-                gcs_ctx.capability_mode.as_deref(),
-                gcs_ctx.reasoning_effort.as_deref(),
-                gcs_ctx.role_name.as_deref(),
-                gcs_ctx.parent_prompt_id.as_deref(),
-                gcs_ctx.depth,
-            );
-            let bucket = bucket.clone();
-            let method = method.clone();
-            let auth_for_spawn = gcs_ctx.auth_manager.clone();
-            tokio::spawn(async move {
-                upload_subagent_metadata(&gcs_meta, &bucket, method, auth_for_spawn).await;
-            });
-        }
     }
 }
 const ORPHAN_RECONCILE_REASON: &str = "interrupted by process restart";

@@ -39,7 +39,6 @@ pub enum Action {
     /// Quit the application.
     Quit,
     /// Restart the binary to pick up a downloaded update.
-    QuitForUpdate,
     /// Resume the recent foreign session offered on the launch welcome screen.
     ResumeForeignSession,
     /// Re-exec into the other screen mode (`true` = minimal).
@@ -418,14 +417,6 @@ pub enum Action {
         kind: String,
         name: String,
     },
-    /// Hide the announcements banner.
-    AnnouncementsHide,
-    /// Show the announcements banner.
-    AnnouncementsShow,
-    /// Open the promo CTA link (url resolved from current state at dispatch
-    /// time, mirroring how `AnnouncementsHide` resolves its target). The
-    /// payload records which surface activated it, for telemetry.
-    AnnouncementsOpenCta(gbuild_telemetry::events::AnnouncementCtaSurface),
     /// Cycle session mode (Shift+Tab): Normal → Plan → Always-Approve → Normal.
     /// Plan mode sends a signal to the shell; always-approve is local.
     CycleMode,
@@ -654,7 +645,6 @@ pub enum Action {
     /// A spawned task completed.
     TaskComplete(TaskResult),
     /// Share the current session via URL.
-    ShareSession,
     /// Show session info (auth, ID, cwd, model, context usage) instantly.
     ShowSessionInfo,
     /// Show release notes in a modal.
@@ -1560,14 +1550,6 @@ pub enum Effect {
         /// `SwitchModelComplete` so `IncompatibleAgent` can roll back.
         prev_model_id: Option<acp::ModelId>,
     },
-    /// Fetch changelog from CDN (both markdown + structured JSON).
-    /// Runs off the render path via `spawn_blocking`. Result is cached
-    /// on `AppView` so `/release-notes` and the welcome screen share it.
-    FetchChangelog,
-    /// Persist the hidden announcement ids to disk.
-    PersistAnnouncementsHidden {
-        hidden_ids: std::collections::BTreeSet<String>,
-    },
     /// Persist `[privacy].privacy_banner_acked` (RFC 3339 dismiss time).
     PersistPrivacyBannerAcked { acked_at: String },
     /// Persist memory modal fullscreen preference to `[hints]` in config.toml.
@@ -1867,10 +1849,6 @@ pub enum Effect {
         enabled: bool,
     },
     /// Share the current session via URL.
-    ShareSession {
-        agent_id: AgentId,
-        session_id: acp::SessionId,
-    },
     /// Fetch and display session info via x.ai/session/info.
     /// Auth lines are derived in the effect from SessionFlags + env (not Effect fields).
     ShowSessionInfo {
@@ -2060,8 +2038,6 @@ pub enum Effect {
         agent_id: AgentId,
         session_id: acp::SessionId,
     },
-    /// Re-fetch remote settings to check subscription gate.
-    RefreshGate,
     /// Spawn a debounce sleep task for shell suggestions. `agent_id` rides
     /// to the expiry so the fetch is built from the arming agent, not
     /// whatever view is active when the timer fires.
@@ -2377,15 +2353,6 @@ pub enum TaskResult {
         /// rollback on `IncompatibleAgent`.
         prev_model_id: Option<acp::ModelId>,
     },
-    /// Changelog fetched from CDN (both formats).
-    ChangelogFetched {
-        markdown: Option<String>,
-        entries: Vec<gbuild_shell::util::changelog::ChangelogEntry>,
-    },
-    /// Announcements hidden state persisted.
-    AnnouncementsHiddenPersisted {
-        result: Result<(), String>,
-    },
     /// Cross-session prompt history loaded from ACP.
     PromptHistoryLoaded {
         agent_id: AgentId,
@@ -2520,15 +2487,7 @@ pub enum TaskResult {
         result: Result<(), String>,
     },
     /// Share session completed successfully.
-    ShareSessionComplete {
-        agent_id: AgentId,
-        share_url: String,
-    },
     /// Share session failed.
-    ShareSessionFailed {
-        agent_id: AgentId,
-        error: String,
-    },
     /// Session info fetched successfully.
     SessionInfoComplete {
         agent_id: AgentId,
@@ -2766,9 +2725,6 @@ pub enum TaskResult {
     AppBillingFetched {
         balance: Option<crate::views::credit_bar::CreditBalance>,
         autotopup: crate::views::credit_bar::AutoTopupFetch,
-    },
-    GateRefreshed {
-        settings: Option<gbuild_shell::util::config::RemoteSettings>,
     },
     /// Billing fetch failed with an error message.
     BillingError {

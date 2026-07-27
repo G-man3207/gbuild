@@ -396,9 +396,6 @@ pub(super) async fn run_session(
                     let Some((prompt_id, result)) = maybe_completion else {
                         // Channel closed - shutdown feedback sync loop
                         shutdown_workflows(&session).await;
-                        if let Some(cancel) = &session.sync_loop_cancel {
-                            cancel.cancel();
-                        }
                         cleanup_session_scratch(&session);
                         return;
                     };
@@ -547,10 +544,7 @@ pub(super) async fn run_session(
                             }
                         }
                         shutdown_workflows(&session).await;
-                        if let Some(cancel) = &session.sync_loop_cancel {
-                            cancel.cancel();
-                        }
-                        session.feedback_manager.shutdown(session.upload_queue.get()).await;
+                        session.feedback_manager.shutdown().await;
                         if !session.startup_hints.is_subagent {
                             session.persist_background_task_manifest().await;
                         }
@@ -594,7 +588,7 @@ pub(super) async fn run_session(
                         SessionCommand::SetToolOverrides { overrides } => {
                             session.set_tool_overrides(overrides);
                         }
-                        SessionCommand::Prompt { prompt_id, prompt_blocks, prompt_mode, artifact_upload_ctx, client_identifier, screen_mode, verbatim, traceparent, json_schema, send_now, admission, tool_overrides_update, respond_to, persist_ack, parsed_prompt_tx } => {
+                        SessionCommand::Prompt { prompt_id, prompt_blocks, prompt_mode, client_identifier, screen_mode, verbatim, traceparent, json_schema, send_now, admission, tool_overrides_update, respond_to, persist_ack, parsed_prompt_tx } => {
                             let origin = super::PromptOrigin::from_prompt_id(&prompt_id);
                             let (actor_admitted, task_wake_fallback) = match admission {
                                 Some(admission) => {
@@ -661,12 +655,8 @@ pub(super) async fn run_session(
                                 let meta = serde_json::json!({ "traceparent": tp });
                                 xai_file_utils::trace_context::link_current_span_to_meta(&meta);
                             }
-                            let (trace_gcs_config, artifact_tracker) = match artifact_upload_ctx {
-                                Some(tu) => (Some(tu.gcs_config), Some(tu.artifact_tracker)),
-                                None => (None, None),
-                            };
                             let cancel_for_send_now = session
-                                .queue_input(prompt_blocks, prompt_id, prompt_mode, trace_gcs_config, artifact_tracker, client_identifier, screen_mode, verbatim, json_schema, send_now, task_wake_fallback, tool_overrides_update, respond_to, persist_ack, parsed_prompt_tx)
+                                .queue_input(prompt_blocks, prompt_id, prompt_mode, client_identifier, screen_mode, verbatim, json_schema, send_now, task_wake_fallback, tool_overrides_update, respond_to, persist_ack, parsed_prompt_tx)
                                 .await;
                             if cancel_for_send_now {
                                 session.cancel_turn_for_send_now(&mut replay_buffer).await;
@@ -1960,8 +1950,6 @@ pub(super) async fn run_session(
                                     prompt_id,
                                     prompt_blocks,
                                     prompt_mode: crate::session::plan_mode::PromptMode::Agent,
-                                    trace_gcs_config: None,
-                                    artifact_tracker: None,
                                     client_identifier: None,
                                     screen_mode: None,
                                     verbatim: true,
@@ -2011,8 +1999,6 @@ pub(super) async fn run_session(
                                     prompt_id,
                                     prompt_blocks: vec![acp::ContentBlock::Text(acp::TextContent::new(prompt_text))],
                                     prompt_mode: crate::session::plan_mode::PromptMode::Agent,
-                                    trace_gcs_config: None,
-                                    artifact_tracker: None,
                                     client_identifier: None,
                                     screen_mode: None,
                                     verbatim: true,
@@ -2176,12 +2162,8 @@ pub(super) async fn run_session(
                             // Structured telemetry after dream so counters are populated
                             let telem = session.memory.telemetry_snapshot();
                             session.emit_memory_session_summary(&telem, total_chunks_at_end, session_end_result);
-                            // Shutdown feedback sync loop and do final sync
-                            if let Some(cancel) = &session.sync_loop_cancel {
-                                cancel.cancel();
-                            }
-                            // Shutdown feedback manager (syncs signals, drains upload queue)
-                            session.feedback_manager.shutdown(session.upload_queue.get()).await;
+                            // Shutdown feedback manager (signals actor)
+                            session.feedback_manager.shutdown().await;
                             if !session.startup_hints.is_subagent {
                                 session.persist_background_task_manifest().await;
                             }

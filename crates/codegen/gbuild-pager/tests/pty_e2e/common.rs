@@ -142,7 +142,7 @@ pub(crate) fn tall_response(sentinel: &str, rows: usize) -> String {
 // `seed_fake_oauth` / `oauth_credential_ops` live in
 // `gbuild_pager_pty_harness::flows` (re-exported above).
 
-/// Spawn a pager with fake session (OAuth) auth and a 1s announcements poll,
+/// Spawn a pager with fake session (OAuth) auth.
 /// then drive it into a live session (welcome → prompt → mock response).
 /// Session auth matters: the settings poll requires `auth_manager.auth()`, and
 /// the harness's default `XAI_API_KEY` (ApiKey/BYOK mode, no auth.json entry)
@@ -162,10 +162,6 @@ pub(crate) fn spawn_polling_session_with_env(
 ) -> PtyHarness {
     seed_fake_oauth(content, oauth_user);
     let mut overrides = Vec::from(oauth_credential_ops());
-    overrides.push(EnvOp::set(
-        "GBUILD_ANNOUNCEMENTS_REFRESH_INTERVAL_SECS",
-        "1",
-    ));
     overrides.extend(extra_env.iter().map(|(key, value)| EnvOp::set(key, value)));
 
     let binary = pager_binary().expect("resolve pager binary");

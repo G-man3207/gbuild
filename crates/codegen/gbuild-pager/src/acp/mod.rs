@@ -67,9 +67,6 @@ pub struct AcpConnection {
     /// Seeded into every new `AgentSession` so autocomplete has shell builtins
     /// and skills immediately, before any `AvailableCommandsUpdate` arrives.
     pub available_commands: Vec<acp::AvailableCommand>,
-    // NOTE: Startup announcements from InitializeResponse.meta are not yet supported.
-    // Requires shell to include announcements in initialize metadata.
-    // When available, add field: startup_announcements: Option<Vec<gbuild_announcements::RemoteAnnouncement>>
     /// Whether interactive login is required (deferred auth for `grok.com`).
     pub needs_login: bool,
     /// Login button label from `AuthMethod.name` (e.g., "grok.com", "Acme Corp").
@@ -348,7 +345,7 @@ pub async fn connect_via_leader(
     ));
 
     // Leader has no in-process agent; init this process's product telemetry client.
-    gbuild_shell::agent::init::update_telemetry_config(&agent_config, &auth_manager);
+    gbuild_shell::agent::init::update_telemetry_config(&agent_config);
 
     Ok(AcpConnection {
         tx,

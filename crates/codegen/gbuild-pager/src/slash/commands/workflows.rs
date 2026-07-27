@@ -50,7 +50,6 @@ mod tests {
             let ctx = crate::slash::command::AppCtx {
                 models: &models,
                 cwd: std::path::Path::new("."),
-                has_session_announcements: false,
                 billing_surface_visible: true,
                 workflows_available: available,
                 screen_mode: crate::app::ScreenMode::Fullscreen,

@@ -726,10 +726,8 @@ auto_update = true
     /// newly-added fields without copy-pasting assertion lists.
     const CLI_CONFIG_OPTION_FIELDS: &[&str] = &[
         "auto_update",
-        "dismissed_version",
         "installer",
         "npm_registry",
-        "channel",
         "use_leader",
         "show_tips",
         "worktree_type",
@@ -755,17 +753,14 @@ auto_update = true
     fn cli_config_serializes_only_some_fields() {
         let c = crate::agent::config::CliConfig {
             auto_update: Some(true),
-            channel: Some("beta".to_string()),
             ..Default::default()
         };
         let v = TomlValue::try_from(&c).expect("serialize CliConfig");
         if let TomlValue::Table(t) = v {
-            assert_eq!(t.len(), 2);
+            assert_eq!(t.len(), 1);
             assert!(t.contains_key("auto_update"));
-            assert!(t.contains_key("channel"));
-            assert_cli_option_fields_absent(&t, &["auto_update", "channel"]);
+            assert_cli_option_fields_absent(&t, &["auto_update"]);
             assert_eq!(t.get("auto_update").and_then(|x| x.as_bool()), Some(true));
-            assert_eq!(t.get("channel").and_then(|x| x.as_str()), Some("beta"));
         } else {
             panic!("expected table from serialization");
         }
@@ -783,31 +778,18 @@ auto_update = true
         table.insert("cli".into(), TomlValue::Table(cli));
         let cfg = crate::agent::config::CliConfig {
             auto_update: Some(false),
-            dismissed_version: Some("v1.2.3".to_string()),
             ..Default::default()
         };
         merge_section(&mut table, "cli", &cfg);
         let c = table.get("cli").unwrap().as_table().unwrap();
         assert_eq!(c.get("auto_update").and_then(|v| v.as_bool()), Some(false));
-        assert_eq!(
-            c.get("dismissed_version").and_then(|v| v.as_str()),
-            Some("v1.2.3")
-        );
         assert_eq!(c.get("use_leader").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(c.get("show_tips").and_then(|v| v.as_bool()), Some(false));
         assert_eq!(
             c.get("custom_pager_key").and_then(|v| v.as_str()),
             Some("keep-this")
         );
-        assert_cli_option_fields_absent(
-            c,
-            &[
-                "auto_update",
-                "dismissed_version",
-                "use_leader",
-                "show_tips",
-            ],
-        );
+        assert_cli_option_fields_absent(c, &["auto_update", "use_leader", "show_tips"]);
     }
     #[test]
     fn merge_section_models_only_updates_set_fields_preserves_others() {

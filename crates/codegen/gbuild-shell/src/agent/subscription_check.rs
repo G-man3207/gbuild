@@ -31,7 +31,6 @@ const QUALIFYING_TIERS: &[&str] = &[
 /// optionally refreshed settings.
 pub(crate) struct UnblockResult {
     pub(crate) new_tier: String,
-    pub(crate) settings: Option<crate::util::config::RemoteSettings>,
 }
 /// Fetch `/user?include=subscription` and return the parsed `UserInfo`.
 async fn fetch_user_info(
@@ -137,25 +136,12 @@ pub(crate) async fn single_check(
             })),
         );
     }
-    let settings = if crate::util::config::resolve_remote_fetch_enabled() {
-        let base_url = proxy_base_url.to_string();
-        let auth_for_settings = auth_manager.current().unwrap_or(auth);
-        let atk = alpha_test_key.map(str::to_string);
-        tokio::task::spawn_blocking(move || {
-            crate::remote::fetch_settings_blocking(&base_url, &auth_for_settings, atk.as_deref())
-        })
-        .await
-        .ok()
-        .flatten()
-    } else {
-        None
-    };
     gbuild_telemetry::unified_log::info(
         "paywall_check_unblocked",
         None,
         Some(serde_json::json!({ "user_id": user_id, "new_tier": new_tier })),
     );
-    Some(UnblockResult { new_tier, settings })
+    Some(UnblockResult { new_tier })
 }
 #[cfg(test)]
 mod tests {

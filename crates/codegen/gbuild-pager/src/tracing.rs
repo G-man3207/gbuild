@@ -430,8 +430,8 @@ pub fn init_tracing() -> TracingHandle {
             service_version: env!("VERSION_WITH_COMMIT"),
             app_entrypoint: "tui",
         },
-        gbuild_shell::auth::credential_provider::build_default_otel_layer_config(),
     );
+    gbuild_shell::auth::credential_provider::bootstrap_otel_credential_provider();
     let instrumentation_layer = gbuild_telemetry::instrumentation::layer();
     let sampling_log_layer = gbuild_telemetry::sampling_log::layer();
     let hooks_log_layer = gbuild_telemetry::hooks_log::layer();

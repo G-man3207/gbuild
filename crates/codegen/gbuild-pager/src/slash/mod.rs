@@ -261,8 +261,6 @@ pub struct SlashController {
     /// surfaces — the agent dashboard's dispatch input — so the dropdown
     /// only offers pager-global commands. Defaults to `false`.
     hide_session_scoped: bool,
-    /// Offer `/announcements` when session announcements (critical or promo) exist.
-    has_session_announcements: bool,
     /// Consumer billing surface — gates `/usage` subcommands. Default `true`.
     billing_surface_visible: bool,
     workflows_available: bool,
@@ -305,7 +303,6 @@ impl SlashController {
             matcher: FuzzyMatcher::new(),
             cwd,
             hide_session_scoped: false,
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
@@ -330,15 +327,6 @@ impl SlashController {
         command_tags: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, String>>>,
     ) {
         self.command_tags = command_tags;
-    }
-
-    /// Gate `/announcements` on presence of session announcements (critical or promo).
-    pub fn set_has_session_announcements(&mut self, has: bool) {
-        self.has_session_announcements = has;
-    }
-
-    pub fn has_session_announcements(&self) -> bool {
-        self.has_session_announcements
     }
 
     pub fn set_billing_surface_visible(&mut self, visible: bool) {
@@ -370,7 +358,6 @@ impl SlashController {
         AppCtx {
             models,
             cwd: &self.cwd,
-            has_session_announcements: self.has_session_announcements,
             billing_surface_visible: self.billing_surface_visible,
             workflows_available: self.workflows_available,
             screen_mode: self.screen_mode,

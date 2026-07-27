@@ -96,7 +96,7 @@ use super::settings::ui::{
 };
 use super::status::{
     dispatch_copy_session_id, dispatch_manage_billing, dispatch_open_gboom, dispatch_open_tutorial,
-    dispatch_privacy_banner_accept, dispatch_privacy_banner_customize, dispatch_share_session,
+    dispatch_privacy_banner_accept, dispatch_privacy_banner_customize,
     dispatch_show_context_info, dispatch_show_privacy_info, dispatch_show_queue,
     dispatch_show_release_notes, dispatch_show_session_info, dispatch_show_tasks,
     dispatch_show_usage, set_coding_data_sharing,
@@ -154,12 +154,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 let _ = tx.try_send(gbuild_voice::VoiceCommand::Shutdown);
             }
             let mut effects = unregister_all_active_sessions(app);
-            effects.push(Effect::Quit);
-            effects
-        }
-        Action::QuitForUpdate => {
-            let mut effects = unregister_all_active_sessions(app);
-            app.quit_for_update = true;
             effects.push(Effect::Quit);
             effects
         }
@@ -870,53 +864,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 prev_model_id: None,
             }]
         }
-        Action::AnnouncementsHide => {
-            let shown_key = crate::views::announcements::first_session_announcement(
-                &app.active_announcements,
-                &app.hidden_announcement_ids,
-            )
-            .filter(|a| crate::views::announcements::is_dismissible(a))
-            .map(gbuild_announcements::announcement_hide_key);
-            if let Some(key) = shown_key
-                && app.hidden_announcement_ids.insert(key)
-            {
-                vec![Effect::PersistAnnouncementsHidden {
-                    hidden_ids: app.hidden_announcement_ids.clone(),
-                }]
-            } else {
-                vec![]
-            }
-        }
-        Action::AnnouncementsShow => {
-            let mut changed = false;
-            for key in crate::views::announcements::session_announcement_hide_keys(
-                &app.active_announcements,
-            ) {
-                changed |= app.hidden_announcement_ids.remove(&key);
-            }
-            if changed {
-                vec![Effect::PersistAnnouncementsHidden {
-                    hidden_ids: app.hidden_announcement_ids.clone(),
-                }]
-            } else {
-                vec![]
-            }
-        }
-        Action::AnnouncementsOpenCta(surface) => {
-            if let Some((promo, url)) = crate::views::announcements::promo_cta_target(
-                &app.active_announcements,
-                &app.hidden_announcement_ids,
-            ) {
-                let url = url.to_owned();
-                let promo_id = promo.id.clone();
-                log_event(gbuild_telemetry::events::AnnouncementCtaClicked {
-                    id: promo_id,
-                    source: surface,
-                });
-                open_url_or_show(app, &url);
-            }
-            vec![]
-        }
         Action::CancelTurn => dispatch_cancel_turn(app),
         Action::CancelTurnChoice(choice) => dispatch_cancel_turn_choice(app, choice),
         Action::KillBgTask(task_id) => dispatch_kill_bg_task(app, task_id),
@@ -928,7 +875,6 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             vec![Effect::FetchCatalogEntry { kind, name }]
         }
         Action::CycleMode => dispatch_cycle_mode(app),
-        Action::ShareSession => dispatch_share_session(app),
         Action::ShowSessionInfo => dispatch_show_session_info(app),
         Action::ShowReleaseNotes { title, content } => {
             dispatch_show_release_notes(app, title, content)

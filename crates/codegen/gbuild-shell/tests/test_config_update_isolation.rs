@@ -165,8 +165,4 @@ async fn update_config_does_not_leak_managed_config_values() {
         user_cfg.cli.auto_update, None,
         "auto_update from managed_config.toml leaked into user config. Raw:\n{raw}"
     );
-    assert_eq!(
-        user_cfg.cli.channel, None,
-        "channel from managed_config.toml leaked into user config. Raw:\n{raw}"
-    );
 }

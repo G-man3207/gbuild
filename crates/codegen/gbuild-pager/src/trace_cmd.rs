@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use gbuild_shell::agent::config::Config as AgentConfig;
-use gbuild_shell::session::repo_changes::UploadMethod;
 use gbuild_shell::util::gbuild_home::gbuild_home;
 
 #[derive(Debug, clap::Args, Clone)]
@@ -33,38 +32,7 @@ struct TraceResult {
 }
 
 pub async fn run(args: TraceArgs, agent_config: &AgentConfig) -> Result<()> {
-    if args.local {
-        return run_export(
-            &args.session_id,
-            args.output.as_deref(),
-            args.json,
-            agent_config,
-        )
-        .await;
-    }
-
-    if !agent_config.is_trace_upload_enabled() {
-        tracing::warn!(
-            session_id = %args.session_id,
-            "trace_cmd: trace uploads disabled in config"
-        );
-        if !args.json {
-            eprintln!(
-                "Trace uploads disabled. Set [telemetry] trace_upload = true in {}",
-                crate::util::display_user_gbuild_path("config.toml")
-            );
-            eprintln!("Falling back to local export.");
-        }
-        return run_export(
-            &args.session_id,
-            args.output.as_deref(),
-            args.json,
-            agent_config,
-        )
-        .await;
-    }
-
-    run_upload(
+    run_export(
         &args.session_id,
         args.output.as_deref(),
         args.json,
@@ -148,43 +116,13 @@ struct ExportMetadata {
     exported_at: String,
 }
 
-/// No URLs, paths, or bucket names -- only booleans and config source indicators.
 #[derive(serde::Serialize)]
 struct TraceConfigSnapshot {
-    trace_upload_enabled: bool,
-    telemetry_trace_upload: Option<bool>,
-    custom_upload_url: bool,
-    bucket_url_source: String,
-    direct_upload_configured: bool,
-    has_bucket_configured: bool,
-    has_region_configured: bool,
-    has_custom_endpoint: bool,
-    has_credentials_file: bool,
-    has_inline_credentials: bool,
     has_deployment_key: bool,
 }
 
 fn build_trace_config_snapshot(agent_config: &AgentConfig) -> TraceConfigSnapshot {
     TraceConfigSnapshot {
-        trace_upload_enabled: agent_config.is_trace_upload_enabled(),
-        telemetry_trace_upload: agent_config.telemetry.trace_upload,
-        custom_upload_url: agent_config.endpoints.trace_upload_url.is_some(),
-        bucket_url_source: match agent_config.endpoints.resolve_trace_bucket_url() {
-            Some(resolved) => format!("{}", resolved.source),
-            None => "unconfigured".to_owned(),
-        },
-        direct_upload_configured: agent_config
-            .endpoints
-            .resolve_direct_upload_method()
-            .is_some(),
-        has_bucket_configured: agent_config.endpoints.trace_upload_bucket.is_some(),
-        has_region_configured: agent_config.endpoints.trace_upload_region.is_some(),
-        has_custom_endpoint: agent_config.endpoints.trace_upload_endpoint_url.is_some(),
-        has_credentials_file: agent_config
-            .endpoints
-            .trace_upload_credentials_file
-            .is_some(),
-        has_inline_credentials: agent_config.endpoints.trace_upload_credentials.is_some(),
         has_deployment_key: agent_config.endpoints.deployment_key.is_some(),
     }
 }
@@ -254,74 +192,6 @@ fn add_directory_to_tar<W: std::io::Write>(
 
 /// Show first and last `n` chars with `***` in between. Char-safe (no byte-boundary panics).
 /// Returns the full string if it's short enough that redacting would be pointless.
-fn redact_middle(s: &str, n: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= n * 2 + 3 {
-        return s.to_owned();
-    }
-    let prefix: String = chars[..n].iter().collect();
-    let suffix: String = chars[chars.len() - n..].iter().collect();
-    format!("{prefix}***{suffix}")
-}
-
-pub struct UploadMethodDisplay<'a> {
-    pub method: &'a UploadMethod,
-    pub bucket_url: &'a str,
-}
-
-impl std::fmt::Display for UploadMethodDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.method {
-            UploadMethod::Direct {
-                service_account_key,
-            } => {
-                let auth = if service_account_key.is_some() {
-                    "service account key"
-                } else {
-                    "ambient credentials"
-                };
-                writeln!(f, "  Method:   Direct GCS")?;
-                writeln!(f, "  Bucket:   {}", self.bucket_url)?;
-                write!(f, "  Auth:     {auth}")
-            }
-            UploadMethod::Proxy {
-                proxy_base_url,
-                deployment_key,
-                ..
-            } => {
-                let deploy = deployment_key
-                    .as_deref()
-                    .map(|k| redact_middle(k, 4))
-                    .unwrap_or_else(|| "none".to_string());
-                writeln!(f, "  Method:   Proxy")?;
-                writeln!(f, "  Proxy:    {proxy_base_url}")?;
-                write!(f, "  Deploy:   {deploy}")
-            }
-            UploadMethod::S3 {
-                bucket,
-                region,
-                endpoint_url,
-                credentials_content,
-                credentials_file,
-                ..
-            } => {
-                let endpoint = endpoint_url.as_deref().unwrap_or("(default AWS)");
-                let creds = if credentials_content.is_some() {
-                    "inline credentials"
-                } else if credentials_file.is_some() {
-                    "credentials file"
-                } else {
-                    "ambient credentials"
-                };
-                writeln!(f, "  Method:   S3")?;
-                writeln!(f, "  Bucket:   {bucket}")?;
-                writeln!(f, "  Region:   {region}")?;
-                writeln!(f, "  Endpoint: {endpoint}")?;
-                write!(f, "  Auth:     {creds}")
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Local export
@@ -400,128 +270,6 @@ async fn run_export(
         println!("{}", output_path.display());
     }
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Upload with fallback
-// ---------------------------------------------------------------------------
-
-/// Prints upload URL to stdout on success; saves local bundle and returns Err on failure.
-async fn run_upload(
-    session_id: &str,
-    output: Option<&Path>,
-    json: bool,
-    agent_config: &AgentConfig,
-) -> Result<()> {
-    let session_dir = find_session_dir(session_id)?;
-    if !json {
-        eprintln!("Found session at: {}", session_dir.display());
-    }
-
-    let upload_method = resolve_upload_method(agent_config).await;
-    let upload_method = match upload_method {
-        Some(method) => method,
-        None => {
-            tracing::warn!(
-                session_id = %session_id,
-                "trace_cmd: no upload credentials available"
-            );
-            anyhow::bail!(
-                "No upload credentials. Run `gbuild login` or set a deployment key. \
-                 See {} for upload overrides.",
-                crate::util::display_user_gbuild_path("docs/user-guide")
-            );
-        }
-    };
-
-    if !json {
-        eprintln!("Building session trace archive...");
-    }
-    let archive = build_session_tar(&session_dir, session_id, agent_config)?;
-    let archive_size = archive.len();
-
-    // Proxy-mode uploads don't need a bucket (the proxy owns the
-    // destination); direct GCS uploads do.
-    let bucket_url = agent_config
-        .endpoints
-        .resolve_trace_bucket_url()
-        .map(|r| r.value);
-    if bucket_url.is_none()
-        && matches!(
-            upload_method,
-            gbuild_shell::session::repo_changes::UploadMethod::Direct { .. }
-        )
-    {
-        anyhow::bail!(
-            "No trace upload bucket configured. Set `GBUILD_TELEMETRY_GCS_BUCKET`, \
-             `GBUILD_TRACE_UPLOAD_BUCKET`, or `endpoints.trace_upload_bucket` in \
-             config for direct GCS uploads."
-        );
-    }
-    let bucket_display = bucket_url.as_deref().unwrap_or("proxy-managed");
-    let object_path = format!("{session_id}/trace_export.tar.gz");
-    let method_desc = UploadMethodDisplay {
-        method: &upload_method,
-        bucket_url: bucket_display,
-    }
-    .to_string();
-
-    let upload_config = gbuild_shell::session::repo_changes::TraceExportConfig {
-        bucket_url: bucket_url.clone(),
-        service_account_key: None,
-        prefix_dir: None,
-        gcs_prefix: Some(session_id.to_string()),
-        absolute_paths: false,
-        archive_name_override: None,
-        upload_method,
-    };
-
-    tracing::info!(
-        session_id = %session_id,
-        object_path = %object_path,
-        archive_bytes = archive_size,
-        bucket_url = bucket_display,
-        "trace_cmd: starting upload"
-    );
-    if !json {
-        let size_kb = archive_size / 1024;
-        eprintln!("Uploading session trace ({size_kb} KB)...");
-        eprintln!("{method_desc}");
-    }
-
-    match upload_with_retries(&upload_config, &object_path, &archive).await {
-        Ok(url) => {
-            tracing::info!(session_id = %session_id, url = %url, "trace_cmd: upload succeeded");
-            if json {
-                let result = TraceResult {
-                    session_id: session_id.to_owned(),
-                    status: "uploaded",
-                    url: Some(url),
-                    local_path: None,
-                    error: None,
-                };
-                println!("{}", serde_json::to_string(&result)?);
-            } else {
-                eprintln!();
-                eprintln!("Session trace uploaded successfully.");
-                eprintln!("  {url}");
-                println!("{url}");
-            }
-            Ok(())
-        }
-        Err(e) => {
-            let attempt = UploadAttempt {
-                session_id,
-                archive: &archive,
-                output,
-                method_desc: &method_desc,
-                object_path: &object_path,
-                bucket_url: bucket_display,
-                json,
-            };
-            Err(attempt.handle_failure(&e))
-        }
-    }
 }
 
 pub struct UploadAttempt<'a> {
@@ -606,58 +354,3 @@ impl UploadAttempt<'_> {
 // Upload with retries
 // ---------------------------------------------------------------------------
 
-const UPLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
-
-async fn upload_with_retries(
-    config: &gbuild_shell::session::repo_changes::TraceExportConfig,
-    object_path: &str,
-    archive: &[u8],
-) -> anyhow::Result<String> {
-    use backon::{ExponentialBuilder, Retryable};
-
-    let backoff = ExponentialBuilder::default()
-        .with_min_delay(std::time::Duration::from_secs(2))
-        .with_max_delay(std::time::Duration::from_secs(8))
-        .with_max_times(3);
-
-    (|| async {
-        tokio::time::timeout(
-            UPLOAD_TIMEOUT,
-            xai_file_utils::gcs::upload_bytes(config, object_path, archive, "application/gzip"),
-        )
-        .await
-        .map_err(|_| anyhow::anyhow!("Upload timed out after {}s", UPLOAD_TIMEOUT.as_secs()))?
-    })
-    .retry(backoff)
-    .notify(|err, dur| {
-        tracing::warn!(error = %err, retry_in = ?dur, "trace_cmd: upload attempt failed, retrying");
-        eprintln!("  Upload failed, retrying in {}s...", dur.as_secs());
-    })
-    .await
-}
-
-// ---------------------------------------------------------------------------
-// Upload method resolution
-// ---------------------------------------------------------------------------
-
-pub async fn resolve_upload_method(agent_config: &AgentConfig) -> Option<UploadMethod> {
-    // On login failure, fall back to ambient creds rather than erroring.
-    let auth_token = gbuild_shell::auth::ensure_authenticated_or_noninteractive(
-        &agent_config.grok_com_config,
-        agent_config.endpoints.has_noninteractive_upload_auth(),
-        Some("Authentication required for trace upload."),
-    )
-    .await
-    .inspect_err(
-        |e| tracing::info!(error = %e, "trace_cmd: auth failed, trying ambient credentials"),
-    )
-    .ok()
-    .flatten()
-    .map(|auth| auth.key);
-
-    let method = agent_config.endpoints.resolve_upload_method(auth_token);
-    if method.is_none() {
-        tracing::warn!("trace_cmd: no upload method available");
-    }
-    method
-}

@@ -23,7 +23,6 @@ gbuild-pager-minimal = { path = "../gbuild-pager-minimal" }
 
 # Agent runtime + leader/stdio/headless entry points.
 gbuild-shell = { workspace = true }
-gbuild-update = { path = "../gbuild-update" }
 gbuild-version = { workspace = true }
 gbuild-telemetry = { workspace = true }
 gbuild-workspace = { workspace = true }

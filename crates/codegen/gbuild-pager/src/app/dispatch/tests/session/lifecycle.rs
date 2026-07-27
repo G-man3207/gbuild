@@ -1283,19 +1283,6 @@ fn login_mid_session_switches_to_welcome_and_stashes_view() {
     );
 }
 /// A mid-session `/login` switches to the welcome view to host the auth
-/// flow; that transition must collapse any expanded announcement so it
-/// can't reappear stale if auth completion lands back on a welcome screen.
-#[test]
-fn login_mid_session_resets_welcome_announcement_expanded() {
-    let mut app = test_app_with_agent();
-    app.welcome_announcement.expanded = true;
-    dispatch(Action::Login, &mut app);
-    assert_eq!(app.active_view, ActiveView::Welcome);
-    assert!(
-        !app.welcome_announcement.expanded,
-        "mid-session login must reset the expanded announcement"
-    );
-}
 /// After a successful mid-session re-auth, the stale `ReAuthRequired`
 /// prompt (pushed when the 401 surfaced) is stripped so the user
 /// returns to a clean session.
@@ -1843,7 +1830,6 @@ fn dashboard_stop_with_peek_open_moves_selection_and_peek_down_one() {
             None,
             &[],
             false,
-            None,
         );
     };
     render(&mut app);

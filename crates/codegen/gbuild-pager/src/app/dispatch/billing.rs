@@ -383,23 +383,6 @@ pub(super) fn handle_billing_fetched(
     vec![]
 }
 
-pub(super) fn handle_gate_refreshed(
-    app: &mut AppView,
-    settings: Option<gbuild_shell::util::config::RemoteSettings>,
-) -> Vec<Effect> {
-    let Some(rs) = settings else {
-        return vec![];
-    };
-    app.usage_billing_redirect_url = rs.usage_billing_redirect_url.clone();
-    if let Some(secs) = rs.subscription_watch_interval_secs {
-        app.subscription_watch_interval_secs = Some(secs);
-    }
-    match AppView::gate_from_settings(&rs) {
-        Some(gate) => app.impose_gate(gate),
-        None => app.lift_gate(),
-    }
-}
-
 /// `x.ai/auth/check_subscription` completed. Meta is authoritative
 /// (`apply_auth_meta` also drops any deferred gate). A failed check only
 /// promotes the deferred gate it was verifying (`verify` generation);

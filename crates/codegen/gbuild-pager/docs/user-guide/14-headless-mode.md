@@ -40,7 +40,6 @@ gBuild processes the prompt, runs any necessary tools, and prints the result to 
 | `--prompt-json <JSON>`  | Prompt as JSON content blocks                         |
 | `--prompt-file <PATH>`  | Prompt from a file                                    |
 | `--verbatim`            | Send prompt exactly as given                          |
-| `--no-auto-update`      | Disable update checks for this session                |
 | `--sandbox <PROFILE>`   | Sandbox profile for filesystem/network access         |
 
 > **Note:** `--tools`, `--disallowed-tools`, `--max-turns`, and `--agents` are headless-only flags. If used in the interactive TUI, a warning is printed and the flag is ignored. `--reasoning-effort`/`--effort`, `--permission-mode`, `--allow`, and `--deny` work in both modes. For more flags (agents and worktrees), see [Additional Headless Flags](#additional-headless-flags).
@@ -533,12 +532,10 @@ For containers or CI, mount `~/.gbuild` read-only:
 
 - Pre-populate `auth.json` or use `XAI_API_KEY`
 - Session persistence fails silently (ephemeral)
-- Update checks log a warning and skip
 
 ```bash
 export XAI_API_KEY="xai-..."
-export GBUILD_DISABLE_AUTOUPDATER=1
-gbuild -p "..." --no-auto-update
+gbuild -p "..."
 ```
 
 ---

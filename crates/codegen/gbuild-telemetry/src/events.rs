@@ -1167,44 +1167,6 @@ pub struct SuperGrokUpsellClicked {
 }
 
 /// Which surface a promo announcement's upgrade CTA was activated from.
-/// Modeled on [`SuperGrokUpsell`]; lets the funnel attribute the click to the
-/// welcome hero vs the in-session header vs the banner vs the dashboard, and
-/// distinguish keyboard (`Ctrl+O`) activations from pointer/OSC 8 ones.
-/// Ord/Eq exist for the pager's per-(announcement, surface) impression latch.
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
-pub enum AnnouncementCtaSurface {
-    Banner,
-    Welcome,
-    Header,
-    Dashboard,
-    Keyboard,
-}
-
-/// A promo announcement's CTA button was painted on a surface — the
-/// impression half of the per-surface CTR funnel with
-/// [`AnnouncementCtaClicked`]. Emitted once per (announcement, surface) per
-/// pager process (cleared on logout); never emitted for `Keyboard` (a
-/// click-only surface).
-#[derive(Serialize)]
-pub struct AnnouncementCtaShown {
-    /// Announcement `id` from the server push (`None` for id-less items).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    /// Which surface painted the button.
-    pub source: AnnouncementCtaSurface,
-}
-
-/// User activated a promo announcement's CTA button (the `[label]` open).
-#[derive(Serialize)]
-pub struct AnnouncementCtaClicked {
-    /// Announcement `id` from the server push (`None` for id-less items).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    /// Which surface the activation came from (per-surface conversion signal).
-    pub source: AnnouncementCtaSurface,
-}
-
 /// Flat snapshot of the terminal environment for telemetry.
 ///
 /// Shared across pager events so terminal fields are typed once.
@@ -1738,8 +1700,6 @@ telemetry_event!(PlanSubmit, "plan_submit");
 telemetry_event!(ProjectPickerSelected, "project_picker_selected");
 telemetry_event!(SuperGrokUpsellShown, "supergrok_upsell_shown");
 telemetry_event!(SuperGrokUpsellClicked, "supergrok_upsell_clicked");
-telemetry_event!(AnnouncementCtaShown, "announcement_cta_shown");
-telemetry_event!(AnnouncementCtaClicked, "announcement_cta_clicked");
 telemetry_event!(TerminalTelemetry, "terminal_context");
 telemetry_event!(DisplayRefreshProbe, "display_refresh_probe");
 telemetry_event!(BackspaceNoEffect, "backspace_no_effect");
@@ -2008,8 +1968,6 @@ mod tests {
 
     #[test]
     fn announcement_cta_event_names() {
-        assert_eq!(AnnouncementCtaShown::NAME, "announcement_cta_shown");
-        assert_eq!(AnnouncementCtaClicked::NAME, "announcement_cta_clicked");
     }
 
     #[test]

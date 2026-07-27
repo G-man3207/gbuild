@@ -3,7 +3,7 @@
 use super::dashboard_telemetry::log_dashboard_opened;
 use crate::app::agent::AgentId;
 use crate::app::agent_view::AgentView;
-use crate::app::app_view::{ActiveView, AppView, WelcomeAnnouncementState};
+use crate::app::app_view::{ActiveView, AppView};
 use crate::scrollback::state::ScrollbackState;
 use agent_client_protocol as acp;
 
@@ -131,12 +131,9 @@ pub(super) fn reseed_tip_for_new_session(app: &mut AppView) {
     app.tip = gbuild_shell::util::tips::pick_and_advance(&app.tips, &gbuild_home);
 }
 
-/// Switch to the welcome screen, clearing ephemeral per-visit state. Use for
-/// every return-to-welcome transition so a previously-expanded announcement
-/// can't leak into the freshly-shown screen.
+/// Switch to the welcome screen.
 pub(super) fn show_welcome(app: &mut AppView) {
     app.active_view = ActiveView::Welcome;
-    app.welcome_announcement = WelcomeAnnouncementState::default();
 }
 
 /// Restore the view a mid-session auth flow launched from, falling back to the

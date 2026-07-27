@@ -425,35 +425,6 @@
         );
     }
 
-    /// The settings path must not touch announcements: the shell already emits
-    /// gen-ordered `x.ai/announcements/update` for every settings writer, and a
-    /// gen-less apply here could clobber a newer push.
-    #[test]
-    fn settings_update_ignores_announcements_payload() {
-        let mut app = make_app_with_agent("sess-ann");
-        app.active_announcements = vec![critical_announcement("from-push")];
-        app.announcements_last_gen = 7;
-
-        let notif = acp::ExtNotification::new(
-            "x.ai/settings/update",
-            serde_json::value::to_raw_value(&serde_json::json!({
-                "sharing_enabled": true,
-                "announcements": [critical_announcement("from-settings")],
-            }))
-            .unwrap()
-            .into(),
-        );
-        let _ = handle_ext_notification(&notif, &mut app);
-
-        assert_eq!(
-            app.active_announcements,
-            vec![critical_announcement("from-push")],
-            "settings/update must not replace the pushed announcements"
-        );
-        assert_eq!(app.announcements_last_gen, 7, "watermark untouched");
-        assert!(app.sharing_enabled, "other settings fields still apply");
-    }
-
     /// User-owned mode must not re-arm default_yolo or rewrite UI from remote.
     #[test]
     fn permission_mode_user_claim_blocks_default_yolo_rearm() {

@@ -107,14 +107,6 @@ pub(super) fn handle_settings_update(notif: &acp::ExtNotification, app: &mut App
     if let Some(v) = update.show_resolved_model {
         app.show_resolved_model = v;
     }
-    if let Some(v) = update.sharing_enabled {
-        app.sharing_enabled = v;
-        // Propagate to existing agents so slash-command registries stay
-        // in sync (same fan-out pattern used when creating new agents).
-        for agent in app.agents.values_mut() {
-            agent.set_sharing_enabled(v);
-        }
-    }
     // Env overrides win over live updates too, mirroring the startup
     // resolution in event_loop — otherwise the proxy's explicit `false`
     // (sent for kill-switch semantics) clobbers a local test override
@@ -389,90 +381,6 @@ pub(super) fn handle_sessions_changed(notif: &acp::ExtNotification, app: &mut Ap
     affected
 }
 
-pub(super) fn handle_announcements_update(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
-    let Ok(parsed) =
-        serde_json::from_str::<gbuild_announcements::AnnouncementsRefreshed>(notif.params.get())
-    else {
-        return false;
-    };
-
-    if parsed.r#gen <= app.announcements_last_gen {
-        return false;
-    }
-
-    // Re-merge config layers like startup (and the pre-unification settings
-    // branch) did: the push carries the remote list only, and a wholesale
-    // replace would drop requirements/user/managed announcements and let the
-    // prune erase their persisted hide keys. Same disk reads the settings
-    // branch performed; pushes are rare.
-    let requirements = gbuild_shell::config::load_merged_requirements();
-    let user_config = gbuild_shell::config::load_from_disk().ok();
-    let managed_config = gbuild_shell::config::load_managed_config().ok();
-    apply_announcements_update(
-        app,
-        parsed.r#gen,
-        &parsed.announcements,
-        requirements.as_ref(),
-        user_config.as_ref(),
-        managed_config.as_ref(),
-    );
-    true
-}
-
-/// Apply half of [`handle_announcements_update`], with config layers injected
-/// so the merge/prune behavior is unit-testable without disk state.
-/// `resolve_announcements` honors `GBUILD_ANNOUNCEMENTS_OVERRIDE` first, so a
-/// backend push can't reintroduce announcements when the override is set.
-pub(super) fn apply_announcements_update(
-    app: &mut AppView,
-    next_gen: u64,
-    remote: &[gbuild_announcements::RemoteAnnouncement],
-    requirements: Option<&toml::Value>,
-    user_config: Option<&toml::Value>,
-    managed_config: Option<&toml::Value>,
-) {
-    let merged = gbuild_shell::util::config::resolve_announcements(
-        requirements,
-        user_config,
-        managed_config,
-        Some(remote),
-    );
-    let announcements = gbuild_announcements::filter_expired(merged);
-
-    app.announcement = match app.announcement.as_ref() {
-        Some(current) => announcements
-            .iter()
-            .find(|a| *a == current)
-            .cloned()
-            .or_else(|| pick_random_announcement(&announcements)),
-        None => pick_random_announcement(&announcements),
-    };
-    app.active_announcements = announcements;
-    app.announcements_last_gen = next_gen;
-    // Opportunistic per-ID prune on a real update (never per frame) so the hidden set cannot grow unboundedly.
-    if gbuild_announcements::prune_hidden_announcement_ids(
-        &mut app.hidden_announcement_ids,
-        &app.active_announcements,
-    ) {
-        app.pending_effects
-            .push(Effect::PersistAnnouncementsHidden {
-                hidden_ids: app.hidden_announcement_ids.clone(),
-            });
-    }
-    app.sync_session_announcement_slash_gate();
-}
-
-pub(super) fn pick_random_announcement(
-    announcements: &[gbuild_announcements::RemoteAnnouncement],
-) -> Option<gbuild_announcements::RemoteAnnouncement> {
-    if announcements.is_empty() {
-        return None;
-    }
-    use rand::Rng;
-    let idx = rand::rng().random_range(0..announcements.len());
-    announcements.get(idx).cloned()
-}
-
 /// Deserialization type for the `x.ai/settings/update` notification payload.
 ///
 /// This is intentionally a separate struct from `SettingsUpdateNotification` in
@@ -493,8 +401,6 @@ pub(super) struct PagerSettingsUpdate {
     #[serde(default)]
     show_resolved_model: Option<bool>,
     #[serde(default)]
-    sharing_enabled: Option<bool>,
-    #[serde(default)]
     privacy_notice_rollout: Option<bool>,
     #[serde(default)]
     privacy_banner_reshow_days: Option<u64>,
@@ -510,10 +416,6 @@ pub(super) struct PagerSettingsUpdate {
     /// bad value never fails the whole `PagerSettingsUpdate` parse.
     #[serde(default, deserialize_with = "deserialize_settings_update_tags")]
     slash_command_tags: Option<Option<std::collections::BTreeMap<String, String>>>,
-    // `announcements` is deliberately NOT consumed here: every shell writer of
-    // remote_settings also emits gen-ordered `x.ai/announcements/update`
-    // (emit_announcements_if_changed), and a gen-less apply on this path could
-    // clobber a newer push. Single ingest path: handle_announcements_update.
     #[serde(default)]
     gate_message: Option<String>,
     #[serde(default)]

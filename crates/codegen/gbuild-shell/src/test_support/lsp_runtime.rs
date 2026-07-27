@@ -100,8 +100,6 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         models_manager: Default::default(),
         file_tool_overrides: None,
         agent_config: None,
-        gcs_bucket_url: None,
-        gcs_upload_method: None,
         hook_registry: None,
         parent_depth: 0,
         inference_idle_timeout_secs: 600,
@@ -128,7 +126,6 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         parent_skills_config: gbuild_agent::prompt::skills::SkillsConfig::default(),
         parent_compat: gbuild_tools::types::compat::CompatConfig::default(),
         task_completion_reservations: None,
-        synthetic_trace_tx: None,
         task_output_tool_name: gbuild_tools::reminders::task_completion::DEFAULT_TASK_OUTPUT_TOOL
             .to_string(),
         auto_wake_enabled: true,

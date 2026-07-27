@@ -19,7 +19,6 @@ pub use self::persistence::{
     resolve_local_session_any_cwd, session_exists_for_cwd,
 };
 pub use self::result::{Empty, ExtMethodResult};
-pub use self::share::{ShareSessionRequest, ShareSessionResponse};
 pub use prod_mc_cli_chat_proxy_types::feedback_types::{
     ClientType, FeedbackTerminalInfo, RatingType,
 };
@@ -279,19 +278,6 @@ pub enum ClientFsMode {
 pub struct ClientFsConfig {
     pub fs: FsConfig,
     pub mode: ClientFsMode,
-}
-/// Share session request/response types
-pub mod share {
-    /// Request to share a session via URL
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ShareSessionRequest {
-        pub session_id: String,
-    }
-    /// Response containing the shareable URL
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ShareSessionResponse {
-        pub share_url: String,
-    }
 }
 /// Proxy config for the session registry client.
 /// Shared between `acp_session` (slash commands) and `persistence` (title generation).

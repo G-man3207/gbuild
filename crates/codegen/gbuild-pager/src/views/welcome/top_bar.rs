@@ -4,7 +4,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Widget};
 
 use std::path::{Path, PathBuf};
 
@@ -12,31 +11,10 @@ use crate::git_info;
 use crate::render::line_utils::truncate_line;
 use crate::theme::Theme;
 
-pub fn render_top_bar(
-    area: Rect,
-    buf: &mut Buffer,
-    theme: &Theme,
-    announcement: Option<&gbuild_announcements::RemoteAnnouncement>,
-) {
+pub fn render_top_bar(area: Rect, buf: &mut Buffer, theme: &Theme) {
     let line = truncate_line(location_line(theme), area.width as usize);
     let line_width = line.width() as u16;
     buf.set_line(area.x, area.y, &line, line_width.min(area.width));
-
-    if let Some(a) = announcement
-        && let Some(text) = a.message.as_deref()
-        && area.height > 1
-    {
-        let text_style = Style::default().fg(theme.text_primary);
-        let line = Line::from(Span::styled(text, text_style));
-        Paragraph::new(line).render(
-            Rect {
-                y: area.y + 1,
-                height: area.height.saturating_sub(1),
-                ..area
-            },
-            buf,
-        );
-    }
 }
 
 /// Build the `{git branch} {worktree} {cwd}` line for the welcome top bar,

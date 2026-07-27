@@ -187,7 +187,6 @@ mod tests {
         let context = AppCtx {
             models: &models,
             cwd: std::path::Path::new("/tmp"),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: false,
             screen_mode: crate::app::ScreenMode::Inline,

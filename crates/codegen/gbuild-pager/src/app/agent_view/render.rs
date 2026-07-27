@@ -700,21 +700,11 @@ impl AgentView {
         self.in_dashboard_overlay = in_dashboard_overlay;
         let super::BannerSlotParams {
             height: banner_height,
-            announcements: banner_announcements,
-            hidden_ids: hidden_announcement_ids,
             privacy_banner,
             mouse_pos,
             tip,
         } = banner;
-        self.session_banner_active = crate::views::announcements::first_session_announcement(
-            banner_announcements,
-            hidden_announcement_ids,
-        )
-        .is_some();
         self.privacy_banner.active = privacy_banner;
-        self.pinned_upgrade_cta_live =
-            crate::views::announcements::promo_cta(banner_announcements, hidden_announcement_ids)
-                .is_some_and(|(owner, _, _)| !crate::views::announcements::is_dismissible(owner));
         self.frame_occluder_rects.clear();
         self.clear_scrollback_selection_state();
         self.refresh_prompt_suggestion_gate();
@@ -756,9 +746,6 @@ impl AgentView {
                     let _ = std::io::Write::write_all(stderr, esc.as_bytes());
                 });
             }
-            self.hit_announcement_hide.clear();
-            self.hit_announcement_cta.clear();
-            self.hit_upgrade_cta.clear();
             self.privacy_banner.clear_hits();
             return self.draw_subagent_fullscreen(
                 &child_sid.clone(),
@@ -858,11 +845,7 @@ impl AgentView {
         let inner_width = AgentViewLayout::inner_width(area, layout_cfg, compact);
         let banner_height = if banner_height > 0 {
             if let Some(tip_text) = tip {
-                if self.session_banner_active {
-                    banner_height
-                } else {
-                    banner_height.max(crate::tips::render::tip_height(inner_width, tip_text))
-                }
+                banner_height.max(crate::tips::render::tip_height(inner_width, tip_text))
             } else {
                 banner_height
             }
@@ -1446,15 +1429,7 @@ impl AgentView {
             .min()
             .map(|min_x| min_x.saturating_sub(layout.status_bar.x).saturating_sub(1))
             .unwrap_or(layout.status_bar.width);
-        let upgrade_cta =
-            crate::views::announcements::promo_cta(banner_announcements, hidden_announcement_ids);
-        let upgrade_reserve = upgrade_cta.map_or(0u16, |(_, label, _)| {
-            1 + crate::views::announcements::upgrade_cta_reserve(label, None)
-        });
-        let cwd_line = truncate_line(
-            cwd_line,
-            max_cwd_width.saturating_sub(upgrade_reserve) as usize,
-        );
+        let cwd_line = truncate_line(cwd_line, max_cwd_width as usize);
         let cwd_width = cwd_line.width() as u16;
         buf.set_line_safe(
             layout.status_bar.x,
@@ -1470,32 +1445,7 @@ impl AgentView {
             width: visible_path_width,
             height: 1,
         });
-        let mut upgrade_cta_rect = None;
-        if let Some((_owner, label, _url)) = upgrade_cta {
-            let avail = max_cwd_width.saturating_sub(cwd_width);
-            if avail > 1 {
-                let cta_x = layout.status_bar.x + cwd_width;
-                buf.set_span(
-                    cta_x,
-                    layout.status_bar.y,
-                    &Span::styled(" ", Style::default().bg(theme.bg_base)),
-                    1,
-                );
-                upgrade_cta_rect = crate::views::announcements::render_cta_button(
-                    buf,
-                    &theme,
-                    cta_x + 1,
-                    layout.status_bar.y,
-                    avail - 1,
-                    label,
-                    None,
-                    self.hit_upgrade_cta.hovered,
-                );
-            }
-        }
         let dropdown_open = self.prompt.any_dropdown_open();
-        self.hit_upgrade_cta
-            .set_unless_dropdown(upgrade_cta_rect, dropdown_open);
         let mut inline_edit_cursor: Option<(u16, u16)> = None;
         {
             self.sync_pending_user_input_marks();
@@ -2067,8 +2017,6 @@ impl AgentView {
             self.privacy_banner.clear_hits();
         }
         if privacy_banner_owns_slot {
-            self.hit_announcement_hide.clear();
-            self.hit_announcement_cta.clear();
             let rects = crate::views::privacy_banner::render(layout.banner, buf, &theme, mouse_pos);
             self.privacy_banner
                 .hit_accept
@@ -2080,8 +2028,6 @@ impl AgentView {
                 .hit_legal
                 .set_unless_dropdown(Some(rects.legal), dropdown_open);
         } else if let Some((ref msg, remaining)) = self.mode_switch_banner {
-            self.hit_announcement_hide.clear();
-            self.hit_announcement_cta.clear();
             if layout.banner.height > 0 && layout.banner.width > 4 {
                 let bg = theme.bg_base;
                 for col in 0..layout.banner.width {
@@ -2120,29 +2066,12 @@ impl AgentView {
                 }
             }
         } else {
-            let announcement_banner_owns_slot =
-                self.session_banner_active && layout.banner.height > 0;
-            let banner_hits = crate::views::announcements::render_banner(
-                layout.banner,
-                buf,
-                banner_announcements,
-                hidden_announcement_ids,
-                self.hit_announcement_hide.hovered,
-                self.hit_announcement_cta.hovered,
-                self.permission_queue.is_empty(),
-            );
-            self.hit_announcement_hide
-                .set_unless_dropdown(banner_hits.hide, dropdown_open);
-            self.hit_announcement_cta
-                .set_unless_dropdown(banner_hits.cta, dropdown_open);
-            if !announcement_banner_owns_slot
-                && banner_height > 0
+            if banner_height > 0
                 && let Some(tip_text) = tip
             {
                 crate::tips::render::render_tip(layout.banner, buf, tip_text);
             }
-            if !announcement_banner_owns_slot
-                && tip_row_visible
+            if tip_row_visible
                 && let Some(line) = self.ephemeral_tip.line()
             {
                 crate::tips::render::render_ephemeral_tip(layout.banner, buf, line);
@@ -4269,16 +4198,6 @@ impl AgentView {
                         })
                     })
                     .collect();
-                self.push_promo_cta_link_span(
-                    link_spans_out,
-                    banner_announcements,
-                    hidden_announcement_ids,
-                );
-                self.push_upgrade_cta_link_span(
-                    link_spans_out,
-                    banner_announcements,
-                    hidden_announcement_ids,
-                );
             }
         }
         let on_link = self.hovered_link_idx.is_some();

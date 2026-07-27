@@ -18,12 +18,6 @@ pub fn extract_builtin_files(gbuild_home: &std::path::Path) {
 
     let _ = std::fs::create_dir_all(gbuild_home);
 
-    // Clean up cached changelog files from previous version so
-    // /release-notes fetches fresh content for the new version.
-    for stale in &["CHANGELOG.json", "CHANGELOG.md"] {
-        let _ = std::fs::remove_file(gbuild_home.join(stale));
-    }
-
     for &(filename, content) in BUILTIN_FILES {
         if let Err(e) = std::fs::write(gbuild_home.join(filename), content) {
             tracing::debug!(error = %e, filename, "Failed to extract built-in file");

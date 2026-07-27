@@ -615,39 +615,6 @@ pub(super) fn make_app_two_agents() -> AppView {
     assert_eq!(app.active_view, ActiveView::Agent(AgentId(1)));
     app
 }
-pub(super) fn critical_announcement(
-    id: &str,
-) -> gbuild_announcements::RemoteAnnouncement {
-    gbuild_announcements::RemoteAnnouncement {
-        id: Some(id.into()),
-        title: Some(format!("{id} title")),
-        message: Some(format!("{id} message")),
-        severity: Some("critical".into()),
-        ..Default::default()
-    }
-}
-pub(super) fn announcements_update_notif(
-    r#gen: u64,
-    announcements: &[gbuild_announcements::RemoteAnnouncement],
-) -> acp::ExtNotification {
-    acp::ExtNotification::new(
-        "x.ai/announcements/update",
-        std::sync::Arc::from(
-            serde_json::value::to_raw_value(
-                    &serde_json::json!({ "gen": r#gen, "announcements": announcements }),
-                )
-                .unwrap(),
-        ),
-    )
-}
-/// Id of the item the banner slot currently selects (None = banner closed).
-pub(super) fn shown_banner_id(app: &AppView) -> Option<String> {
-    crate::views::announcements::first_session_announcement(
-            &app.active_announcements,
-            &app.hidden_announcement_ids,
-        )
-        .and_then(|a| a.id.clone())
-}
 pub(super) fn make_created_ext_notif(
     session_id: &str,
     task_id: &str,
@@ -2096,7 +2063,6 @@ mod permissions;
 mod session_events;
 mod follow_ups;
 mod settings;
-mod announcements;
 mod scheduled_tasks;
 mod queue_and_adoption;
 mod plan_mode;

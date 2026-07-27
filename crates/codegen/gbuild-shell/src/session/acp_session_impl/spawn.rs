@@ -234,9 +234,6 @@ pub(crate) async fn spawn_session_actor(
     codebase_indexes: std::sync::Arc<parking_lot::Mutex<CodebaseIndexManager>>,
     code_nav_enabled: bool,
     fs_watch_caps: fs_watch::FsWatchCapabilities,
-    feedback_proxy_url: Option<String>,
-    feedback_user_token: Option<String>,
-    feedback_alpha_test_key: Option<String>,
     deployment_key: Option<String>,
     client_terminal_capable: bool,
     client_fs_capable: bool,
@@ -582,15 +579,6 @@ pub(crate) async fn spawn_session_actor(
         gbuild_tools::reminders::task_completion::TaskWakeSuppressed::default();
     tool_context.task_completion_reservations = Some(task_completion_reservations.clone());
     tool_context.task_wake_suppressed = Some(task_wake_suppressed.clone());
-    let synthetic_trace_tx_shared: std::sync::Arc<
-        std::sync::Mutex<
-            Option<
-                tokio::sync::mpsc::UnboundedSender<crate::upload::turn::SyntheticTurnTraceRequest>,
-            >,
-        >,
-    > = std::sync::Arc::new(std::sync::Mutex::new(None));
-    *synthetic_trace_tx_shared.lock().unwrap() = tool_context.synthetic_trace_tx.clone();
-    tool_context.synthetic_trace_tx_shared = Some(synthetic_trace_tx_shared.clone());
     let mut tool_context = tool_context.with_file_state_handle(file_state_handle);
     let index_root_for_session =
         gbuild_workspace::session::git::find_git_root_from_path(tool_context.cwd.as_path())
@@ -640,7 +628,6 @@ pub(crate) async fn spawn_session_actor(
             session_cmd_tx: cmd_tx.clone(),
             task_completion_reservations: task_completion_reservations.clone(),
             task_wake_suppressed: task_wake_suppressed.clone(),
-            synthetic_trace_tx: synthetic_trace_tx_shared.clone(),
             task_output_tool_name: task_output_tool_name.clone(),
             read_tool_name: read_tool_name.clone(),
             auto_wake_enabled: tool_context.auto_wake_enabled,
@@ -1120,22 +1107,6 @@ pub(crate) async fn spawn_session_actor(
     );
     persist_chat_history_jsonl_sync(&session_info, &conversation);
     chat_state_handle.replace_conversation(conversation);
-    let feedback_client = feedback_proxy_url.map(|base_url| {
-        let mut client =
-            crate::agent::feedback_client::FeedbackClient::new(base_url, feedback_user_token)
-                .with_alpha_test_key(feedback_alpha_test_key)
-                .with_deployment_key(deployment_key);
-        if let Some(am) = auth_manager.as_ref() {
-            client = client.with_auth_manager(am.clone());
-        }
-        client
-    });
-    let has_feedback_client = feedback_client.is_some();
-    tracing::info!(
-        session_id = %session_info.id.0,
-        has_feedback_client = has_feedback_client,
-        "Creating feedback manager"
-    );
     let feedback_client_type = match client_type {
         ClientType::GBuildTui => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Tui,
         ClientType::GrokWeb => prod_mc_cli_chat_proxy_types::feedback_types::ClientType::Web,
@@ -1165,7 +1136,6 @@ pub(crate) async fn spawn_session_actor(
     }
     let feedback_manager = Arc::new(FeedbackManager::new(
         session_info.id.0.to_string(),
-        feedback_client,
         feedback_config,
     ));
     let signals_handle = feedback_manager.signals_handle();
@@ -1182,11 +1152,6 @@ pub(crate) async fn spawn_session_actor(
     }
     signals_handle.set_primary_model(&primary_model_id);
     signals_handle.set_tracing_config(inference_idle_timeout_secs);
-    let sync_loop_cancel = if has_feedback_client {
-        Some(tokio_util::sync::CancellationToken::new())
-    } else {
-        None
-    };
     let force_compact = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let resolved_workspace_root = gbuild_workspace::session::git::find_git_root_from_path(
         std::path::Path::new(&session_info.cwd),
@@ -1254,7 +1219,6 @@ pub(crate) async fn spawn_session_actor(
         .iter()
         .map(|e| e.to_string())
         .collect();
-    let upload_queue = Arc::new(std::sync::OnceLock::new());
     let (goal_update_tx, goal_update_rx) = tokio::sync::mpsc::unbounded_channel::<
         gbuild_tools::implementations::gbuild::update_goal::UpdateGoalEnvelope,
     >();
@@ -1624,8 +1588,6 @@ pub(crate) async fn spawn_session_actor(
         client_identifier: session_client_identifier.clone(),
         origin_client: origin_client.clone(),
         feedback_manager: feedback_manager.clone(),
-        upload_queue: upload_queue.clone(),
-        sync_loop_cancel: sync_loop_cancel.clone(),
         agent: std::cell::RefCell::new(agent),
         last_reported_branch: Arc::new(Mutex::new(None)),
         git_head_enabled: fs_watch_caps.git_head,
@@ -1735,7 +1697,6 @@ pub(crate) async fn spawn_session_actor(
         image_describe_cache: Arc::new(crate::session::image_describe::ImageDescribeCache::new()),
         subagent_token_records: parking_lot::Mutex::new(HashMap::new()),
         workspace_ops: workspace_ops.clone(),
-        trace_config_template: std::cell::RefCell::new(None),
     });
     if goal_was_restored {
         let current_tokens = session.chat_state_handle.get_total_tokens().await as i64;
@@ -1910,19 +1871,10 @@ pub(crate) async fn spawn_session_actor(
             }
         });
     }
-    if let Some(cancel) = sync_loop_cancel {
-        tracing::info!(
-            session_id = %session_info.id.0,
-            "Spawning feedback sync loop"
-        );
-        let fm = feedback_manager.clone();
-        tokio::spawn(async move {
-            fm.run_sync_loop(cancel).await;
-        });
-    } else {
+    {
         tracing::debug!(
             session_id = %session_info.id.0,
-            "No feedback client available, skipping sync loop"
+            "No feedback backend in this fork, no sync loop"
         );
     }
     {
@@ -2031,7 +1983,7 @@ pub(crate) async fn spawn_session_actor(
         let telemetry_enabled = session.telemetry_enabled;
         tokio::spawn(async move {
             let ev = metrics.into_event(hooks).await;
-            gbuild_telemetry::session_ctx::log_event_dual(telemetry_enabled, ev);
+            gbuild_telemetry::session_ctx::log_event(ev);
         });
     }
     tokio::task::spawn_local(async move {
@@ -2068,7 +2020,6 @@ pub(crate) async fn spawn_session_actor(
             initial_client_mcp_servers,
             display_cwd: None,
             feedback_manager: feedback_manager.clone(),
-            upload_queue: upload_queue.clone(),
             upload_failures_since_success: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             tool_context: tool_context_for_handle,
             model_id: session_model_id,
@@ -2163,9 +2114,6 @@ pub(crate) async fn spawn_session_on_thread(
     codebase_indexes: std::sync::Arc<parking_lot::Mutex<CodebaseIndexManager>>,
     code_nav_enabled: bool,
     fs_watch_caps: fs_watch::FsWatchCapabilities,
-    feedback_proxy_url: Option<String>,
-    feedback_user_token: Option<String>,
-    feedback_alpha_test_key: Option<String>,
     deployment_key: Option<String>,
     client_terminal_capable: bool,
     client_fs_capable: bool,
@@ -2334,9 +2282,6 @@ pub(crate) async fn spawn_session_on_thread(
                         codebase_indexes,
                         code_nav_enabled,
                         fs_watch_caps,
-                        feedback_proxy_url,
-                        feedback_user_token,
-                        feedback_alpha_test_key,
                         deployment_key,
                         client_terminal_capable,
                         client_fs_capable,

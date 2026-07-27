@@ -30,12 +30,8 @@ pub mod session_ctx;
 pub mod session_metrics;
 pub mod unified_log;
 
-pub use client::{
-    Metadata, TelemetryClient, UserContext, init, init_if_needed, is_enabled,
-    is_session_metrics_enabled,
-};
+pub use client::{init, init_if_needed, is_enabled, is_session_metrics_enabled};
 pub use events::TelemetryEvent;
 pub use session_ctx::{
-    EmitterOrigin, TelemetryCtx, emit_event, emit_event_with_origin, log_event, log_session_event,
-    log_session_event_with_origin, with_session_ctx,
+    TelemetryCtx, log_event, log_session_event, with_session_ctx,
 };

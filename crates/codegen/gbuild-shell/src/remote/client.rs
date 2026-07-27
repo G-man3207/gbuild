@@ -7,13 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 const GROK_CODE_BACKEND_URL: &str = "https://code.grok.com";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-const GROK_CODE_WEB_URL: &str = "https://grok.com";
-/// Build a share URL from a permission ID
-pub fn share_url(permission_id: &str) -> String {
-    let web_url =
-        std::env::var("GROK_CODE_WEB_URL").unwrap_or_else(|_| GROK_CODE_WEB_URL.to_string());
-    format!("{}/build/share/{}", web_url, permission_id)
-}
 fn add_cli_chat_proxy_headers_blocking(
     builder: reqwest::blocking::RequestBuilder,
     auth: &GrokAuth,
@@ -207,11 +200,6 @@ async fn fetch_bundle_inner(
     Ok(FetchedBundle::Legacy(bundle))
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareResponse {
-    pub permission_id: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadDataResponse {
     pub messages: Option<Vec<LoadedMessage>>,
     pub session: Option<SessionInfo>,
@@ -348,39 +336,6 @@ impl BackendClient {
     }
     /// Upload session and create share link.
     ///
-    /// The session data (`save_session_data`) is sent inline to the backend.
-    /// If the backend responds with 413 (payload too large), the error is
-    /// logged as a warning and the share continues — the caller is expected
-    /// to have already uploaded the data to GCS via a signed URL as a
-    /// fallback.
-    pub async fn share_session(
-        &self,
-        session: &ExportedSession,
-        agent_id: &str,
-    ) -> Result<String, BackendError> {
-        self.upsert_session(&session.session_id, &session.metadata, agent_id)
-            .await?;
-        match self
-            .save_session_data(
-                &session.session_id,
-                &session.messages,
-                Some(&session.metadata),
-            )
-            .await
-        {
-            Ok(()) => {}
-            Err(BackendError::RequestFailed { status: 413, .. }) => {
-                tracing::warn!(
-                    session_id = %session.session_id,
-                    "Backend returned 413 for save_session_data; \
-                     session data should already be in GCS via signed URL"
-                );
-            }
-            Err(e) => return Err(e),
-        }
-        let share_response = self.create_share_link(&session.session_id).await?;
-        Ok(share_url(&share_response.permission_id))
-    }
     /// Sync session to backend without creating a share link.
     pub async fn sync_session(
         &self,
@@ -527,17 +482,6 @@ impl BackendClient {
         let data: LoadDataResponse = response.json().await?;
         Ok(data)
     }
-    pub async fn create_share_link(&self, session_id: &str) -> Result<ShareResponse, BackendError> {
-        let url = format!("{}/sessions/{}/share", self.base_url, session_id);
-        let response = self.send_with_auth(self.reqwest_client.post(&url)).await?;
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            return Err(BackendError::RequestFailed { status, body });
-        }
-        let share_response: ShareResponse = response.json().await?;
-        Ok(share_response)
-    }
     pub async fn delete_session_data(&self, session_id: &str) -> Result<(), BackendError> {
         let url = format!("{}/sessions/{}/data", self.base_url, session_id);
         let response = self
@@ -550,59 +494,6 @@ impl BackendClient {
         }
         Ok(())
     }
-}
-/// Fetch remote settings from cli-chat-proxy `GET /v1/settings`.
-///
-/// This is a blocking call intended for use in the early prefetch thread
-/// (`std::thread::spawn`, no tokio runtime). Returns `None` on any error
-/// so startup is never blocked by a settings fetch failure.
-///
-/// Retries up to 2 times (3 attempts total) on transient errors (5xx,
-/// network). 4xx and parse errors are not retried.
-pub fn fetch_settings_blocking(
-    cli_chat_proxy_base_url: &str,
-    auth: &GrokAuth,
-    alpha_test_key: Option<&str>,
-) -> Option<crate::util::config::RemoteSettings> {
-    let client = crate::http::shared_blocking_client();
-    let url = format!("{}/settings", cli_chat_proxy_base_url);
-    for attempt in 0u64..3 {
-        if attempt > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(500 * attempt));
-        }
-        let request =
-            add_cli_chat_proxy_headers_blocking(client.get(&url), auth, alpha_test_key, &url);
-        match request.send() {
-            Ok(resp) if resp.status().is_success() => match resp.json() {
-                Ok(settings) => {
-                    tracing::debug!("Fetched remote settings from cli-chat-proxy");
-                    return Some(settings);
-                }
-                Err(e) => {
-                    tracing::warn!(attempt, "Failed to parse settings response: {e}");
-                    return None;
-                }
-            },
-            Ok(resp) if resp.status().is_server_error() => {
-                tracing::warn!(
-                    attempt,
-                    status = resp.status().as_u16(),
-                    "Settings fetch server error, retrying"
-                );
-                continue;
-            }
-            Ok(resp) => {
-                tracing::warn!(status = resp.status().as_u16(), "Failed to fetch settings");
-                return None;
-            }
-            Err(e) => {
-                tracing::warn!(attempt, "Settings fetch network error: {e}");
-                continue;
-            }
-        }
-    }
-    tracing::error!("Settings fetch failed after 3 attempts");
-    None
 }
 #[derive(Deserialize)]
 struct LoginConfigResponse {
@@ -1935,42 +1826,6 @@ mod tests {
     }
     /// REGRESSION: `gbuild setup` must send the deployment key to
     /// the proxy, never the inference endpoint.
-    #[test]
-    #[serial_test::serial]
-    fn deployment_config_url_uses_cli_chat_proxy_when_not_overridden() {
-        use crate::agent::config::EndpointsConfig;
-        for k in [
-            "GBUILD_CLI_CHAT_PROXY_BASE_URL",
-            "GBUILD_MANAGED_CONFIG_URL",
-            "GBUILD_XAI_API_BASE_URL",
-        ] {
-            unsafe { std::env::remove_var(k) };
-        }
-        unsafe { std::env::set_var("GBUILD_DEPLOYMENT_KEY", "xai-token-ENTERPRISE") };
-        let managed: toml::Value = toml::from_str(
-            r#"[endpoints]
-            deployment_key = "xai-token-ENTERPRISE"
-            xai_api_base_url = "https://inference.acme-corp.example/xai/v1""#,
-        )
-        .unwrap();
-        let url = EndpointsConfig::from_config_value(&managed).resolve_managed_config_url();
-        assert_eq!(url, "https://cli-chat-proxy.grok.com/v1/deployment/config");
-        assert!(
-            !url.contains("acme-corp"),
-            "deployment key would be sent to the inference host: {url}"
-        );
-        let pinned: toml::Value = toml::from_str(
-            r#"[endpoints]
-            xai_api_base_url = "https://inference.acme-corp.example/xai/v1"
-            cli_chat_proxy_base_url = "https://proxy.acme-corp.example/v1""#,
-        )
-        .unwrap();
-        assert_eq!(
-            EndpointsConfig::from_config_value(&pinned).resolve_managed_config_url(),
-            "https://proxy.acme-corp.example/v1/deployment/config"
-        );
-        unsafe { std::env::remove_var("GBUILD_DEPLOYMENT_KEY") };
-    }
     #[derive(Clone)]
     struct DualBundleServerState {
         archive_status: StatusCode,

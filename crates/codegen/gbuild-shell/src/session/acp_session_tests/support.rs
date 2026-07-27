@@ -319,8 +319,6 @@ pub(crate) async fn create_test_actor_ex(
         client_identifier: None,
         origin_client: None,
         feedback_manager: Arc::new(FeedbackManager::local_only("test-session")),
-        upload_queue: Arc::new(OnceLock::new()),
-        sync_loop_cancel: None,
         agent: std::cell::RefCell::new(test_agent_default().await),
         last_reported_branch: std::sync::Arc::new(parking_lot::Mutex::new(None)),
         git_head_enabled: false,
@@ -404,7 +402,6 @@ pub(crate) async fn create_test_actor_ex(
         image_describe_cache: Arc::new(crate::session::image_describe::ImageDescribeCache::new()),
         subagent_token_records: parking_lot::Mutex::new(HashMap::new()),
         workspace_ops: gbuild_workspace::WorkspaceOps::for_test(),
-        trace_config_template: std::cell::RefCell::new(None),
     };
     if let Some(reservations) = actor.tool_context.task_completion_reservations.clone() {
         actor
@@ -456,8 +453,6 @@ pub(crate) fn user_item_with_rx(
         prompt_id: id.to_string(),
         prompt_blocks: vec![acp::ContentBlock::Text(acp::TextContent::new(text.clone()))],
         prompt_mode: PromptMode::Agent,
-        trace_gcs_config: None,
-        artifact_tracker: None,
         client_identifier: Some(owner.to_string()),
         screen_mode: None,
         verbatim: false,
@@ -498,8 +493,6 @@ pub(crate) fn input_with_origin_rx(
         prompt_id: prompt_id.to_string(),
         prompt_blocks: vec![],
         prompt_mode: PromptMode::Agent,
-        trace_gcs_config: None,
-        artifact_tracker: None,
         client_identifier: None,
         screen_mode: None,
         verbatim,

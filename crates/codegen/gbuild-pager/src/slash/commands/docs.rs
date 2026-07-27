@@ -200,7 +200,6 @@ mod tests {
         let ctx = AppCtx {
             models: &models,
             cwd,
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,

@@ -927,19 +927,8 @@ pub async fn run_cli_login(
         .await?
     };
 
-    // Sync this principal's config now rather than waiting for the background
-    // tick. Stay quiet about absence/failure during login — confirm only when
-    // config was actually applied; `gbuild setup` reports the no-config case.
-    let outcome = crate::managed_config::post_login_sync(Some(authenticated)).await;
-    match outcome {
-        crate::managed_config::ManagedConfigSync::Updated { is_team: true } => {
-            eprintln!("Applied your team's managed configuration.");
-        }
-        crate::managed_config::ManagedConfigSync::Updated { is_team: false } => {
-            eprintln!("Applied your deployment's managed configuration.");
-        }
-        _ => {}
-    }
+    // Clear any prior principal's synced files if this login displaced them.
+    crate::managed_config::clear_orphan();
     Ok(())
 }
 

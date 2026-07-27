@@ -1485,8 +1485,6 @@ impl SessionActor {
             mode,
             None,
             None,
-            None,
-            None,
             false,
             None,
             false,

@@ -1,4 +1,4 @@
-//! Models, announcements, settings, campaigns, tips, and modal PTY coverage.
+//! Models, settings, campaigns, tips, and modal PTY coverage.
 //!
 //! All cases are ignored for ordinary Cargo runs; Bazel opts in and caps this
 //! process-heavy family at four concurrent libtest workers.
@@ -18,8 +18,6 @@ mod agent_type_mismatch_yes_starts_new_session;
 mod campaign_nudges_default_until_dismissed_by_model_pick;
 #[path = "pty_e2e/campaign_remote_settings_nudge_and_dismiss.rs"]
 mod campaign_remote_settings_nudge_and_dismiss;
-#[path = "pty_e2e/critical_announcement_session_banner_pty.rs"]
-mod critical_announcement_session_banner_pty;
 #[path = "pty_e2e/dashboard_overlay_tab_esc_backout_and_ctrl_backslash.rs"]
 mod dashboard_overlay_tab_esc_backout_and_ctrl_backslash;
 #[path = "pty_e2e/extensions_modal_copy_hints_pty.rs"]

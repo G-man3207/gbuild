@@ -3,7 +3,6 @@
 //! Each command lives in its own submodule. This module re-exports
 //! command structs and provides `builtin_commands()` for registry
 //! construction.
-pub mod announcements;
 pub mod btw;
 pub mod cd;
 pub mod compact;
@@ -45,7 +44,6 @@ pub mod plugin;
 pub mod privacy;
 pub mod queue;
 pub mod recap;
-pub mod release_notes;
 pub mod remember;
 pub mod rename;
 pub mod resume;
@@ -54,7 +52,6 @@ pub mod screen_mode_switch;
 pub mod scroll_debug;
 pub mod session_info;
 pub mod settings_cmd;
-pub mod share;
 pub mod tasks;
 pub mod theme;
 pub mod timeline;
@@ -102,14 +99,12 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(plugin::PluginsCommand),
         Arc::new(plugin::MarketplaceCommand),
         Arc::new(plugin::SkillsCommand),
-        Arc::new(share::ShareCommand),
         Arc::new(session_info::SessionInfoCommand),
         Arc::new(rename::RenameCommand),
         Arc::new(dashboard::DashboardCommand),
         Arc::new(cd::CdCommand),
         Arc::new(theme::ThemeCommand),
         Arc::new(feedback::FeedbackCommand),
-        Arc::new(announcements::AnnouncementsCommand),
         Arc::new(remember::RememberCommand),
         Arc::new(plan::PlanCommand),
         Arc::new(view_plan::ViewPlanCommand),
@@ -136,7 +131,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(usage::UsageCommand),
         Arc::new(queue::QueueCommand),
         Arc::new(tasks::TasksCommand),
-        Arc::new(release_notes::ReleaseNotesCommand),
         Arc::new(tutorial::TutorialCommand),
         Arc::new(config_agents::ConfigAgentsCommand),
         Arc::new(personas::PersonasCommand),
@@ -242,11 +236,9 @@ mod tests {
             "agents",
             "agents-dashboard",
             "always-approve",
-            "announcements",
             "auto",
             "btw",
             "cd",
-            "changelog",
             "chat",
             "clear",
             "cloud",
@@ -305,7 +297,6 @@ mod tests {
             "queue",
             "quit",
             "recap",
-            "release-notes",
             "remember",
             "rename",
             "resume",
@@ -314,7 +305,6 @@ mod tests {
             "session-info",
             "sessions",
             "settings",
-            "share",
             "show-plan",
             "skills",
             "summarize",
@@ -514,7 +504,6 @@ mod tests {
         let ctx = crate::slash::command::AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
@@ -539,7 +528,6 @@ mod tests {
         let ctx = crate::slash::command::AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
@@ -622,7 +610,6 @@ mod tests {
         let mut ctx = crate::slash::command::AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
@@ -638,7 +625,6 @@ mod tests {
         let mut ctx = crate::slash::command::AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
@@ -704,7 +690,6 @@ mod tests {
         let ctx = crate::slash::command::AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
-            has_session_announcements: false,
             billing_surface_visible: true,
             workflows_available: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,

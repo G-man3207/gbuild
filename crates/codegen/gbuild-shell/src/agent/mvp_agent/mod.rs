@@ -53,7 +53,6 @@ use tokio::sync::oneshot;
 use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use crate::agent::auth_method;
 use crate::agent::config::{self, Config as AgentConfig, ModelEntry, resolve_credentials};
-use crate::agent::feedback_client::FeedbackClient;
 use crate::agent::models::{resolve_catalog_key, selectable_catalog_key_for_persisted};
 use crate::agent::session_config;
 use gbuild_sampling_types::{
@@ -80,16 +79,6 @@ use crate::session::{
 };
 use crate::terminal::{AcpTerminalRunner, TerminalRunner};
 use crate::tools::ToolContext;
-use crate::upload::manifest::write_error_manifest;
-use crate::upload::trace::{
-    GCS_SCHEMA_VERSION, PromptMetadata, TurnResultMetadata,
-    build_chat_history_session_state, local_sandbox_telemetry, upload_full_prompt_txt,
-    upload_harness_session_archive, upload_images, upload_metadata, upload_plugin_state,
-    upload_session_state, upload_turn_messages, upload_turn_result, upload_unified_log,
-};
-use crate::upload::turn::{
-    PromptTraceContext, UploadWait, complete_prompt_trace, spawn_upload_task,
-};
 use crate::upload::turn::{
     apply_yolo_mode_to_matching_sessions, lookup_session_model,
     parse_agent_profile_from_meta,
@@ -494,13 +483,11 @@ pub(crate) fn build_prompt_response_meta(
 #[derive(serde::Serialize)]
 struct SettingsUpdateNotification {
     show_resolved_model: Option<bool>,
-    sharing_enabled: Option<bool>,
     privacy_notice_rollout: Option<bool>,
     privacy_banner_reshow_days: Option<u64>,
     session_picker_grouped: Option<bool>,
     tips: Option<Vec<String>>,
     slash_command_tags: Option<std::collections::BTreeMap<String, String>>,
-    announcements: Option<Vec<gbuild_announcements::RemoteAnnouncement>>,
     gate_message: Option<String>,
     gate_url: Option<String>,
     gate_label: Option<String>,
@@ -512,63 +499,6 @@ struct SettingsUpdateNotification {
     group_tool_verbs: Option<bool>,
     collapsed_edit_blocks: Option<bool>,
     subscription_watch_interval_secs: Option<u64>,
-}
-/// When the announcements push gate emits despite an unchanged visible list.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum AnnouncementsPushMode {
-    /// Push only when the visible list differs from the last emitted one
-    /// (pollers and background settings refreshers).
-    IfChanged,
-    /// Also re-push an unchanged non-empty list: a freshly attached client
-    /// (watermark 0) has no other way to learn it (per-client initialize).
-    SeedNewClient,
-    /// Always push, even unchanged or empty: the pager re-merges its local
-    /// config-layer (requirements/user/managed TOML) announcements only on an
-    /// accepted push, so `/new` uses this to surface mid-session local edits.
-    Force,
-}
-/// Pure decision half of the announcements push gate: the visible (expiry-
-/// filtered at `now`) stored list vs the last list actually emitted to
-/// clients. `Some(list)` = push `list` and make it the new baseline (the
-/// baseline advances only once the push is accepted).
-///
-/// Diffing against the last-EMITTED list (not against storage at the same
-/// instant) is what lets every baseline writer share one gate, and it makes a
-/// pure expiry crossing observable: an item that was live at the last emit
-/// and has since passed `expires_at` shrinks `current` vs the baseline, so
-/// clients get exactly one clearing push. An addition that is already expired
-/// on arrival never enters `current` and stays silent.
-///
-/// `mode` decides when an unchanged list still pushes — see
-/// [`AnnouncementsPushMode`].
-fn announcements_push_payload(
-    stored: Option<&[gbuild_announcements::RemoteAnnouncement]>,
-    last_emitted: &[gbuild_announcements::RemoteAnnouncement],
-    now: chrono::DateTime<chrono::Utc>,
-    mode: AnnouncementsPushMode,
-) -> Option<Vec<gbuild_announcements::RemoteAnnouncement>> {
-    let current = gbuild_announcements::filter_expired_at(
-        stored.map(|s| s.to_vec()).unwrap_or_default(),
-        now,
-    );
-    let push = match mode {
-        AnnouncementsPushMode::IfChanged => current.as_slice() != last_emitted,
-        AnnouncementsPushMode::SeedNewClient => {
-            current.as_slice() != last_emitted || !current.is_empty()
-        }
-        AnnouncementsPushMode::Force => true,
-    };
-    push.then_some(current)
-}
-/// Override with `GBUILD_ANNOUNCEMENTS_REFRESH_INTERVAL_SECS`. Clamped to
-/// >= 1s: `tokio::time::interval` panics on a zero period.
-fn announcements_refresh_interval() -> std::time::Duration {
-    if let Ok(s) = std::env::var("GBUILD_ANNOUNCEMENTS_REFRESH_INTERVAL_SECS")
-        && let Ok(secs) = s.parse::<u64>()
-    {
-        return std::time::Duration::from_secs(secs.max(1));
-    }
-    std::time::Duration::from_secs(5 * 60)
 }
 /// Reason why a client is not eligible to use codebase indexing.
 ///
@@ -694,12 +624,6 @@ pub struct MvpAgent {
     /// Per-session YOLO tracking lives in SessionHandle.yolo_mode.
     default_yolo_mode: bool,
     default_auto_mode: bool,
-    /// `Send` mirror of `cfg.is_trace_upload_enabled()` for the per-session
-    /// live collection gates (`cfg` is `!Send`; the gates run on the tokio
-    /// pool). Kept current by
-    /// [`Self::sync_collection_config_gate`] on every mid-session
-    /// `remote_settings` rewrite.
-    pub(crate) trace_upload_live: Arc<std::sync::atomic::AtomicBool>,
     /// Memory system configuration (None when --experimental-memory not set).
     memory_config: Option<crate::config::MemoryConfig>,
     /// Optional channel to the leader's `ConfigFileWatcher` for dynamic
@@ -851,24 +775,6 @@ pub struct MvpAgent {
     /// once (on the first `spawn_and_register_session`). See
     /// `ensure_session_supervisor`.
     supervisor_started: std::cell::Cell<bool>,
-    /// Last value handed out by `next_announcements_gen` (single-threaded
-    /// LocalSet, so a plain `Cell` suffices). LEADER-SAFE(shared): one
-    /// agent-wide push stream.
-    announcements_gen: std::cell::Cell<u64>,
-    /// Announcements list last actually emitted via `x.ai/announcements/update`
-    /// (expiry-filtered), the diff baseline for `emit_announcements`.
-    /// Owned by the emit gate — full-settings refreshes move `remote_settings`
-    /// without touching this, so their changes still get pushed on the next
-    /// gate call. LEADER-SAFE(shared): one agent-wide push stream.
-    last_emitted_announcements: RefCell<Vec<gbuild_announcements::RemoteAnnouncement>>,
-    /// Idempotency guard: the periodic announcements refresh task is spawned
-    /// at most once (on the first `initialize`). See
-    /// `spawn_announcements_refresh`.
-    announcements_refresh_started: std::cell::Cell<bool>,
-    /// Threshold jemalloc heap-profile monitor (agent process only).
-    heap_profile_monitor: RefCell<crate::heap_profile::HeapProfileMonitor>,
-    /// Idempotency guard for the heap-profile poll / kill-switch loop.
-    heap_profile_started: std::cell::Cell<bool>,
     /// Test-only spy recording every session id whose cloud replica was
     /// finalized via `finalize_session_replica`. Lets the no-evict tests assert
     /// that `finalize()` does NOT fire on a mere client disconnect (only on a
@@ -1240,7 +1146,6 @@ impl Drop for SessionLoadGuard<'_> {
     }
 }
 mod code_nav;
-mod heap_profile;
 mod session_lifecycle;
 mod subagent_coordinator;
 mod agent_ops;
@@ -1814,22 +1719,6 @@ impl MvpAgent {
                 }),
                 ),
             );
-            if let Some(settings) = unblocked.settings {
-                let remote_was_absent = self.cfg.borrow().remote_settings.is_none();
-                {
-                    let mut cfg = self.cfg.borrow_mut();
-                    cfg.remote_settings = Some(settings);
-                    crate::agent::config::apply_remote_settings_side_effects(
-                        cfg.remote_settings.as_ref(),
-                    );
-                }
-                self.sync_collection_config_gate();
-                self.emit_announcements(AnnouncementsPushMode::IfChanged);
-                self.reconfigure_heap_profile_monitor();
-                if remote_was_absent {
-                    self.spawn_auto_worktree_gc();
-                }
-            }
             if crate::util::config::resolve_remote_fetch_enabled()
                 && !settings_allow_access(self.cfg.borrow().remote_settings.as_ref())
             {
@@ -2005,51 +1894,6 @@ impl MvpAgent {
             });
         AuthenticateResponse::new().meta(meta)
     }
-    /// Fetch remote settings after authentication when early prefetch had none.
-    /// Notifies the pager so soft-default permission_mode applies post-login.
-    pub(super) async fn maybe_fetch_post_auth_settings(&self) {
-        if self.cfg.borrow().remote_settings.is_some() {
-            return;
-        }
-        let Some(auth) = self.auth_manager.current() else {
-            return;
-        };
-        let is_xai_auth = auth.is_xai_auth();
-        let Some(settings) = self.fetch_remote_settings(auth).await else {
-            return;
-        };
-        tracing::info!("post-auth remote_settings fetch succeeded");
-        {
-            let mut cfg = self.cfg.borrow_mut();
-            cfg.remote_settings = Some(settings);
-            crate::agent::config::apply_remote_settings_side_effects(
-                cfg.remote_settings.as_ref(),
-            );
-            if cfg.storage_mode == StorageMode::Local
-                && cfg.mode != crate::agent::config::AgentMode::Generic
-            {
-                cfg.storage_mode = StorageMode::resolve(
-                    None,
-                    cfg.remote_settings.as_ref(),
-                );
-                if cfg.storage_mode == StorageMode::Writeback && !is_xai_auth {
-                    cfg.storage_mode = StorageMode::Local;
-                }
-            }
-            if let Some(v) = cfg
-                .remote_settings
-                .as_ref()
-                .and_then(|s| s.path_not_found_hints)
-            {
-                cfg.path_not_found_hints = v;
-            }
-        }
-        self.sync_collection_config_gate();
-        self.emit_settings_update_notification();
-        self.emit_announcements(AnnouncementsPushMode::IfChanged);
-        self.reconfigure_heap_profile_monitor();
-        self.spawn_auto_worktree_gc();
-    }
     /// Resolve current auto-GC policy and run it on the blocking pool.
     pub(super) fn spawn_auto_worktree_gc(&self) {
         let auto_gc_policy = self.cfg.borrow().resolve_worktree_auto_gc();
@@ -2069,14 +1913,12 @@ impl MvpAgent {
             let rs = cfg.remote_settings.as_ref();
             SettingsUpdateNotification {
                 show_resolved_model: rs.and_then(|s| s.show_resolved_model),
-                sharing_enabled: rs.and_then(|s| s.sharing_enabled),
                 privacy_notice_rollout: rs.and_then(|s| s.privacy_notice_rollout),
                 privacy_banner_reshow_days: rs
                     .and_then(|s| s.privacy_banner_reshow_days),
                 session_picker_grouped: rs.and_then(|s| s.session_picker_grouped),
                 tips: rs.and_then(|s| s.tips.clone()),
                 slash_command_tags: rs.and_then(|s| s.slash_command_tags.clone()),
-                announcements: rs.and_then(|s| s.announcements.clone()),
                 gate_message: rs.and_then(|s| s.gate_message.clone()),
                 gate_url: rs.and_then(|s| s.gate_url.clone()),
                 gate_label: rs.and_then(|s| s.gate_label.clone()),
@@ -2232,254 +2074,6 @@ impl MvpAgent {
             }
         });
     }
-}
-/// Handle a synthetic turn trace request: allocate a turn number, build a
-/// trace context, await turn completion, then upload the trace.
-async fn handle_synthetic_turn_trace(
-    agent_ref: LocalRef<MvpAgent>,
-    request: crate::upload::turn::SyntheticTurnTraceRequest,
-) {
-    use crate::session::SessionCommand;
-    use crate::upload::turn::{UploadWait, complete_prompt_trace, spawn_upload_task};
-    let turn_started_at = chrono::Utc::now().to_rfc3339();
-    let (info, turn_number, user_id, user_email, client_source, client_version, model) = {
-        let this = agent_ref.get();
-        let session_info = {
-            let sessions = this.sessions.borrow();
-            let sid = &request.session_id;
-            sessions.get(sid).map(|h| h.info.clone())
-        };
-        let Some(info) = session_info else {
-            tracing::debug!(
-                session_id = %request.session_id.0,
-                prompt_id = %request.prompt_id,
-                "Synthetic trace: session not found, skipping",
-            );
-            return;
-        };
-        let turn_number = this.allocate_turn_number(&request.session_id);
-        let auth = this.auth_manager.current();
-        let user_id = auth
-            .as_ref()
-            .filter(|a| a.is_xai_auth())
-            .map(|a| a.user_id.clone());
-        let user_email = auth.as_ref().and_then(|a| a.email.clone());
-        let init_meta = this.initialize_request.get().and_then(|req| req.meta.as_ref());
-        let client_source = init_meta
-            .and_then(|m| {
-                m
-                    .get("clientSource")
-                    .or_else(|| m.get("clientType"))
-                    .or_else(|| m.get("clientIdentifier"))
-            })
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let client_version = this.cfg.borrow().client_version.clone();
-        let model = {
-            let sessions = this.sessions.borrow();
-            sessions
-                .get(&request.session_id)
-                .map(|h| h.model_id.0.to_string())
-                .unwrap_or_else(|| this.models_manager.current_model_id().0.to_string())
-        };
-        (info, turn_number, user_id, user_email, client_source, client_version, model)
-    };
-    let this = agent_ref.get();
-    let trace_context = this.get_trace_context(&info, turn_number).await;
-    let Some(ctx) = trace_context else {
-        tracing::info!(
-            session_id = %request.session_id.0,
-            prompt_id = %request.prompt_id,
-            "Synthetic trace: trace uploads disabled, skipping",
-        );
-        return;
-    };
-    let before_ctx = ctx.clone();
-    let metadata = PromptMetadata {
-        schema_version: GCS_SCHEMA_VERSION.to_string(),
-        session_id: ctx.session_info.id.0.to_string(),
-        turn_number: ctx.turn_number,
-        request_id: request.prompt_id.clone(),
-        turn_started_at,
-        repo_root: None,
-        remote_url: None,
-        user_id,
-        user_email,
-        team_id: None,
-        client_source,
-        client_version,
-        model: model.clone(),
-        reasoning_effort: ctx
-            .session_handle
-            .reasoning_effort
-            .map(|e| e.as_str().to_string()),
-        experiment_id: None,
-        host_os: std::env::consts::OS.to_string(),
-        host_arch: std::env::consts::ARCH.to_string(),
-        prompt_has_image: Some(false),
-        prompt_was_truncated: Some(false),
-        prompt_verbatim: Some(true),
-        cwd: Some(info.cwd.clone()),
-        agent_type: None,
-        shell_version: Some(gbuild_version::VERSION.to_string()),
-        workspace_type: None,
-        sandbox: local_sandbox_telemetry(),
-    };
-    spawn_upload_task(
-        "synthetic_before_uploads",
-        async move {
-            futures::join!(
-            upload_session_state(
-                &before_ctx,
-                "before",
-                request.before_session_copy_rx,
-                UploadWait::Confirm,
-            ),
-            upload_metadata(&before_ctx, metadata),
-        );
-        },
-    );
-    let turn_result = request.completion_rx.await;
-    let Ok(prompt_result) = turn_result else {
-        tracing::debug!(
-            session_id = %request.session_id.0,
-            prompt_id = %request.prompt_id,
-            "Synthetic trace: turn completion channel dropped, skipping",
-        );
-        return;
-    };
-    match &prompt_result {
-        Ok(turn_ok) => {
-            let completed = matches!(turn_ok.stop_reason, acp::StopReason::EndTurn);
-            let turn_result_metadata = TurnResultMetadata {
-                schema_version: GCS_SCHEMA_VERSION,
-                request_id: request.prompt_id.clone(),
-                completed,
-                stop_reason: Some(format!("{:?}", turn_ok.stop_reason)),
-                total_tokens: Some(turn_ok.total_tokens),
-                input_tokens: turn_ok
-                    .turn_snapshot
-                    .as_ref()
-                    .map(|s| s.turn_input_tokens),
-                cached_input_tokens: turn_ok
-                    .turn_snapshot
-                    .as_ref()
-                    .map(|s| s.turn_cached_input_tokens),
-                output_tokens: turn_ok
-                    .turn_snapshot
-                    .as_ref()
-                    .map(|s| s.turn_output_tokens),
-                error: None,
-                finished_at: chrono::Utc::now().to_rfc3339(),
-                signals: turn_ok.turn_snapshot.as_ref().map(|s| s.current.clone()),
-                turn_delta: turn_ok.turn_snapshot.as_ref().map(|s| s.delta.clone()),
-                start_prompt_mode: None,
-                end_prompt_mode: None,
-                resolved_model: Some(model.clone()),
-                subagents_spawned: vec![],
-            };
-            upload_turn_result(&ctx, &turn_result_metadata, UploadWait::Confirm).await;
-        }
-        Err(e) => {
-            let turn_result_metadata = TurnResultMetadata {
-                schema_version: GCS_SCHEMA_VERSION,
-                request_id: request.prompt_id.clone(),
-                completed: false,
-                stop_reason: None,
-                total_tokens: None,
-                input_tokens: None,
-                cached_input_tokens: None,
-                output_tokens: None,
-                error: Some(e.to_string()),
-                finished_at: chrono::Utc::now().to_rfc3339(),
-                signals: None,
-                turn_delta: None,
-                start_prompt_mode: None,
-                end_prompt_mode: None,
-                resolved_model: Some(model.clone()),
-                subagents_spawned: vec![],
-            };
-            upload_turn_result(&ctx, &turn_result_metadata, UploadWait::Confirm).await;
-        }
-    }
-    let turn_messages: Option<xai_chat_state::TurnCapture> = {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if ctx
-            .session_handle
-            .cmd_tx
-            .send(SessionCommand::TakeTurnMessages {
-                respond_to: tx,
-            })
-            .is_ok()
-        {
-            rx.await.ok().flatten()
-        } else {
-            None
-        }
-    };
-    let permission_events = {
-        let this = agent_ref.get();
-        this.collect_permission_events(&request.session_id)
-    };
-    let (session_copy_tx, session_copy_rx) = tokio::sync::oneshot::channel();
-    let _ = ctx
-        .session_handle
-        .cmd_tx
-        .send(SessionCommand::CopyFile {
-            respond_to: session_copy_tx,
-        });
-    let synthetic_committed = matches!(&prompt_result, Ok(ok) if matches!(ok.stop_reason, acp::StopReason::EndTurn));
-    let streaming_partial = crate::upload::turn::take_streaming_partial(
-            &ctx.session_handle.cmd_tx,
-            request.prompt_id.clone(),
-            synthetic_committed,
-            Some(model.clone()),
-        )
-        .await
-        .map(|mut cap| {
-            cap.reason
-                .get_or_insert_with(|| match &prompt_result {
-                    Ok(turn_ok) => {
-                        match &turn_ok.completion_kind {
-                            crate::session::commands::PromptCompletionKind::Cancelled {
-                                category,
-                                ..
-                            } => {
-                                match category {
-                                    Some(cat) => format!("synthetic_cancelled:{cat:?}"),
-                                    None => "synthetic_cancelled".to_string(),
-                                }
-                            }
-                            _ => "synthetic_non_completed".to_string(),
-                        }
-                    }
-                    Err(e) => format!("synthetic_error:{e:?}"),
-                });
-            cap
-        });
-    spawn_upload_task(
-        "synthetic_turn_trace",
-        async move {
-            match complete_prompt_trace(
-                    ctx,
-                    permission_events,
-                    session_copy_rx,
-                    turn_messages,
-                    streaming_partial,
-                    UploadWait::Confirm,
-                )
-                .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!(
-                    error = %e,
-                    "Synthetic turn trace upload failed (non-fatal)",
-                );
-                }
-            }
-        },
-    );
 }
 /// Clears [`MvpAgent::post_unblock_jwt_retry_in_flight`] on scope exit —
 /// success, exhaustion, cancel/abort, or panic — so the single-flight flag

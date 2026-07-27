@@ -403,29 +403,6 @@ pub fn resolve_use_leader(
     }
     (false, None)
 }
-/// Join early prefetch to get remote settings (with timeout).
-///
-/// Remote settings come from the product settings API and contain `leader_mode`,
-/// announcements, etc.  Waits up to 2 s for the background thread.
-pub fn join_early_prefetch(
-    handle: Option<gbuild_shell::agent::models::EarlyPrefetchHandle>,
-) -> Option<gbuild_shell::util::config::RemoteSettings> {
-    let handle = handle?;
-    if handle.is_finished() {
-        return match handle.join() {
-            Ok(r) => r.settings,
-            Err(_) => None,
-        };
-    }
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(handle.join());
-    });
-    match rx.recv_timeout(std::time::Duration::from_secs(2)) {
-        Ok(Ok(r)) => r.settings,
-        _ => None,
-    }
-}
 /// First non-blank of CLI > env > config (precedence + blank-skip). `None` →
 /// nothing set; `acp::initialize` canonicalizes and applies the default.
 fn resolve_hunk_tracker_mode(
@@ -446,14 +423,7 @@ fn resolve_hunk_tracker_mode(
 /// pager skips the welcome screen and immediately loads that session (replaying
 /// its history). Sessions not found locally are restored from remote storage.
 ///
-/// Returns `Ok(true)` when the user accepted a pending update. The caller
-/// should print a message telling the user to relaunch `gbuild`.
-pub async fn run(
-    args: PagerArgs,
-    bg_update_rx: Option<
-        tokio::sync::oneshot::Receiver<Option<gbuild_update::auto_update::UpdateAvailable>>,
-    >,
-) -> anyhow::Result<bool> {
+pub async fn run(args: PagerArgs) -> anyhow::Result<()> {
     xai_tty_utils::redirect_native_stderr();
     let screen_mode_override = screen_mode_relaunch::take_screen_mode_env_override();
     let cancel = CancellationToken::new();
@@ -476,11 +446,10 @@ pub async fn run(
     if let Ok(cwd) = std::env::current_dir() {
         crate::git_info::populate_from_cwd_async(cwd);
     }
-    let remote_settings = join_early_prefetch(early_prefetch);
-    gbuild_shell::util::config::cache_remote_auto_mode(
-        remote_settings.as_ref().and_then(|s| s.auto_mode.clone()),
-    );
-    gbuild_shell::util::config::set_remote_campaigns_from_settings(remote_settings.as_ref());
+    // The model-catalog prefetch keeps warming the disk cache in the
+    // background; remote settings are no longer fetched.
+    let remote_settings: Option<gbuild_shell::util::config::RemoteSettings> = None;
+    let _ = early_prefetch;
     let raw_config = gbuild_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
     let prefetch_elapsed = startup_start.elapsed();
@@ -725,7 +694,6 @@ pub async fn run(
         remote_settings,
         term_state,
         materialized,
-        bg_update_rx,
         writer_event_rx,
     )
     .await;
@@ -752,9 +720,6 @@ pub async fn run(
     }
     match result {
         Ok(run_result) => {
-            if run_result.quit_for_update {
-                return Ok(true);
-            }
             if let Some(relaunch) = run_result.relaunch.as_ref() {
                 if let Err(e) = screen_mode_relaunch::exec_screen_mode_relaunch(
                     &relaunch.session_id,
@@ -768,13 +733,13 @@ pub async fn run(
                         &mut io::stderr(),
                     );
                 }
-                return Ok(false);
+                return Ok(());
             }
             if let Some(info) = run_result.exit_info {
                 let width = crossterm::terminal::size().map_or(80, |(cols, _)| cols as usize);
                 print_exit_resume_hint(&info, width, &mut io::stderr());
             }
-            Ok(false)
+            Ok(())
         }
         Err(run_error) => Err(run_error),
     }

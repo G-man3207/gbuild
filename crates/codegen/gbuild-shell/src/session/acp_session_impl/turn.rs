@@ -241,8 +241,6 @@ impl SessionActor {
         prompt_id: &str,
         prompt_blocks: Vec<acp::ContentBlock>,
         prompt_mode: PromptMode,
-        trace_gcs_config: Option<crate::session::repo_changes::TraceExportConfig>,
-        artifact_tracker: Option<crate::upload::manifest::ArtifactTracker>,
         prompt_client_identifier: Option<String>,
         prompt_screen_mode: Option<String>,
         verbatim: bool,
@@ -679,7 +677,7 @@ impl SessionActor {
                 screen_mode: prompt_screen_mode,
                 prompt_text: None,
             };
-            gbuild_telemetry::session_ctx::log_event_dual(self.telemetry_enabled, ev);
+            gbuild_telemetry::session_ctx::log_event(ev);
         }
         self.maybe_inject_mcp_reminder().await;
         self.maybe_inject_mcp_connecting_reminder().await;
@@ -732,9 +730,6 @@ impl SessionActor {
             .await;
         let prompt_text_for_hook = user_message.clone();
         {
-            if trace_gcs_config.is_some() {
-                self.chat_state_handle.begin_turn_capture();
-            }
             let origin = super::super::PromptOrigin::from_prompt_id(prompt_id);
             if matches!(origin, super::super::PromptOrigin::User) {
                 self.maybe_inject_interrupt_reminder().await;
@@ -834,8 +829,6 @@ impl SessionActor {
         let doom_event_model = turn_model_id.clone();
         let turn_timer = std::time::Instant::now();
         let result = {
-            let mut round_trace = trace_gcs_config;
-            let mut round_artifact = artifact_tracker;
             let mut stop_continuations_this_turn: u32 = 0;
             loop {
                 if self.goal_harness_enabled() {
@@ -844,12 +837,7 @@ impl SessionActor {
                     self.set_goal_loop_active_resource(goal_loop_active).await;
                 }
                 let round = self
-                    .process_conversation_turn_with_recovery(
-                        prompt_id,
-                        round_trace.take(),
-                        round_artifact.take(),
-                        json_schema.clone(),
-                    )
+                    .process_conversation_turn_with_recovery(prompt_id, json_schema.clone())
                     .await;
                 if !matches!(round, Ok(TurnOutcome::Completed { .. })) {
                     break round;
@@ -1497,8 +1485,6 @@ impl SessionActor {
     pub(super) async fn process_conversation_turn_with_recovery(
         self: &Arc<Self>,
         req_id: &str,
-        trace_gcs_config: Option<crate::session::repo_changes::TraceExportConfig>,
-        artifact_tracker: Option<crate::upload::manifest::ArtifactTracker>,
         json_schema: Option<serde_json::Value>,
     ) -> Result<TurnOutcome, acp::Error> {
         let _ = self.compaction.auto_compact_suppressed.compare_exchange(
@@ -1512,12 +1498,7 @@ impl SessionActor {
             Some(req) => req,
             None => {
                 return self
-                    .process_conversation_turn(
-                        req_id,
-                        trace_gcs_config,
-                        artifact_tracker.as_ref(),
-                        json_schema,
-                    )
+                    .process_conversation_turn(req_id, json_schema)
                     .await;
             }
         };
@@ -1525,24 +1506,14 @@ impl SessionActor {
             Some(r) => r.clone(),
             None => {
                 return self
-                    .process_conversation_turn(
-                        req_id,
-                        trace_gcs_config,
-                        artifact_tracker.as_ref(),
-                        json_schema,
-                    )
+                    .process_conversation_turn(req_id, json_schema)
                     .await;
             }
         };
         let required_tool = completion_req.tool.clone();
         let recovery_prompt = completion_req.reminder.clone();
         let mut result = self
-            .process_conversation_turn(
-                req_id,
-                trace_gcs_config.clone(),
-                artifact_tracker.as_ref(),
-                json_schema.clone(),
-            )
+            .process_conversation_turn(req_id, json_schema.clone())
             .await;
         if matches!(
             result,
@@ -1604,12 +1575,7 @@ impl SessionActor {
             let recovery_message = ConversationItem::auto_recovery(recovery_prompt.clone());
             self.chat_state_handle.push_user_message(recovery_message);
             result = self
-                .process_conversation_turn(
-                    req_id,
-                    trace_gcs_config.clone(),
-                    artifact_tracker.as_ref(),
-                    None,
-                )
+                .process_conversation_turn(req_id, None)
                 .await;
             if matches!(
                 result,
@@ -1823,15 +1789,6 @@ impl SessionActor {
                 .persistence_tx
                 .send(PersistenceMsg::Signals(snap.current.clone()));
         }
-        self.feedback_manager
-            .send_turn_delta_with_snapshot(
-                snapshot.clone(),
-                Some(req_id.to_string()),
-                Some(conv_turn_start.elapsed().as_millis() as i64),
-                Some("completed".to_string()),
-                model_fingerprint,
-            )
-            .await;
         if let Some(request) = self
             .feedback_manager
             .maybe_request_feedback(Some(req_id.to_string()))
@@ -1870,8 +1827,6 @@ impl SessionActor {
     async fn process_conversation_turn(
         self: &Arc<Self>,
         req_id: &str,
-        trace_gcs_config: Option<crate::session::repo_changes::TraceExportConfig>,
-        artifact_tracker: Option<&crate::upload::manifest::ArtifactTracker>,
         json_schema: Option<serde_json::Value>,
     ) -> Result<TurnOutcome, acp::Error> {
         let conv_turn_start = std::time::Instant::now();
@@ -1923,21 +1878,6 @@ impl SessionActor {
                 "elapsed_since_turn_start_ms": conv_turn_start.elapsed().as_millis() as u64,
             })),
         );
-        if let Some(ref gcs_config) = trace_gcs_config {
-            let gcs_cfg = gcs_config.clone();
-            let tool_defs = tool_definitions.clone();
-            let manifest_clone = artifact_tracker.cloned();
-            let auth_manager = self.auth_manager.clone();
-            tokio::spawn(async move {
-                crate::upload::trace::upload_tool_definitions(
-                    gcs_cfg,
-                    auth_manager,
-                    &tool_defs,
-                    manifest_clone.as_ref(),
-                )
-                .await;
-            });
-        }
         self.record_turn_model().await;
         let mut metrics_drop_guard = TurnMetrics::new();
         let mut turn_tools_called: Vec<String> = Vec::new();
@@ -2085,14 +2025,7 @@ impl SessionActor {
                     effective_tools,
                     memory_reminder,
                     self.memory.is_enabled(),
-                    trace_gcs_config
-                        .clone()
-                        .map(|cfg| -> Box<dyn crate::sampling::TraceContext> {
-                            Box::new(crate::sampling::ConversationRequestTrace {
-                                gcs_config: cfg,
-                                artifact_tracker: artifact_tracker.cloned(),
-                            })
-                        }),
+                    None,
                     self.session_info.id.to_string(),
                     req_id.to_owned(),
                 )

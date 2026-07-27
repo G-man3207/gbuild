@@ -785,7 +785,6 @@ fn dispatch_fork_inherits_appearance_sharing_and_plugin_visibility() {
     let mut app = fork_test_app();
     // Tweak app-level state so we can verify the sweep applied it.
     app.appearance.prompt.compact = true;
-    app.sharing_enabled = false;
     app.usage_visible = false;
     app.appearance.disable_plugins = true;
     // Cached billing state must be inherited so the credits warning is
@@ -801,7 +800,6 @@ fn dispatch_fork_inherits_appearance_sharing_and_plugin_visibility() {
     });
     dispatch(Action::Fork(fork_args(Some(false), None)), &mut app);
     let new_agent = app.agents.get(&AgentId(1)).unwrap();
-    assert!(!new_agent.sharing_enabled);
     assert!(
         new_agent
             .prompt

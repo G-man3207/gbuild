@@ -375,11 +375,6 @@ fn event_seq_of(json: &serde_json::Value) -> Option<u64> {
 ///   connectors then "disappeared" from every other client's `/mcp` view.
 ///   Broadcast is safe: the pager handler only debounce-refetches `mcp/list`
 ///   for agents with an open extensions modal.
-/// - `x.ai/announcements/update` — the announcements list changed (startup
-///   one-shot or the periodic settings refresh). Session-agnostic; every
-///   client renders its own banner, so last-active-client fallback would
-///   leave every other client's banner stale. Broadcast is safe: the pager
-///   handler is idempotent and drops stale generations via its `gen` gate.
 ///   (`x.ai/settings/update` stays non-broadcast — it carries auth/gate state.)
 ///
 /// Matched via [`method_of`], NOT the raw top-level `method`: agent ext
@@ -392,7 +387,6 @@ fn is_machine_wide_broadcast_notification(json: &serde_json::Value) -> bool {
             "x.ai/sessions/changed"
                 | "x.ai/models/update"
                 | "x.ai/mcp/servers_updated"
-                | "x.ai/announcements/update"
         )
     )
 }
@@ -6327,9 +6321,6 @@ mod tests {
             r#"{"jsonrpc":"2.0","method":"x.ai/mcp/servers_updated","params":{}}"#
         )));
         assert!(is_machine_wide_broadcast_notification(&pv(
-            r#"{"jsonrpc":"2.0","method":"x.ai/announcements/update","params":{}}"#
-        )));
-        assert!(is_machine_wide_broadcast_notification(&pv(
             r#"{"jsonrpc":"2.0","method":"_x.ai/sessions/changed","params":{}}"#
         )));
         assert!(is_machine_wide_broadcast_notification(&pv(
@@ -6337,9 +6328,6 @@ mod tests {
         )));
         assert!(is_machine_wide_broadcast_notification(&pv(
             r#"{"jsonrpc":"2.0","method":"_x.ai/mcp/servers_updated","params":{"method":"x.ai/mcp/servers_updated","params":{"mcpServers":[]}}}"#
-        )));
-        assert!(is_machine_wide_broadcast_notification(&pv(
-            r#"{"jsonrpc":"2.0","method":"_x.ai/announcements/update","params":{"method":"x.ai/announcements/update","params":{"gen":2,"announcements":[]}}}"#
         )));
         assert!(!is_machine_wide_broadcast_notification(&pv(
             r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s"}}"#

@@ -334,11 +334,9 @@ pub(in crate::app::dispatch) fn dispatch_new_session_inner_with_id(
         agent.set_session_recap_available(app.session_recap_available);
         agent.set_voice_mode_available(app.voice_mode_enabled);
         agent.apply_app_scoped_gates(
-            app.sharing_enabled,
             app.usage_visible,
             app.chat_mode,
             app.screen_mode,
-            &app.active_announcements,
             &app.tier_restricted_commands,
         );
         agent.apply_credit_balance(app.credit_balance.clone(), app.auto_topup.clone());
@@ -650,11 +648,9 @@ pub(in crate::app::dispatch) fn dispatch_new_worktree_session(
         agent.set_session_recap_available(app.session_recap_available);
         agent.set_voice_mode_available(app.voice_mode_enabled);
         agent.apply_app_scoped_gates(
-            app.sharing_enabled,
             app.usage_visible,
             app.chat_mode,
             app.screen_mode,
-            &app.active_announcements,
             &app.tier_restricted_commands,
         );
         agent.chat_kind = chat_kind;

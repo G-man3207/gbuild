@@ -28,7 +28,7 @@ mod jemalloc_malloc_conf {
 use anyhow::Result;
 use gbuild_pager::app::{
     AgentCmd, Command, HeadlessArgs, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs,
-    PagerArgs, join_early_prefetch, resolve_use_leader,
+    PagerArgs, resolve_use_leader,
 };
 use gbuild_pager::app::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
 use gbuild_pager::client_identity::PAGER_CLIENT_VERSION;
@@ -41,14 +41,12 @@ use gbuild_shell::leader::{
 use gbuild_shell::leader::{
     ControlPayload, LeaderClient, LeaderEnvUrls, connect_or_spawn, socket_path_for_ws_url,
 };
-use gbuild_update::{UpdateConfig, auto_update};
 use std::env;
 use std::net::SocketAddr;
 use tokio_util::sync::CancellationToken;
 
 /// Self-update remains disabled until this fork has an owned, signed release
 /// channel. The upstream updater downloads and activates xAI-hosted binaries.
-const SELF_UPDATE_ENABLED: bool = false;
 /// Apply headless args to an existing config, only overriding values that are
 /// explicitly set. This allows environment defaults to be preserved when
 /// specific args are not provided.
@@ -135,8 +133,8 @@ fn init_tracing_simple(app_entrypoint: &'static str) {
                 service_version: env!("VERSION_WITH_COMMIT"),
                 app_entrypoint,
             },
-            gbuild_shell::auth::credential_provider::build_default_otel_layer_config(),
         ));
+    gbuild_shell::auth::credential_provider::bootstrap_otel_credential_provider();
     gbuild_telemetry::debug_log::install_firehose(registry, app_entrypoint);
     gbuild_telemetry::external::init(gbuild_shell::agent::config::resolve_external_otel_config(
         gbuild_telemetry::external::config::ExternalClientInfo {
@@ -145,68 +143,6 @@ fn init_tracing_simple(app_entrypoint: &'static str) {
             app_entrypoint: app_entrypoint.to_owned(),
         },
     ));
-}
-/// `gbuild setup`: rendering + exit codes only; fetch logic lives in `gbuild_shell::managed_config`.
-/// `json` prints the served configuration instead of installing it.
-async fn run_setup_command(json: bool) {
-    use gbuild_shell::managed_config::{self, SetupOutcome};
-    if !managed_config::has_principal() {
-        eprintln!("No deployment key or team sign-in found.");
-        eprintln!();
-        eprintln!("To install managed configuration, sign in with a team using `gbuild login`,");
-        eprintln!("or set a deployment key:");
-        eprintln!();
-        if cfg!(unix) {
-            eprintln!("  export GBUILD_DEPLOYMENT_KEY=<your-key>");
-        } else {
-            eprintln!("  $env:GBUILD_DEPLOYMENT_KEY=\"<your-key>\"");
-        }
-        eprintln!("  gbuild setup");
-        eprintln!();
-        eprintln!("Or add the key to ~/.gbuild/config.toml:");
-        eprintln!();
-        eprintln!("  [endpoints]");
-        eprintln!("  deployment_key = \"<your-key>\"");
-        eprintln!();
-        eprintln!("If you don't have a deployment key, contact your deployment administrator.");
-        std::process::exit(1);
-    }
-    if json {
-        match managed_config::fetch_setup_report().await {
-            Ok(report) => {
-                let out = serde_json::to_string_pretty(&report)
-                    .expect("setup report has no non-serializable values");
-                println!("{out}");
-                if !report.configured {
-                    eprintln!(
-                        "Your team doesn't have a managed configuration yet. A team admin can set one up at console.x.ai."
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("Couldn't fetch managed configuration. {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-    match managed_config::run_setup().await {
-        SetupOutcome::Installed => eprintln!("Applied managed configuration."),
-        SetupOutcome::NothingConfigured => {
-            eprintln!(
-                "Your team doesn't have a managed configuration yet. A team admin can set one up at console.x.ai."
-            );
-        }
-        SetupOutcome::Skipped => {
-            eprintln!(
-                "Managed configuration was not applied this run (another process held the apply lock, or the credential changed during the fetch). Run `gbuild setup` again."
-            );
-        }
-        SetupOutcome::Failed(e) => {
-            eprintln!("Couldn't apply managed configuration. {e}");
-            std::process::exit(1);
-        }
-    }
 }
 async fn run_leader_mgmt(args: LeaderMgmtArgs) -> Result<()> {
     match args.command {
@@ -408,17 +344,11 @@ fn env_flag_enabled(value: &str) -> bool {
         "" | "0" | "false" | "off" | "no"
     )
 }
-/// Blocking fetch of remote settings via the startup prefetch path.
-fn fetch_remote_settings() -> Option<gbuild_shell::util::config::RemoteSettings> {
-    join_early_prefetch(gbuild_shell::agent::models::start_early_prefetch(None))
-}
 async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
     let env_override = workspace_command_env_override();
-    let remote_settings = if env_override.is_none() {
-        fetch_remote_settings()
-    } else {
-        None
-    };
+    // Remote settings are no longer fetched; only the explicit env override
+    // can enable the workspace command.
+    let remote_settings: Option<gbuild_shell::util::config::RemoteSettings> = None;
     match workspace_command_gate(env_override, remote_settings.as_ref()) {
         WorkspaceGate::Enabled => {}
         WorkspaceGate::Disabled => {
@@ -429,19 +359,14 @@ async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
         }
         WorkspaceGate::Unknown => {
             anyhow::bail!(
-                "Could not load your settings for `gbuild workspace`. Check your \
-             network connection (run `gbuild login` if you are signed out), then \
-             try again."
+                "`gbuild workspace` is disabled. Set GBUILD_WORKSPACE_COMMAND=1 \
+             to enable it (remote settings are no longer fetched)."
             )
         }
     }
     match args.command {
-        WorkspaceMgmtCommand::Start(a) => {
-            workspace_start(a, false, remote_settings.or_else(fetch_remote_settings)).await
-        }
-        WorkspaceMgmtCommand::Restart(a) => {
-            workspace_start(a, true, remote_settings.or_else(fetch_remote_settings)).await
-        }
+        WorkspaceMgmtCommand::Start(a) => workspace_start(a, false, remote_settings).await,
+        WorkspaceMgmtCommand::Restart(a) => workspace_start(a, true, remote_settings).await,
         WorkspaceMgmtCommand::Pause { target, json } => {
             workspace_control(&target, json, ControlCommand::WorkspacePause).await
         }
@@ -1001,9 +926,7 @@ const PLUGIN_DIR_LEADER_WARNING: &str = "gbuild: --plugin-dir is ignored in lead
 async fn run_agent_command(
     agent_args: Box<gbuild_pager::app::AgentArgs>,
     permission_mode_flag: Option<String>,
-    no_auto_update: bool,
     disable_web_search: bool,
-    update_config: &UpdateConfig,
 ) -> Result<()> {
     let _signal_flush = tokio::spawn(async {
         #[cfg(unix)]
@@ -1033,23 +956,13 @@ async fn run_agent_command(
     if !is_stdio && !is_leader {
         eprintln!(
             "gBuild - v{}",
-            gbuild_version::display_version_with_commit(
-                env!("VERSION_WITH_COMMIT"),
-                gbuild_update::channel_label(),
-            )
+            gbuild_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), "")
         );
-        if should_check_for_updates(no_auto_update) {
-            auto_update::run_update_if_available(
-                auto_update::UpdateRunMode::NonBlocking,
-                false,
-                update_config,
-            )
-            .await
-            .ok();
-        }
     }
-    let remote_settings = join_early_prefetch(early_prefetch);
-    gbuild_shell::util::config::set_remote_campaigns_from_settings(remote_settings.as_ref());
+    // Remote settings are no longer fetched; the model-catalog prefetch keeps
+    // warming the disk cache in the background.
+    let remote_settings: Option<gbuild_shell::util::config::RemoteSettings> = None;
+    let _ = early_prefetch;
     let raw_config = gbuild_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?;
     let mut agent_config = AgentConfig::new_from_toml_cfg(&raw_config)
@@ -1112,29 +1025,6 @@ async fn run_agent_command(
         leader_eligible,
     );
     tracing::info!(use_leader, ?policy_disable_reason, "leader mode resolved");
-    let managed_install = is_managed_install(
-        std::env::current_exe().ok(),
-        &gbuild_shell::util::gbuild_home::gbuild_home(),
-    );
-    if stdio_auto_update_enabled(
-        is_stdio,
-        use_leader,
-        should_check_for_updates(no_auto_update),
-        managed_install,
-    ) {
-        let update_config = update_config.clone();
-        tokio::spawn(async move {
-            auto_update::run_update_if_available(
-                auto_update::UpdateRunMode::NonBlocking,
-                false,
-                &update_config,
-            )
-            .await
-            .ok();
-        });
-    } else if is_stdio && !use_leader && !managed_install {
-        tracing::debug!("stdio auto-update skipped: not the managed install");
-    }
     if use_leader {
         if !agent_args.plugin_dirs.is_empty() {
             eprintln!("{PLUGIN_DIR_LEADER_WARNING}");
@@ -1335,58 +1225,10 @@ async fn run_agent_command(
         Some(AgentCmd::Leader(a)) => {
             let mut agent_config = agent_config.clone();
             apply_headless_args_to_config(&a.headless, &mut agent_config);
-            let leader_auto_update = if !should_check_for_updates(
-                no_auto_update || a.no_auto_update,
-            ) {
-                tracing::info!("Leader auto-update disabled");
-                None
-            } else {
-                let update_config_for_leader = update_config.clone();
-                Some(gbuild_shell::agent::app::LeaderAutoUpdateConfig {
-                    check_interval: std::time::Duration::from_secs(60 * 60),
-                    check_fn: Box::new(move || {
-                        let uc = update_config_for_leader.clone();
-                        Box::pin(async move {
-                            let current_config = gbuild_shell::util::config::load_config().await;
-                            if current_config.cli.auto_update == Some(false) {
-                                return false;
-                            }
-                            match auto_update::ensure_latest_on_disk(&uc).await {
-                                Ok(outcome) => {
-                                    if let Some(v) = &outcome.installed {
-                                        if let Err(e) = gbuild_shell::managed_config::sync().await {
-                                            tracing::warn!(
-                                                "Leader auto-update: managed config refresh failed: {e}"
-                                            );
-                                        }
-                                        tracing::info!(
-                                            "Leader auto-update: v{v} installed successfully"
-                                        );
-                                    } else if outcome.relaunch_needed {
-                                        tracing::info!(
-                                            "Leader auto-update: newer binary already on disk, \
-                                             relaunching without download"
-                                        );
-                                    }
-                                    outcome.relaunch_needed
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Leader auto-update: check/download failed, \
-                                         staying alive: {e:#}"
-                                    );
-                                    false
-                                }
-                            }
-                        })
-                    }),
-                })
-            };
             run_leader(
                 &agent_config,
                 a.no_exit_on_disconnect,
                 a.relay_on_demand,
-                leader_auto_update,
                 agent_memory_config,
             )
             .await
@@ -1605,23 +1447,20 @@ fn install_heap_profile_hooks() {
         prof_available: jemalloc_prof_available,
     });
 }
-fn version_text(channel_label: &str) -> String {
+fn version_text() -> String {
     format!(
         "gbuild {}\n",
-        gbuild_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), channel_label,)
+        gbuild_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), "")
     )
 }
-fn write_version(writer: &mut impl std::io::Write, channel_label: &str) -> std::io::Result<()> {
-    writer.write_all(version_text(channel_label).as_bytes())
+fn write_version(writer: &mut impl std::io::Write) -> std::io::Result<()> {
+    writer.write_all(version_text().as_bytes())
 }
 fn dispatch_version_if_requested(args: &PagerArgs) -> bool {
     if !args.version {
         return false;
     }
-    if let Err(error) = write_version(
-        &mut std::io::stdout().lock(),
-        gbuild_update::channel_label(),
-    ) {
+    if let Err(error) = write_version(&mut std::io::stdout().lock()) {
         eprintln!("Error: {error}");
         std::process::exit(1);
     }
@@ -1781,21 +1620,16 @@ async fn async_main(args: PagerArgs) -> Result<()> {
     } else {
         gbuild_workspace::permission::ClientType::Generic
     });
-    let update_config = build_update_config();
     if let Some(command) = args.command.take() {
         match command {
             Command::Version { json } => {
                 if json {
                     let payload = serde_json::json!({
                         "currentVersion": env!("VERSION_WITH_COMMIT"),
-                        "channel": gbuild_update::channel_name().unwrap_or("unknown"),
                     });
                     println!("{}", serde_json::to_string(&payload)?);
                 } else {
-                    write_version(
-                        &mut std::io::stdout().lock(),
-                        gbuild_update::channel_label(),
-                    )?;
+                    write_version(&mut std::io::stdout().lock())?;
                 }
                 return Ok(());
             }
@@ -1814,9 +1648,7 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 return run_agent_command(
                     agent_args,
                     args.permission_mode_flag.clone(),
-                    args.no_auto_update,
                     args.disable_web_search,
-                    &update_config,
                 )
                 .await;
             }
@@ -1826,12 +1658,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
             Command::Inspect { json } => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 gbuild_shell::inspect::inspect(&cwd, json).await?;
-                return Ok(());
-            }
-            Command::Setup { json } => {
-                init_tracing_simple("cli");
-                let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
-                run_setup_command(json).await;
                 return Ok(());
             }
             Command::Mcp(mcp_args) => {
@@ -1880,15 +1706,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
                 return gbuild_pager::sessions_cmd::run(sessions_args, &agent_config).await;
             }
-            Command::Share(ref share_args) => {
-                init_tracing_simple("cli");
-                let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
-                let config = gbuild_shell::config::load_effective_config_disk_only()
-                    .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-                let agent_config = AgentConfig::new_from_toml_cfg(&config)
-                    .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                return gbuild_pager::share_cmd::run(share_args, &agent_config).await;
-            }
             Command::Export(export_args) => {
                 init_tracing_simple("cli");
                 return gbuild_pager::export_cmd::run(export_args);
@@ -1904,28 +1721,6 @@ async fn async_main(args: PagerArgs) -> Result<()> {
             }
             Command::Memory(memory_args) => {
                 return gbuild_pager::memory_cmd::run(memory_args);
-            }
-            Command::Update {
-                check,
-                json,
-                force_reinstall,
-                version,
-                alpha,
-                stable,
-                enterprise,
-            } => {
-                init_tracing_simple("cli");
-                let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
-                let channel_switch = get_channel_switch(alpha, stable, enterprise);
-                return run_update_command(
-                    check,
-                    json,
-                    force_reinstall,
-                    version,
-                    channel_switch,
-                    &update_config,
-                )
-                .await;
             }
             Command::Login {
                 legacy: _,
@@ -2028,265 +1823,21 @@ async fn async_main(args: PagerArgs) -> Result<()> {
         .await;
     }
     let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
-    type UpdateWaitHandle = tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>;
-    let bg_update_wait: std::sync::Arc<tokio::sync::Mutex<Option<UpdateWaitHandle>>> =
-        std::sync::Arc::new(tokio::sync::Mutex::new(None));
-    let bg_update_rx: Option<tokio::sync::oneshot::Receiver<Option<auto_update::UpdateAvailable>>> =
-        if should_check_for_updates(args.no_auto_update) {
-            let update_config = update_config.clone();
-            let wait_slot = bg_update_wait.clone();
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            tokio::spawn(async move {
-                let check = auto_update::check_update_background(&update_config).await;
-                if let Some(mut child) = check.download {
-                    *wait_slot.lock().await = Some(tokio::spawn(async move { child.wait().await }));
-                }
-                let _ = tx.send(check.update);
-            });
-            Some(rx)
-        } else {
-            None
-        };
-    let result = gbuild_pager::app::run(args, bg_update_rx).await;
+    let result = gbuild_pager::app::run(args).await;
     gbuild_sandbox::flush();
-    match result {
-        Ok(true) => {
-            eprintln!(
-                "Self-update is disabled until this fork has an owned, signed release channel."
-            );
-            Ok(())
-        }
-        Ok(false) => Ok(()),
-        Err(e) => Err(e),
-    }
-}
-/// Complete the update after a quit-for-update (Ctrl+U) exit. Returns `true`
-/// when an update path completed without a reported failure.
-///
-/// Prefers awaiting the parked waiter for the background `gbuild update` child
-/// spawned at startup — the download is usually already done or in flight.
-/// Only when there is no waiter (spawn failed, or no download was needed
-/// because the target was already on disk) or the child failed does this
-/// fall back to a fresh blocking `gbuild update`, which itself resolves to
-/// "Already up to date" without downloading when the disk is current.
-async fn finish_update_on_exit(
-    adopted: Option<tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
-    update_config: &UpdateConfig,
-) -> bool {
-    let run_blocking = |reason: Option<String>| async move {
-        if let Some(reason) = reason {
-            eprintln!("{reason}");
-        }
-        auto_update::run_update_if_available(
-            auto_update::UpdateRunMode::Blocking,
-            false,
-            update_config,
-        )
-        .await
-        .is_ok()
-    };
-    match adopted {
-        Some(handle) => {
-            eprintln!("Waiting for the update download to finish...");
-            match handle.await {
-                Ok(Ok(status)) if status.success() => true,
-                Ok(Ok(status)) => {
-                    run_blocking(Some(format!(
-                        "Background update exited with {status}; retrying..."
-                    )))
-                    .await
-                }
-                Ok(Err(e)) => {
-                    run_blocking(Some(format!(
-                        "Could not wait for the background update ({e}); retrying..."
-                    )))
-                    .await
-                }
-                Err(join_err) => {
-                    run_blocking(Some(format!(
-                        "Background update waiter failed ({join_err}); retrying..."
-                    )))
-                    .await
-                }
-            }
-        }
-        None => run_blocking(None).await,
-    }
-}
-/// Build an [`UpdateConfig`] from the current environment and config files.
-fn build_update_config() -> UpdateConfig {
-    let environment = gbuild_shell::env::GBuildEnvironment::from_flags(false, false);
-    let mut config = UpdateConfig::from_environment(&environment);
-    cryptify::flow_stmt!({
-        {
-            config.deployment_key =
-                gbuild_shell::agent::config::EndpointsConfig::default().deployment_key;
-        }
-    });
-    config.npm_registry = std::env::var(obfstr::obfstr!("GBUILD_NPM_REGISTRY"))
-        .ok()
-        .or_else(gbuild_shell::util::config::load_npm_registry_sync);
-    if let Ok(root) = gbuild_shell::config::load_effective_config_disk_only()
-        && let Some(ch) = gbuild_shell::util::config::channel_from_toml_opt(&root)
-    {
-        config.channel = ch;
-    }
-    config
-}
-/// Central gate for auto-update checks; add new suppression rules here,
-/// not at call sites.
-fn should_check_for_updates(no_auto_update_flag: bool) -> bool {
-    if !SELF_UPDATE_ENABLED {
-        return false;
-    }
-    if cfg!(debug_assertions) {
-        return false;
-    }
-    if no_auto_update_flag {
-        return false;
-    }
-    !std::env::var_os("GBUILD_DISABLE_AUTOUPDATER")
-        .is_some_and(|v| env_flag_enabled(&v.to_string_lossy()))
-}
-/// Gate for the stdio agent's background auto-update: only the direct stdio
-/// agent, from the managed install. Other modes update in `run_agent_command`.
-fn stdio_auto_update_enabled(
-    is_stdio: bool,
-    use_leader: bool,
-    updates_enabled: bool,
-    managed_install: bool,
-) -> bool {
-    is_stdio && !use_leader && updates_enabled && managed_install
-}
-/// True when `exe` is the binary `<gbuild_home>/bin/gbuild` resolves to, the
-/// install that adopts a staged update on respawn. Both sides are
-/// canonicalized; any failure reports unmanaged and skips the update. The
-/// npm shim hardcodes `~/.gbuild`, so a custom `GBUILD_HOME` skips here too.
-fn is_managed_install(exe: Option<std::path::PathBuf>, gbuild_home: &std::path::Path) -> bool {
-    if gbuild_home.as_os_str().is_empty() {
-        return false;
-    }
-    let Some(exe) = exe else {
-        return false;
-    };
-    let managed = gbuild_config::gbuild_application_in(gbuild_home);
-    match (dunce::canonicalize(&exe), dunce::canonicalize(&managed)) {
-        (Ok(exe), Ok(managed)) => exe == managed,
-        _ => false,
-    }
-}
-/// Map the mutually-exclusive channel flags to a channel name. clap enforces
-/// that at most one is set, so the order is irrelevant.
-fn get_channel_switch(alpha: bool, stable: bool, enterprise: bool) -> Option<&'static str> {
-    if alpha {
-        Some("alpha")
-    } else if stable {
-        Some("stable")
-    } else if enterprise {
-        Some("enterprise")
-    } else {
-        None
-    }
-}
-/// Handle `gbuild-pager update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
-async fn run_update_command(
-    _check: bool,
-    _json: bool,
-    _force_reinstall: bool,
-    _version: Option<String>,
-    _channel_switch: Option<&str>,
-    _base_update_config: &UpdateConfig,
-) -> Result<()> {
-    anyhow::bail!("self-update is disabled until this fork has an owned, signed release channel")
-}
-/// After a successful `gbuild update`, ask any running leader on this machine that
-/// is older than `installed_version` to relaunch onto the new binary (bounded
-/// grace; running sessions close and reconnect via `session/load`).
-///
-/// Best-effort and non-fatal: discovery/connect/control failures are logged and
-/// skipped. The leader re-checks the directional version guard authoritatively;
-/// the pager-side `live_info` check just avoids connecting to newer leaders.
-async fn signal_leaders_to_relaunch(installed_version: &str) {
-    for d in gbuild_shell::leader::discover_leaders().await {
-        if d.classification != gbuild_shell::leader::LeaderDiscoveryState::Reachable {
-            continue;
-        }
-        let Some(socket_path) = d.socket_path.clone() else {
-            continue;
-        };
-        if let Some(ref live) = d.live_info
-            && !leader_is_older_than(&live.leader_binary_version, installed_version)
-        {
-            continue;
-        }
-        let client = match gbuild_shell::leader::LeaderClient::connect(
-            socket_path,
-            "gbuild-pager-update",
-            ClientMode::Stdio,
-            ClientCapabilities::default(),
-        )
-        .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::debug!(error = %e, "Could not connect to leader to signal relaunch");
-                continue;
-            }
-        };
-        if !client.registration().supports_relaunch() {
-            client.cancel();
-            continue;
-        }
-        match client
-            .send_control(ControlCommand::RelaunchForUpdate {
-                to_version: installed_version.to_string(),
-            })
-            .await
-        {
-            Ok(Ok(gbuild_shell::leader::ControlPayload::Relaunching {
-                from_version,
-                to_version,
-                ..
-            })) => {
-                eprintln!("  ↻ Relaunching shared session (leader {from_version} → {to_version})…");
-            }
-            Ok(Ok(gbuild_shell::leader::ControlPayload::RelaunchDeclined { reason })) => {
-                tracing::debug!(%reason, "Leader declined relaunch");
-            }
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                tracing::debug!(error = %e.message, "Leader relaunch control error");
-            }
-            Err(e) => {
-                tracing::debug!(error = %e, "Leader relaunch ack not received (leader may be exiting)");
-            }
-        }
-        client.cancel();
-    }
+    result
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn upstream_self_update_is_disabled() {
-        assert!(!SELF_UPDATE_ENABLED);
-        assert!(!should_check_for_updates(false));
-        assert!(!should_check_for_updates(true));
-    }
-    #[test]
-    fn version_output_writer_preserves_channel_aware_contract() {
-        for (label, expected_suffix) in [
-            (" [alpha]", " [alpha]\n"),
-            (" [stable]", " [stable]\n"),
-            ("", ")\n"),
-        ] {
-            let mut output = Vec::new();
-            write_version(&mut output, label).unwrap();
-            let output = String::from_utf8(output).unwrap();
-            assert!(output.starts_with("gbuild "));
-            assert!(output.contains(env!("VERSION_WITH_COMMIT")));
-            assert!(output.ends_with(expected_suffix), "{output:?}");
-        }
+    fn version_output_writer_includes_version_with_commit() {
+        let mut output = Vec::new();
+        write_version(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.starts_with("gbuild "));
+        assert!(output.contains(env!("VERSION_WITH_COMMIT")));
+        assert!(output.ends_with(")\n"), "{output:?}");
     }
     #[test]
     fn version_flags_and_doctor_are_distinct_early_intents() {
@@ -2445,59 +1996,6 @@ mod tests {
         let dump = TempHeapDump::new("shell");
         gbuild_shell::heap_profile::dump_to_path(dump.path()).expect("shell dump");
         dump.assert_nonempty_dump();
-    }
-    #[cfg(unix)]
-    #[test]
-    fn is_managed_install_matches_only_the_bin_gbuild_target() {
-        let home = std::env::temp_dir().join(format!(
-            "gbuild-pager-managed-install-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&home);
-        std::fs::create_dir_all(home.join("bin")).unwrap();
-        std::fs::create_dir_all(home.join("downloads")).unwrap();
-        assert!(!is_managed_install(
-            Some(home.join("bin").join("gbuild")),
-            &home
-        ));
-        assert!(!is_managed_install(None, &home));
-        assert!(!is_managed_install(
-            Some(home.join("bin").join("gbuild")),
-            std::path::Path::new("")
-        ));
-        let target = home.join("downloads").join("gbuild-1.2.3");
-        std::fs::write(&target, b"binary").unwrap();
-        std::os::unix::fs::symlink(&target, home.join("bin").join("gbuild")).unwrap();
-        assert!(is_managed_install(
-            Some(home.join("bin").join("gbuild")),
-            &home
-        ));
-        assert!(is_managed_install(Some(target.clone()), &home));
-        let pinned = home.join("bin").join("gbuild-9.9.9");
-        std::fs::write(&pinned, b"binary").unwrap();
-        assert!(!is_managed_install(Some(pinned), &home));
-        let _ = std::fs::remove_dir_all(&home);
-    }
-    /// Pins the gate composition; a dropped conjunct fails its named case.
-    #[test]
-    fn stdio_auto_update_requires_direct_stdio_enabled_and_managed() {
-        assert!(stdio_auto_update_enabled(true, false, true, true));
-        assert!(
-            !stdio_auto_update_enabled(true, true, true, true),
-            "leader bridge"
-        );
-        assert!(
-            !stdio_auto_update_enabled(false, false, true, true),
-            "non-stdio"
-        );
-        assert!(
-            !stdio_auto_update_enabled(true, false, false, true),
-            "updates off"
-        );
-        assert!(
-            !stdio_auto_update_enabled(true, false, true, false),
-            "pinned binary"
-        );
     }
     use clap::Parser as _;
     /// `gbuild dashboard` flags the startup hook without forcing leader mode —

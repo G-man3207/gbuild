@@ -966,22 +966,9 @@ impl SessionActor {
             .await;
 
         match outcome {
-            SubmitOutcome::Submitted => {
-                self.send_host_turn_slash_command_output("Feedback submitted. Thank you!")
-                    .await;
-            }
             SubmitOutcome::LocalOnly => {
-                self.send_host_turn_slash_command_output(
-                    "Feedback saved locally; no feedback server is configured for this session.",
-                )
-                .await;
-            }
-            SubmitOutcome::Failed(err) => {
-                tracing::warn!(error = %err, "feedback submission failed");
-                self.send_host_turn_slash_command_output(
-                    "Feedback saved locally; submitting to the server failed (see logs).",
-                )
-                .await;
+                self.send_host_turn_slash_command_output("Feedback saved. Thank you!")
+                    .await;
             }
         }
 

@@ -497,77 +497,13 @@ impl MvpAgent {
             );
         }
     }
-    /// Extract feedback credentials when proxy credentials are available.
-    ///
-    /// Returns `(base_url, user_token, optional_extra_access_key, deployment_key)`.
-    /// Used by both [`feedback_client`] and session spawning to avoid
-    /// duplicating the credential assembly logic.
-    #[allow(clippy::type_complexity)]
-    fn feedback_credentials(
-        &self,
-    ) -> Option<(String, Option<String>, Option<String>, Option<String>)> {
-        if !self.has_proxy_credentials() {
-            return None;
-        }
-        let user_token = self
-            .auth_manager
-            .current_or_expired()
-            .filter(|a| a.is_xai_auth())
-            .map(|a| a.key.clone());
-        let cfg = self.cfg.borrow();
-        let base_url = cfg.endpoints.resolve_feedback_base_url();
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let deployment_key = cfg.endpoints.deployment_key.clone();
-        Some((base_url, user_token, alpha_test_key, deployment_key))
-    }
     pub(super) fn ensure_telemetry_client(&self) {
         crate::auth::credential_provider::sync_external_otel_identity();
         let cfg = self.cfg.borrow();
         let mode = cfg.resolve_telemetry_mode().value;
         if !mode.is_disabled() {
-            let Some(auth) = self
-                .auth_manager
-                .current()
-                .filter(|a| {
-                    a.is_xai_auth() || a.auth_mode == crate::auth::AuthMode::ApiKey
-                }) else {
-                return;
-            };
-            let subscription_tier = resolve_subscription_tier_for_telemetry(
-                cfg
-                    .remote_settings
-                    .as_ref()
-                    .and_then(|rs| rs.subscription_tier_display.clone()),
-                Some(&auth),
-            );
-            let (user_id, team_id) = if auth.is_xai_auth() {
-                (Some(auth.user_id), auth.team_id)
-            } else {
-                (None, auth.team_id)
-            };
-            gbuild_telemetry::client::init_if_needed(
-                cfg.telemetry.clone(),
-                mode,
-                user_id,
-                team_id,
-                cfg.endpoints.deployment_key.clone(),
-                self.origin_client_info_from_meta(None),
-                gbuild_version::VERSION.to_owned(),
-                subscription_tier,
-                crate::http::shared_client(),
-            );
+            gbuild_telemetry::client::init_if_needed(mode);
         }
-    }
-    /// Build a `FeedbackClient` with resolved feedback URL and credentials.
-    pub(crate) fn feedback_client(&self) -> Option<FeedbackClient> {
-        let (base_url, user_token, alpha_test_key, deployment_key) = self
-            .feedback_credentials()?;
-        Some(
-            FeedbackClient::new(base_url, user_token)
-                .with_alpha_test_key(alpha_test_key)
-                .with_deployment_key(deployment_key)
-                .with_auth_manager(self.auth_manager.clone()),
-        )
     }
     /// Build a `RegistryConfig` if the feature is enabled (for passing to persistence actor).
     pub(super) fn build_registry_config(
@@ -653,17 +589,6 @@ impl MvpAgent {
     pub(crate) fn product_analytics_enabled(&self) -> bool {
         self.cfg.borrow().is_telemetry_enabled()
             && !self.auth_manager.current_or_expired().is_some_and(|a| a.is_zdr_team())
-    }
-    /// Re-sync the `Send` mirror of `cfg.is_trace_upload_enabled()` that the
-    /// per-session collection gates read (`cfg` is `!Send`; the gates run on
-    /// the tokio pool). Must be called after any mid-session config change
-    /// that can flip the switch — i.e. every `remote_settings` rewrite.
-    pub(super) fn sync_collection_config_gate(&self) {
-        self.trace_upload_live
-            .store(
-                self.cfg.borrow().is_trace_upload_enabled(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
     }
     /// Current client type as set by the most recent `initialize()` call.
     pub(crate) fn client_type(&self) -> ClientType {
@@ -854,293 +779,6 @@ impl MvpAgent {
     }
     pub(crate) fn deployment_key(&self) -> Option<String> {
         self.cfg.borrow().endpoints.deployment_key.clone()
-    }
-    /// Re-fetch remote settings and re-init the telemetry client.
-    ///
-    /// Called unconditionally from both auth handlers so that:
-    /// - First install / expired OIDC token: settings are fetched for
-    ///   the first time (the early prefetch had no auth to use).
-    /// - Reauth / account switch: settings are refreshed to reflect
-    ///   the new user's remote settings targeting attributes.
-    ///
-    /// This only refreshes `cfg.remote_settings` and re-inits the
-    /// telemetry client (the only global static). Other settings
-    /// derived from `remote_settings` (`is_trace_upload_enabled`,
-    /// `web_fetch_enabled`, etc.) are resolved lazily per-turn from
-    /// `cfg` and pick up the new values automatically.
-    /// Agent-level fields materialised at startup (`worktree_type`,
-    /// `restore_code`) are NOT re-resolved here; that requires a
-    /// broader refactor of the init path.
-    pub(super) async fn refresh_remote_settings(&self, auth: &crate::auth::GrokAuth) {
-        if !crate::util::config::resolve_remote_fetch_enabled() {
-            tracing::debug!("post-auth settings refresh skipped: remote_fetch disabled");
-            return;
-        }
-        let is_xai = auth.is_xai_auth();
-        let user_id = auth.user_id.clone();
-        let team_id = auth.team_id.clone();
-        let remote_was_absent = self.cfg.borrow().remote_settings.is_none();
-        let Some(settings) = self.fetch_remote_settings(auth.clone()).await else {
-            tracing::warn!("post-auth settings refresh failed (HTTP or parse error)");
-            return;
-        };
-        tracing::info!("post-auth settings refreshed");
-        let (
-            telemetry_config,
-            telemetry_mode,
-            grok_user_id,
-            grok_team_id,
-            deployment_key,
-            subscription_tier,
-        ) = {
-            let mut cfg = self.cfg.borrow_mut();
-            cfg.remote_settings = Some(settings);
-            crate::util::config::sync_campaign_fields(&mut cfg);
-            crate::agent::config::apply_remote_settings_side_effects(
-                cfg.remote_settings.as_ref(),
-            );
-            let telemetry_mode = cfg.resolve_telemetry_mode();
-            let trace_upload = cfg.resolve_trace_upload();
-            tracing::info!(
-                telemetry = %telemetry_mode,
-                trace_upload = %trace_upload,
-                "post-auth data capture config re-resolved",
-            );
-            let grok_user_id = is_xai.then(|| user_id.clone());
-            let grok_team_id = is_xai.then(|| team_id.clone()).flatten();
-            let telemetry_config = cfg.telemetry.clone();
-            let deployment_key = cfg.endpoints.deployment_key.clone();
-            let subscription_tier_display = cfg
-                .remote_settings
-                .as_ref()
-                .and_then(|rs| rs.subscription_tier_display.clone());
-            (
-                telemetry_config,
-                telemetry_mode.value,
-                grok_user_id,
-                grok_team_id,
-                deployment_key,
-                subscription_tier_display,
-            )
-        };
-        self.sync_collection_config_gate();
-        let subscription_tier = resolve_subscription_tier_for_telemetry(
-            subscription_tier,
-            self.auth_manager.current_or_expired().as_ref(),
-        );
-        gbuild_telemetry::client::init(
-            telemetry_config,
-            telemetry_mode,
-            grok_user_id,
-            grok_team_id,
-            deployment_key,
-            self.origin_client_info_from_meta(None),
-            gbuild_version::VERSION.to_owned(),
-            subscription_tier,
-            crate::http::shared_client(),
-        );
-        crate::auth::credential_provider::sync_external_otel_identity();
-        self.emit_announcements(AnnouncementsPushMode::IfChanged);
-        self.reconfigure_heap_profile_monitor();
-        if remote_was_absent {
-            self.spawn_auto_worktree_gc();
-        }
-    }
-    /// Refresh remote settings settings and re-resolve eagerly-resolved config fields.
-    ///
-    /// Called on `/new` session creation so feature flags reflect the latest
-    /// remote settings state without requiring a TUI restart. Extends
-    /// [`refresh_remote_settings`] by also re-running [`resolve_runtime_fields`]
-    /// with the fresh settings.
-    ///
-    /// In-flight sessions are unaffected — they snapshot config at creation.
-    pub(super) async fn refresh_settings_and_reapply(
-        &self,
-        auth: &crate::auth::GrokAuth,
-    ) {
-        self.refresh_remote_settings(auth).await;
-        {
-            let mut cfg = self.cfg.borrow_mut();
-            crate::util::config::sync_campaign_fields(&mut cfg);
-            let raw_config = crate::config::load_effective_config()
-                .unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "config reload failed during settings refresh");
-                    toml::Value::Table(toml::map::Map::new())
-                });
-            cfg.re_resolve_runtime_fields(&raw_config);
-        }
-        self.sync_collection_config_gate();
-        self.emit_settings_update_notification();
-        self.emit_announcements(AnnouncementsPushMode::Force);
-        self.reconfigure_heap_profile_monitor();
-    }
-    /// Spawn the periodic remote-settings poll that pushes mid-session
-    /// announcement changes to connected clients. Idempotent; plain loop (no
-    /// cancellation) like `ensure_session_supervisor` — the LocalSet drop at
-    /// process exit ends it. Skipped under `cfg!(test)` like the
-    /// managed-config sync (PTY e2e runs the real binary and is unaffected).
-    pub(super) fn spawn_announcements_refresh(&self) {
-        if cfg!(test) || self.announcements_refresh_started.replace(true) {
-            return;
-        }
-        let agent_ref = LocalRef::new(self);
-        tokio::task::spawn_local(async move {
-            let mut interval = tokio::time::interval(announcements_refresh_interval());
-            interval.tick().await;
-            loop {
-                interval.tick().await;
-                let result = futures::FutureExt::catch_unwind(
-                        std::panic::AssertUnwindSafe(
-                            agent_ref.get().poll_announcements_refresh_once(),
-                        ),
-                    )
-                    .await;
-                if result.is_err() {
-                    tracing::error!("announcements refresh tick panicked; continuing");
-                }
-            }
-        });
-    }
-    /// One poll cycle. With no settings baseline, first population is
-    /// delegated to the sanctioned fill-if-missing path (which emits on
-    /// success); otherwise refresh the stored announcements best-effort, then
-    /// run the emit gate — even when the fetch was skipped or failed, so a
-    /// pure expiry crossing still clears client banners on time.
-    async fn poll_announcements_refresh_once(&self) {
-        if self.cfg.borrow().remote_settings.is_none() {
-            self.maybe_fetch_post_auth_settings().await;
-            return;
-        }
-        self.fetch_and_store_polled_announcements().await;
-        self.emit_announcements(AnnouncementsPushMode::IfChanged);
-    }
-    /// Fetch half of a poll cycle: fresh settings from the proxy, then the
-    /// announcements-only apply. Every failure path is a silent skip — the
-    /// next tick retries.
-    async fn fetch_and_store_polled_announcements(&self) {
-        let Ok(auth) = self.auth_manager.auth().await else {
-            tracing::debug!("announcements refresh skipped: not authenticated");
-            return;
-        };
-        let pre_fetch = self
-            .cfg
-            .borrow()
-            .remote_settings
-            .as_ref()
-            .and_then(|s| s.announcements.clone());
-        let Some(settings) = self.fetch_remote_settings(auth).await else {
-            tracing::debug!("announcements refresh skipped: settings fetch failed");
-            return;
-        };
-        self.apply_polled_announcements(settings, pre_fetch);
-    }
-    /// Store the polled announcements unless another writer (full refresh /
-    /// paywall unblock) landed mid-fetch — then this fetch is stale and the
-    /// next tick reconciles. Emission is `emit_announcements`'s job, not
-    /// this store's.
-    pub(super) fn apply_polled_announcements(
-        &self,
-        fresh: crate::util::config::RemoteSettings,
-        pre_fetch: Option<Vec<gbuild_announcements::RemoteAnnouncement>>,
-    ) {
-        let mut cfg = self.cfg.borrow_mut();
-        let Some(stored) = cfg.remote_settings.as_mut() else {
-            return;
-        };
-        if stored.announcements != pre_fetch {
-            tracing::debug!("announcements poll apply skipped: settings changed mid-fetch");
-            return;
-        }
-        stored.announcements = fresh.announcements;
-    }
-    /// The single announcements push gate — every `remote_settings` writer
-    /// funnels through here. Emits `x.ai/announcements/update` and advances
-    /// the last-emitted baseline per [`announcements_push_payload`] (`mode`
-    /// decides when an unchanged list still pushes), but only once the
-    /// gateway accepts the send — a failed enqueue leaves the baseline
-    /// untouched so the next gate call re-diffs and re-pushes.
-    ///
-    /// Synchronous by design: the decide→send→advance sequence cannot
-    /// interleave with another gate call on the LocalSet.
-    pub(super) fn emit_announcements(&self, mode: AnnouncementsPushMode) {
-        let payload_list = {
-            let cfg = self.cfg.borrow();
-            let last = self.last_emitted_announcements.borrow();
-            announcements_push_payload(
-                cfg.remote_settings.as_ref().and_then(|s| s.announcements.as_deref()),
-                &last,
-                chrono::Utc::now(),
-                mode,
-            )
-        };
-        let Some(announcements) = payload_list else {
-            return;
-        };
-        let payload = serde_json::json!({
-            "gen": self.next_announcements_gen(),
-            "announcements": announcements,
-        });
-        let Ok(params) = serde_json::value::to_raw_value(&payload) else {
-            return;
-        };
-        let accepted = self
-            .gateway
-            .forward_fire_and_forget(
-                acp::ExtNotification::new("x.ai/announcements/update", params.into()),
-            );
-        if !accepted {
-            return;
-        }
-        *self.last_emitted_announcements.borrow_mut() = announcements.clone();
-        tracing::info!(
-            count = announcements.len(),
-            mode = ?mode,
-            "pushing announcements update to clients"
-        );
-    }
-    /// Next generation for an `x.ai/announcements/update` push. Strictly
-    /// increasing within the process, and seeded from unix-epoch seconds so a
-    /// restarted leader's pushes still clear pager watermarks that survived
-    /// re-election (`AppView.announcements_last_gen` outlives the agent).
-    pub(super) fn next_announcements_gen(&self) -> u64 {
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let next = now_secs.max(self.announcements_gen.get() + 1);
-        self.announcements_gen.set(next);
-        next
-    }
-    /// Shared fetch half of every settings refresh: endpoint fields from a
-    /// scoped `cfg` borrow, `fetch_settings_blocking` off-executor (it already
-    /// retries transient errors internally), failures normalized to `None`.
-    /// Callers own their miss logging; the apply halves deliberately stay
-    /// separate (full reapply vs announcements-only).
-    pub(super) async fn fetch_remote_settings(
-        &self,
-        auth: crate::auth::GrokAuth,
-    ) -> Option<crate::util::config::RemoteSettings> {
-        if !crate::util::config::resolve_remote_fetch_enabled() {
-            tracing::debug!("settings fetch skipped: remote_fetch disabled");
-            return None;
-        }
-        let (base_url, alpha_test_key) = {
-            let cfg = self.cfg.borrow();
-            (cfg.endpoints.proxy_url(), cfg.endpoints.alpha_test_key.clone())
-        };
-        match tokio::task::spawn_blocking(move || crate::remote::fetch_settings_blocking(
-                &base_url,
-                &auth,
-                alpha_test_key.as_deref(),
-            ))
-            .await
-        {
-            Ok(settings) => settings,
-            Err(e) => {
-                tracing::warn!(error = %e, "settings fetch task panicked");
-                None
-            }
-        }
     }
     pub(super) async fn send_model_auto_switched(
         &self,
@@ -1547,7 +1185,6 @@ impl MvpAgent {
                     byok_from_models(&models, None, current.0.as_ref()),
                 );
         }
-        crate::upload::trace::spawn_purge_stale_upload_scratch();
         let storage_mode = cfg.storage_mode;
         let default_yolo_mode = cfg.default_yolo_mode;
         let default_auto_mode = cfg.default_auto_mode;
@@ -1584,13 +1221,6 @@ impl MvpAgent {
             tracing::debug!("Relay sync: DISABLED (not configured in config.toml or env)");
         } else {
             tracing::debug!("Relay sync: DISABLED (not in TUI mode)");
-        }
-        if cfg.telemetry.trace_upload == Some(false) {
-            tracing::info!(
-                enabled = false,
-                reason = "feature_off",
-                "trace_upload_status"
-            );
         }
         let (subagent_event_tx, subagent_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let activity = crate::agent::activity::AgentActivity::default();
@@ -1631,9 +1261,6 @@ impl MvpAgent {
             storage_mode,
             default_yolo_mode,
             default_auto_mode,
-            trace_upload_live: Arc::new(
-                std::sync::atomic::AtomicBool::new(cfg.is_trace_upload_enabled()),
-            ),
             memory_config: None,
             config_watcher_path_tx: None,
             relay_sync_enabled,
@@ -1671,13 +1298,6 @@ impl MvpAgent {
             ),
             session_live_state: RefCell::new(HashMap::new()),
             supervisor_started: std::cell::Cell::new(false),
-            announcements_gen: std::cell::Cell::new(0),
-            last_emitted_announcements: RefCell::new(Vec::new()),
-            announcements_refresh_started: std::cell::Cell::new(false),
-            heap_profile_monitor: RefCell::new(
-                crate::heap_profile::HeapProfileMonitor::new(),
-            ),
-            heap_profile_started: std::cell::Cell::new(false),
             #[cfg(test)]
             finalize_spy: RefCell::new(Vec::new()),
             #[cfg(test)]
@@ -1689,7 +1309,7 @@ impl MvpAgent {
             .auth_manager
             .configure_refresher(
                 instance.cfg.borrow().grok_com_config.auth_provider_command.clone(),
-                instance.diagnostic_upload_config(),
+                None,
             );
         crate::auth::credential_provider::wire_otel_auth_manager(
             instance.auth_manager.clone(),
@@ -1907,6 +1527,43 @@ impl MvpAgent {
     pub fn background_copy_context(&self) -> BackgroundCopyContext {
         self.background_copy_context.clone()
     }
+    /// Get the cwd for a session.
+    pub fn get_session_cwd(&self, session_id: &acp::SessionId) -> Option<PathBuf> {
+        let sessions = self.sessions.borrow();
+        sessions.get(session_id).map(|handle| PathBuf::from(&handle.info.cwd))
+    }
+    pub(super) fn origin_client_info_from_meta(
+        &self,
+        meta: Option<&acp::Meta>,
+    ) -> Option<crate::http::OriginClientInfo> {
+        crate::http::merge_origin_client_info(
+                crate::http::origin_client_info_from_meta(meta),
+                crate::http::origin_client_info_from_meta(
+                        self.initialize_request.get().and_then(|req| req.meta.as_ref()),
+                    )
+                    .map(|mut origin| {
+                        if origin.version.is_none() {
+                            origin.version = self.client_version();
+                        }
+                        origin
+                    }),
+            )
+            .map(|mut origin| {
+                if origin.version.is_none() {
+                    origin.version = self.client_version();
+                }
+                origin
+            })
+    }
+    /// Get a session handle by session_id.
+    /// Returns None if the session is not found.
+    pub fn get_session_handle(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Option<crate::session::SessionHandle> {
+        let sessions = self.sessions.borrow();
+        sessions.get(session_id).cloned()
+    }
     /// Move a foreground bash command to background.
     /// Routes through the session's tool bridge to unblock the agent loop.
     pub async fn background_foreground_command(
@@ -1998,77 +1655,30 @@ impl MvpAgent {
             .query(subagent_id, block, timeout_ms)
             .await
     }
-    pub(super) async fn spawned_subagent_refs_for_prompt(
-        &self,
-        parent_session_id: &str,
-        prompt_id: &str,
-    ) -> Vec<crate::upload::trace::SubagentSpawnedRef> {
-        gbuild_tools::implementations::gbuild::task::backend::ChannelBackend::new(
-                self.subagent_event_tx.clone(),
-            )
-            .spawned_refs_for_prompt(parent_session_id, prompt_id)
-            .await
-            .into_iter()
-            .map(|child| crate::upload::trace::SubagentSpawnedRef {
-                subagent_id: child.subagent_id,
-                child_session_id: child.child_session_id,
-                subagent_type: child.subagent_type,
-                description: child.description,
-                persona: child.persona,
-                resumed_from: child.resumed_from,
-            })
-            .collect()
+    /// `{session_id}/turn_{N}/`.
+    pub(crate) fn allocate_turn_number(&self, session_id: &acp::SessionId) -> u64 {
+        let turn = self.peek_turn_number(session_id);
+        self.set_turn_number(session_id, turn.saturating_add(1));
+        turn
     }
-    /// List all background tasks for a session.
-    /// Routes through the session's tool bridge to the TerminalBackend.
-    pub async fn list_tasks(
-        &self,
-        session_id: &str,
-    ) -> Option<Vec<gbuild_tools::types::TaskSnapshot>> {
-        let sid = acp::SessionId::new(session_id);
-        if let Some(handle) = self.get_session_handle(&sid) {
-            handle.list_tasks().await
-        } else {
-            None
-        }
+    /// Read a session's next trace turn number without advancing the counter.
+    fn peek_turn_number(&self, session_id: &acp::SessionId) -> u64 {
+        self.session_turn_numbers.borrow().get(session_id).copied().unwrap_or(0u64)
     }
-    /// Flush a session's persistence buffer with a 5-second timeout.
-    ///
-    /// Sends `FlushComplete` to the session actor, which chains through to
-    /// `FlushAndAck` on the persistence actor — a true sync barrier that only
-    /// resolves after all queued writes (chat messages, updates) hit disk.
-    ///
-    /// Returns `Ok(())` on success, `Err(reason)` on timeout or channel failure.
-    pub(crate) async fn flush_session(
-        &self,
-        session_id: &acp::SessionId,
-    ) -> Result<(), &'static str> {
-        let cmd_tx = self.sessions.borrow().get(session_id).map(|h| h.cmd_tx.clone());
-        let Some(cmd_tx) = cmd_tx else {
-            return Err("session not found");
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if cmd_tx
-            .send(SessionCommand::FlushComplete {
-                respond_to: tx,
-            })
-            .is_err()
-        {
-            return Err("send failed");
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(_)) => Err("channel closed"),
-            Err(_) => Err("timeout"),
-        }
+    /// batched harness-sibling allocation so both honor the same storage.
+    fn set_turn_number(&self, session_id: &acp::SessionId, next: u64) {
+        self.session_turn_numbers.borrow_mut().insert(session_id.clone(), next);
     }
-    /// Create a RelaySync instance if enabled and auth is available.
-    /// RelaySync is only enabled when:
-    /// 1. Running in TUI interactive mode (cfg.enable_relay_sync)
-    /// 2. Config file/env enables it ([relay] enabled or GBUILD_RELAY_SYNC_ENABLED)
-    /// 3. User is authenticated
-    ///
-    /// Returns a `RelaySync` instance whose connection state can be observed
+    /// fall back to the agent's own version (VERSION_WITH_COMMIT set by the TUI launcher).
+    pub(super) fn client_version(&self) -> Option<String> {
+        self.initialize_request
+            .get()
+            .and_then(|req| req.meta.as_ref())
+            .and_then(|m| m.get("clientVersion"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| self.cfg.borrow().client_version.clone())
+    }
     /// via `connection_state()`.
     pub(super) fn create_relay_sync(
         &self,
@@ -2101,77 +1711,6 @@ impl MvpAgent {
             ),
         )
     }
-    /// Spawn a local task that watches `ConnectionState` changes and forwards
-    /// them to the TUI as `ExtNotification`s containing `RelaySyncStatus`.
-    ///
-    /// This replaces the old `status_rx` channel that was removed when
-    /// `RelaySyncWithStatus` was eliminated.
-    pub(super) fn spawn_relay_state_forwarder(
-        mut state_rx: tokio::sync::watch::Receiver<crate::relay::ConnectionState>,
-        session_id: String,
-        gateway: GatewaySender,
-    ) {
-        use crate::extensions::notification::RelaySyncStatus;
-        let session_id = acp::SessionId::new(session_id);
-        tokio::task::spawn_local(async move {
-            while state_rx.changed().await.is_ok() {
-                let state = *state_rx.borrow_and_update();
-                let status = match state {
-                    crate::relay::ConnectionState::Connected => {
-                        let share_url = crate::relay::sync::build_share_url(
-                            &session_id.0,
-                        );
-                        RelaySyncStatus::Connected {
-                            share_url,
-                        }
-                    }
-                    crate::relay::ConnectionState::Disconnected => {
-                        RelaySyncStatus::Disconnected
-                    }
-                    crate::relay::ConnectionState::Connecting => {
-                        RelaySyncStatus::Reconnecting {
-                            attempt: 0,
-                        }
-                    }
-                };
-                let notification = SessionNotification {
-                    session_id: session_id.clone(),
-                    update: SessionUpdate::RelaySyncStatus(status),
-                    meta: None,
-                };
-                if let Ok(params) = serde_json::value::to_raw_value(&notification) {
-                    let ext_notification = acp::ExtNotification::new(
-                        "x.ai/session_notification",
-                        params.into(),
-                    );
-                    let _ = gateway.ext_notification(ext_notification).await;
-                }
-            }
-        });
-    }
-    /// Get a session's cwd by session_id.
-    /// Returns None if the session is not found.
-    pub fn get_session_cwd(&self, session_id: &acp::SessionId) -> Option<PathBuf> {
-        let sessions = self.sessions.borrow();
-        sessions.get(session_id).map(|handle| PathBuf::from(&handle.info.cwd))
-    }
-    /// Get a session handle by session_id.
-    /// Returns None if the session is not found.
-    pub fn get_session_handle(
-        &self,
-        session_id: &acp::SessionId,
-    ) -> Option<crate::session::SessionHandle> {
-        let sessions = self.sessions.borrow();
-        sessions.get(session_id).cloned()
-    }
-    /// Get hooks list for a session (for `x.ai/hooks/list` extension).
-    pub async fn list_hooks(
-        &self,
-        session_id: &acp::SessionId,
-    ) -> Option<xai_hooks_plugins_types::HooksListResponse> {
-        let handle = self.get_session_handle(session_id)?;
-        handle.get_hooks_list().await
-    }
     /// Execute a hooks management action (for `x.ai/hooks/action`).
     pub async fn execute_hooks_action(
         &self,
@@ -2199,188 +1738,50 @@ impl MvpAgent {
         }
         outcome
     }
-    /// Get a snapshot of the shared plugin registry (for `x.ai/plugins/list`).
-    pub fn plugin_registry_snapshot(
+    /// Returns `Ok(())` on success, `Err(reason)` on timeout or channel failure.
+    pub(crate) async fn flush_session(
         &self,
-    ) -> Option<std::sync::Arc<gbuild_agent::plugins::PluginRegistry>> {
-        self.plugin_registry_handle.snapshot()
-    }
-    /// Run content search at agent level.
-    /// This allows content search to work with just a cwd, without requiring a session.
-    /// Returns an upload method, or `None` when trace uploads are disabled.
-    pub async fn trace_upload_config(
-        &self,
-    ) -> Option<crate::session::repo_changes::UploadMethod> {
-        let (method, _reason) = self.trace_upload_config_with_reason().await;
-        method
-    }
-    pub(super) fn trace_upload_config_snapshot(
-        &self,
-    ) -> Option<crate::session::repo_changes::UploadMethod> {
-        if self.is_data_collection_disabled()
-            || !self.cfg.borrow().is_trace_upload_enabled()
+        session_id: &acp::SessionId,
+    ) -> Result<(), &'static str> {
+        let cmd_tx = self.sessions.borrow().get(session_id).map(|h| h.cmd_tx.clone());
+        let Some(cmd_tx) = cmd_tx else {
+            return Err("session not found");
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if cmd_tx
+            .send(SessionCommand::FlushComplete {
+                respond_to: tx,
+            })
+            .is_err()
         {
-            return None;
+            return Err("send failed");
         }
-        let cfg = self.cfg.borrow();
-        let auth_token = if cfg.endpoints.deployment_key.is_none() {
-            self.auth_manager
-                .current_or_expired()
-                .filter(|auth| auth.is_xai_auth())
-                .map(|auth| auth.key)
+        match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(_)) => Err("channel closed"),
+            Err(_) => Err("timeout"),
+        }
+    }
+    /// Get hooks list for a session (for `x.ai/hooks/list` extension).
+    pub async fn list_hooks(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Option<xai_hooks_plugins_types::HooksListResponse> {
+        let handle = self.get_session_handle(session_id)?;
+        handle.get_hooks_list().await
+    }
+    /// Routes through the session's tool bridge to the TerminalBackend.
+    pub async fn list_tasks(
+        &self,
+        session_id: &str,
+    ) -> Option<Vec<gbuild_tools::types::TaskSnapshot>> {
+        let sid = acp::SessionId::new(session_id);
+        if let Some(handle) = self.get_session_handle(&sid) {
+            handle.list_tasks().await
         } else {
             None
-        };
-        cfg.endpoints.resolve_upload_method(auth_token)
-    }
-    pub(super) fn diagnostic_upload_config(
-        &self,
-    ) -> Option<crate::auth::DiagnosticUploader> {
-        self.sync_collection_config_gate();
-        let cfg = self.cfg.borrow();
-        if !cfg.is_trace_upload_enabled() {
-            return None;
         }
-        let proxy_base_url = cfg.endpoints.resolve_trace_upload_url();
-        let deployment_key = cfg.endpoints.deployment_key.clone();
-        let alpha_test_key = cfg.endpoints.alpha_test_key.clone();
-        let auth_manager = self.auth_manager.clone();
-        let trace_upload_live = self.trace_upload_live.clone();
-        Some(
-            std::sync::Arc::new(move |
-                log_bytes: Vec<u8>,
-                auth_token: String,
-                user_id: String|
-            {
-                let proxy_base_url = proxy_base_url.clone();
-                let deployment_key = deployment_key.clone();
-                let alpha_test_key = alpha_test_key.clone();
-                let auth_manager = auth_manager.clone();
-                let trace_upload_live = trace_upload_live.clone();
-                Box::pin(async move {
-                    if !auth_manager.allows_data_collection()
-                        || !trace_upload_live.load(std::sync::atomic::Ordering::Relaxed)
-                    {
-                        tracing::debug!(
-                            "skipping auth-diagnostics upload: data collection disabled"
-                        );
-                        return;
-                    }
-                    let upload_method = crate::session::repo_changes::UploadMethod::Proxy {
-                        proxy_base_url,
-                        user_token: auth_token,
-                        deployment_key,
-                        alpha_test_key,
-                    };
-                    crate::upload::gcs::upload_to_auth_diagnostics(
-                            &log_bytes,
-                            &user_id,
-                            &upload_method,
-                            auth_manager,
-                        )
-                        .await;
-                })
-            }),
-        )
     }
-    /// Like `trace_upload_config`, but also returns the reason why uploads
-    /// are enabled or disabled for structured session events.
-    async fn trace_upload_config_with_reason(
-        &self,
-    ) -> (
-        Option<crate::session::repo_changes::UploadMethod>,
-        crate::upload::turn::TraceUploadReason,
-    ) {
-        use crate::upload::turn::TraceUploadReason;
-        if self.is_data_collection_disabled() {
-            crate::upload::trace::spawn_startup_spill_reconcile(
-                crate::util::gbuild_home::gbuild_home(),
-                None,
-            );
-            return (None, TraceUploadReason::ZdrTeam);
-        }
-        if self.cfg.borrow().remote_settings.is_none()
-            && let Ok(auth) = self.auth_manager.auth().await
-        {
-            self.refresh_remote_settings(&auth).await;
-        }
-        let (direct_method, has_deployment_key, endpoints) = {
-            let cfg = self.cfg.borrow();
-            if !cfg.is_trace_upload_enabled() {
-                return (None, TraceUploadReason::FeatureOff);
-            }
-            (
-                cfg.endpoints.resolve_direct_upload_method(),
-                cfg.endpoints.deployment_key.is_some(),
-                cfg.endpoints.clone(),
-            )
-        };
-        let service_account_key = crate::util::config::load_gcs_service_account_key_sync();
-        let method = if let Some(method) = direct_method {
-            Some(method)
-        } else {
-            let auth_token = if has_deployment_key {
-                None
-            } else {
-                self.auth_manager
-                        .auth()
-                        .await
-                        .ok()
-                        .filter(|auth| auth.is_xai_auth())
-                        .map(|auth| auth.key)
-            };
-            if auth_token.is_some() || has_deployment_key {
-                endpoints.resolve_upload_method(auth_token)
-            } else if service_account_key.is_some() {
-                Some(crate::session::repo_changes::UploadMethod::Direct {
-                    service_account_key,
-                })
-            } else {
-                None
-            }
-        };
-        let reason = crate::upload::turn::TraceUploadReason::from_upload_method(&method);
-        (method, reason)
-    }
-    /// Resolve client version: prefer the value from the initialize request _meta,
-    /// fall back to the agent's own version (VERSION_WITH_COMMIT set by the TUI launcher).
-    pub(super) fn client_version(&self) -> Option<String> {
-        self.initialize_request
-            .get()
-            .and_then(|req| req.meta.as_ref())
-            .and_then(|m| m.get("clientVersion"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| self.cfg.borrow().client_version.clone())
-    }
-    pub(super) fn origin_client_info_from_meta(
-        &self,
-        meta: Option<&acp::Meta>,
-    ) -> Option<crate::http::OriginClientInfo> {
-        crate::http::merge_origin_client_info(
-                crate::http::origin_client_info_from_meta(meta),
-                crate::http::origin_client_info_from_meta(
-                        self.initialize_request.get().and_then(|req| req.meta.as_ref()),
-                    )
-                    .map(|mut origin| {
-                        if origin.version.is_none() {
-                            origin.version = self.client_version();
-                        }
-                        origin
-                    }),
-            )
-            .map(|mut origin| {
-                if origin.version.is_none() {
-                    origin.version = self.client_version();
-                }
-                origin
-            })
-    }
-    /// Returns the model state for a given session (or the agent default).
-    ///
-    /// When `session_id` is `Some`, looks up the session's per-session model.
-    /// Falls back to `current_model_id` (startup default) when no session is
-    /// found or `session_id` is `None` (e.g., during `initialize` before any
     /// session exists).
     pub fn model_state(
         &self,
@@ -2416,6 +1817,40 @@ impl MvpAgent {
         }
         acp::SessionModelState::new(model_id, available_models)
     }
+    /// Get a snapshot of the shared plugin registry (for `x.ai/plugins/list`).
+    pub fn plugin_registry_snapshot(
+        &self,
+    ) -> Option<std::sync::Arc<gbuild_agent::plugins::PluginRegistry>> {
+        self.plugin_registry_handle.snapshot()
+    }
+    /// shared mutable state).
+    pub(super) fn seed_client_config_auth_if_available(&self) {
+        let mut sampling_config = self.sampling_config.borrow_mut();
+        if sampling_config.api_key.is_none() {
+            if let Some(auth) = self.auth_manager.current_or_expired() {
+                sampling_config.api_key = Some(auth.key);
+                tracing::debug!("auth: seed_client_config set auth (SessionToken)");
+                gbuild_telemetry::unified_log::debug(
+                    "auth: seed_client_config set auth (SessionToken)",
+                    None,
+                    None,
+                );
+            } else if !self
+                .models_manager
+                .models()
+                .values()
+                .any(|m| m.has_own_credentials())
+            {
+                tracing::warn!("No credentials found: no login token and no model api_key/env_key");
+                gbuild_telemetry::unified_log::warn(
+                    "No credentials found: no login token and no model api_key/env_key",
+                    None,
+                    None,
+                );
+            }
+        }
+    }
+    /// builder stops them drifting.
     pub(super) fn session_config_options(
         &self,
         session_id: Option<&acp::SessionId>,
@@ -2463,10 +1898,6 @@ impl MvpAgent {
             current_effort,
         )
     }
-    /// Build the `x.ai/sessionConfig` and `x.ai/sessionDetail` `_meta` values
-    /// shared by `new_session` and `load_session`, returned as
-    /// `(sessionConfig, sessionDetail)`. Keeping both response paths on this one
-    /// builder stops them drifting.
     pub(super) fn session_config_meta(
         &self,
         session_id: &acp::SessionId,
@@ -2483,339 +1914,51 @@ impl MvpAgent {
         );
         (serde_json::json!({ "options": config_options }), serde_json::json!(detail))
     }
-    /// Seed the global sampling config with login auth when available.
-    ///
-    /// Only sets the `api_key` if missing. Does NOT resolve `base_url` from
-    /// `current_model_id` — that's deferred to session creation time to avoid
-    /// cross-client contamination in leader mode (where `current_model_id` is
-    /// shared mutable state).
-    pub(super) fn seed_client_config_auth_if_available(&self) {
-        let mut sampling_config = self.sampling_config.borrow_mut();
-        if sampling_config.api_key.is_none() {
-            if let Some(auth) = self.auth_manager.current_or_expired() {
-                sampling_config.api_key = Some(auth.key);
-                tracing::debug!("auth: seed_client_config set auth (SessionToken)");
-                gbuild_telemetry::unified_log::debug(
-                    "auth: seed_client_config set auth (SessionToken)",
-                    None,
-                    None,
-                );
-            } else if !self
-                .models_manager
-                .models()
-                .values()
-                .any(|m| m.has_own_credentials())
-            {
-                tracing::warn!("No credentials found: no login token and no model api_key/env_key");
-                gbuild_telemetry::unified_log::warn(
-                    "No credentials found: no login token and no model api_key/env_key",
-                    None,
-                    None,
-                );
-            }
-        }
-    }
-    /// Build a `TraceExportConfig` for uploading JSON artifacts under a given prefix.
-    ///
-    /// Shared by comment uploads (`{session_id}/comments/...`),
-    /// comparison metadata (`{session_id}/turn_{N}/...`), etc.
-    pub(crate) async fn build_gcs_config(
-        &self,
-        gcs_prefix: String,
-    ) -> Option<crate::session::repo_changes::TraceExportConfig> {
-        let upload_method = self.trace_upload_config().await?;
-        let bucket_url = {
-            let cfg = self.cfg.borrow();
-            match &upload_method {
-                crate::session::repo_changes::UploadMethod::Direct { .. } => {
-                    match cfg.endpoints.resolve_trace_bucket_url() {
-                        Some(resolved) => Some(resolved.value),
-                        None => {
-                            tracing::debug!(
-                                "no trace bucket configured; skipping direct GCS upload"
-                            );
-                            return None;
-                        }
-                    }
-                }
-                crate::session::repo_changes::UploadMethod::S3 { bucket, .. } => {
-                    Some(format!("s3://{bucket}"))
-                }
-                crate::session::repo_changes::UploadMethod::Proxy { .. } => None,
-            }
-        };
-        Some(crate::session::repo_changes::TraceExportConfig {
-            bucket_url,
-            service_account_key: None,
-            prefix_dir: None,
-            gcs_prefix: Some(gcs_prefix),
-            absolute_paths: false,
-            archive_name_override: None,
-            upload_method,
-        })
-    }
-    /// Allocate the next monotonic telemetry turn number for a session.
-    ///
-    /// Returns the current turn number and advances the counter. The counter is
-    /// intentionally monotonic even across rewinds to avoid overwriting older
-    /// telemetry docs in cloud storage.
-    ///
-    /// For sessions sharing a parent's trace counter, call this once with the
-    /// **root session ID** and reuse the result so the root's counter does not
-    /// advance more than once per logical turn. The cloud storage layout writes to
-    /// `{session_id}/turn_{N}/`.
-    pub(crate) fn allocate_turn_number(&self, session_id: &acp::SessionId) -> u64 {
-        let turn = self.peek_turn_number(session_id);
-        self.set_turn_number(session_id, turn.saturating_add(1));
-        turn
-    }
-    /// Read a session's next trace turn number without advancing the counter.
-    fn peek_turn_number(&self, session_id: &acp::SessionId) -> u64 {
-        self.session_turn_numbers.borrow().get(session_id).copied().unwrap_or(0u64)
-    }
-    /// Set a session's next trace turn number. The sole writer of the
-    /// `session_turn_numbers` counter, shared by `allocate_turn_number` and the
-    /// batched harness-sibling allocation so both honor the same storage.
-    fn set_turn_number(&self, session_id: &acp::SessionId, next: u64) {
-        self.session_turn_numbers.borrow_mut().insert(session_id.clone(), next);
-    }
-    /// Upload each drained harness trace turn (the goal planner at setup, and
-    /// each verifier skeptic panel) as its OWN sibling `turn_{N}` artifact.
-    ///
-    /// These phases run inside the single user-facing goal turn but are
-    /// recorded out-of-band (synthetic `task` pairs in a side buffer), so the
-    /// normal per-round `turn_messages.json` never references them. Giving each
-    /// phase its own monotonic turn number — from the SAME `session_turn_numbers`
-    /// counter the model turns use (see [`Self::allocate_turn_number`]), via
-    /// [`Self::get_trace_context`] + [`upload_turn_messages`] — makes the
-    /// subagents discoverable in remote/web clients
-    /// via the `<subagent_result>` footer each synthetic `task` result carries.
-    /// The advanced counter is persisted via `SetNextTraceTurn` so the siblings
-    /// survive a restart. Best-effort and non-blocking.
-    pub(super) async fn upload_harness_trace_turns(
-        &self,
-        session_id: &acp::SessionId,
-        info: &crate::session::info::Info,
-        cmd_tx: &tokio::sync::mpsc::UnboundedSender<crate::session::SessionCommand>,
-        model: &str,
-        turns: Vec<Vec<gbuild_sampling_types::conversation::ConversationItem>>,
+    /// `RelaySyncWithStatus` was eliminated.
+    pub(super) fn spawn_relay_state_forwarder(
+        mut state_rx: tokio::sync::watch::Receiver<crate::relay::ConnectionState>,
+        session_id: String,
+        gateway: GatewaySender,
     ) {
-        use crate::upload::manifest::{
-            build_manifest, resolve_upload_method, write_upload_manifest,
-        };
-        let base = self.peek_turn_number(session_id);
-        let uploads = self
-            .build_harness_trace_uploads(session_id, info, model, base, turns)
-            .await;
-        if uploads.is_empty() {
-            return;
-        }
-        let next_trace_turn = base.saturating_add(uploads.len() as u64);
-        self.set_turn_number(session_id, next_trace_turn);
-        let _ = cmd_tx
-            .send(crate::session::SessionCommand::SetNextTraceTurn {
-                next_trace_turn,
-                request_id: None,
-            });
-        for (ctx, metadata, capture) in uploads {
-            spawn_upload_task(
-                "harness_trace_turn",
-                async move {
-                    let session_state = build_chat_history_session_state(
-                        &capture.messages,
-                    );
-                    futures::join!(
-                    upload_metadata(&ctx, metadata),
-                    upload_turn_messages(&ctx, capture, UploadWait::Confirm),
-                    upload_harness_session_archive(&ctx, session_state),
-                );
-                    let upload_method = resolve_upload_method(&ctx);
-                    write_upload_manifest(
-                            &ctx,
-                            &build_manifest(&ctx.artifact_tracker, upload_method),
-                        )
-                        .await;
-                },
-            );
-        }
-    }
-    /// Number the drained harness turns `base, base+1, …` and build their
-    /// `(trace context, metadata, capture)` upload payloads. Stops at the first
-    /// turn whose trace context is `None` — uploads are disabled (or the session
-    /// is gone), a state uniform across the batch since all turns share one
-    /// `session_id`. A `None` *after* a `Some` would be a broken invariant, so
-    /// it is logged rather than dropped silently.
-    pub(super) async fn build_harness_trace_uploads(
-        &self,
-        session_id: &acp::SessionId,
-        info: &crate::session::info::Info,
-        model: &str,
-        base: u64,
-        turns: Vec<Vec<gbuild_sampling_types::conversation::ConversationItem>>,
-    ) -> Vec<(PromptTraceContext, PromptMetadata, xai_chat_state::TurnCapture)> {
-        let mut uploads = Vec::with_capacity(turns.len());
-        for (offset, items) in turns.into_iter().enumerate() {
-            let turn_number = base.saturating_add(offset as u64);
-            let Some(ctx) = self.get_trace_context(info, turn_number).await else {
-                if offset > 0 {
-                    tracing::warn!(
-                        turn_number,
-                        "harness trace: trace context unexpectedly None mid-batch; \
-                         dropping the remaining drained turns"
-                    );
-                }
-                break;
-            };
-            let metadata = PromptMetadata {
-                schema_version: GCS_SCHEMA_VERSION.to_string(),
-                session_id: session_id.0.to_string(),
-                turn_number,
-                request_id: format!("harness-trace-{turn_number}"),
-                turn_started_at: chrono::Utc::now().to_rfc3339(),
-                repo_root: None,
-                remote_url: None,
-                user_id: None,
-                user_email: None,
-                team_id: None,
-                client_source: None,
-                client_version: None,
-                model: model.to_string(),
-                reasoning_effort: ctx
-                    .session_handle
-                    .reasoning_effort
-                    .map(|e| e.as_str().to_string()),
-                experiment_id: None,
-                host_os: std::env::consts::OS.to_string(),
-                host_arch: std::env::consts::ARCH.to_string(),
-                prompt_has_image: Some(false),
-                prompt_was_truncated: Some(false),
-                prompt_verbatim: Some(true),
-                cwd: Some(info.cwd.clone()),
-                agent_type: None,
-                shell_version: Some(gbuild_version::VERSION.to_string()),
-                workspace_type: None,
-                sandbox: local_sandbox_telemetry(),
-            };
-            let capture = xai_chat_state::TurnCapture {
-                messages: items,
-                compaction_occurred: false,
-            };
-            uploads.push((ctx, metadata, capture));
-        }
-        uploads
-    }
-    /// Gets the trace context for a prompt using cloud storage.
-    pub(crate) async fn get_trace_context(
-        &self,
-        session_info: &crate::session::info::Info,
-        turn_number: u64,
-    ) -> Option<PromptTraceContext> {
-        let (upload_method, upload_reason) = self
-            .trace_upload_config_with_reason()
-            .await;
-        {
-            let mut decision = self.cfg.borrow().trace_upload_decision_debug();
-            if let Some(obj) = decision.as_object_mut() {
-                obj.insert(
-                    "uploads_enabled".into(),
-                    serde_json::json!(upload_method.is_some()),
-                );
-                obj.insert(
-                    "upload_reason".into(),
-                    serde_json::json!(upload_reason.as_str()),
-                );
-                obj.insert(
-                    "data_collection_disabled".into(),
-                    serde_json::json!(self.is_data_collection_disabled()),
-                );
-                obj.insert("turn_number".into(), serde_json::json!(turn_number));
-            }
-            gbuild_telemetry::unified_log::info(
-                "trace.upload.decision",
-                Some(session_info.id.0.as_ref()),
-                Some(decision),
-            );
-        }
-        let upload_method = match upload_method {
-            Some(method) => method,
-            None => {
-                gbuild_telemetry::session_ctx::log_session_event(crate::agent::session_metrics::TraceUploadSkipped {
-                    session_id: session_info.id.0.to_string(),
-                    turn_number,
-                    reason: upload_reason.as_str().to_owned(),
-                });
-                return None;
-            }
-        };
-        let bucket_url = {
-            let cfg = self.cfg.borrow();
-            match &upload_method {
-                crate::session::repo_changes::UploadMethod::Direct { .. } => {
-                    match cfg.endpoints.resolve_trace_bucket_url() {
-                        Some(resolved) => Some(resolved.value),
-                        None => {
-                            gbuild_telemetry::session_ctx::log_session_event(crate::agent::session_metrics::TraceUploadSkipped {
-                                session_id: session_info.id.0.to_string(),
-                                turn_number,
-                                reason: "no_trace_bucket_configured".to_owned(),
-                            });
-                            return None;
+        use crate::extensions::notification::RelaySyncStatus;
+        let session_id = acp::SessionId::new(session_id);
+        tokio::task::spawn_local(async move {
+            while state_rx.changed().await.is_ok() {
+                let state = *state_rx.borrow_and_update();
+                let status = match state {
+                    crate::relay::ConnectionState::Connected => {
+                        let share_url = crate::relay::sync::build_share_url(
+                            &session_id.0,
+                        );
+                        RelaySyncStatus::Connected {
+                            share_url,
                         }
                     }
+                    crate::relay::ConnectionState::Disconnected => {
+                        RelaySyncStatus::Disconnected
+                    }
+                    crate::relay::ConnectionState::Connecting => {
+                        RelaySyncStatus::Reconnecting {
+                            attempt: 0,
+                        }
+                    }
+                };
+                let notification = SessionNotification {
+                    session_id: session_id.clone(),
+                    update: SessionUpdate::RelaySyncStatus(status),
+                    meta: None,
+                };
+                if let Ok(params) = serde_json::value::to_raw_value(&notification) {
+                    let ext_notification = acp::ExtNotification::new(
+                        "x.ai/session_notification",
+                        params.into(),
+                    );
+                    let _ = gateway.ext_notification(ext_notification).await;
                 }
-                crate::session::repo_changes::UploadMethod::S3 { bucket, .. } => {
-                    Some(format!("s3://{bucket}"))
-                }
-                crate::session::repo_changes::UploadMethod::Proxy { .. } => None,
             }
-        };
-        let gcs_config = crate::session::repo_changes::TraceExportConfig {
-            bucket_url,
-            service_account_key: None,
-            prefix_dir: None,
-            gcs_prefix: Some(format!("{}/turn_{}", session_info.id.0, turn_number)),
-            absolute_paths: false,
-            archive_name_override: None,
-            upload_method,
-        };
-        let session_handle = match self.sessions.borrow().get(&session_info.id) {
-            Some(h) => h.clone(),
-            None => {
-                return None;
-            }
-        };
-        let queue = session_handle
-            .upload_queue
-            .get_or_init(|| {
-                let gbuild_home = crate::util::gbuild_home::gbuild_home();
-                let queue = crate::upload::trace::spawn_upload_queue(
-                    &gbuild_home,
-                    &gcs_config,
-                    Some(gbuild_version::VERSION),
-                    self.auth_manager.clone(),
-                );
-                crate::upload::trace::spawn_startup_spill_reconcile(
-                    gbuild_home,
-                    Some(queue.clone()),
-                );
-                session_handle
-                    .feedback_manager
-                    .set_upload_queue_stats(queue.stats_arc());
-                queue
-            });
-        let upload_queue = Some(queue.clone());
-        let session_registry_enabled = self.build_registry_config().is_some();
-        Some(PromptTraceContext {
-            gcs_config,
-            session_info: session_info.clone(),
-            turn_number,
-            session_handle,
-            session_registry_enabled,
-            upload_queue,
-            artifact_tracker: crate::upload::manifest::new_artifact_tracker(),
-            auth_manager: self.auth_manager.clone(),
-        })
+        });
     }
+
     /// Resolve the agent definition for a session.
     ///
     /// Priority (highest to lowest):
@@ -3215,18 +2358,6 @@ impl MvpAgent {
                     )
             })?;
         tool_ctx.subagent_event_tx = Some(self.subagent_event_tx.clone());
-        tool_ctx.synthetic_trace_tx = self
-            .subagent_presentation
-            .borrow()
-            .synthetic_trace_tx
-            .clone();
-        if let Some(ref shared) = tool_ctx.synthetic_trace_tx_shared {
-            *shared.lock().unwrap_or_else(|e| e.into_inner()) = self
-                .subagent_presentation
-                .borrow()
-                .synthetic_trace_tx
-                .clone();
-        }
         tool_ctx.is_turn_active = Some(
             self.subagent_presentation.borrow().turn_active_flag(),
         );
@@ -3277,22 +2408,7 @@ impl MvpAgent {
         let auto_update = self.cfg.borrow().cli.auto_update;
         let client_type = *self.client_type.borrow();
         let buffering_settings = self.buffering_settings.borrow().clone();
-        let (
-            feedback_proxy_url,
-            feedback_user_token,
-            feedback_alpha_test_key,
-            deployment_key,
-        ) = if let Some((url, token, alpha, deploy)) = self.feedback_credentials() {
-            (Some(url), token, alpha, deploy)
-        } else {
-            (None, None, None, None)
-        };
-        tracing::info!(
-            session_id = %session_info.id.0,
-            feedback_url = ?feedback_proxy_url,
-            authenticated = feedback_user_token.is_some(),
-            "Initializing feedback manager for session"
-        );
+        let deployment_key = self.cfg.borrow().endpoints.deployment_key.clone();
         let skills = self.cfg.borrow().skills.clone();
         let compat = self.cfg.borrow().compat_resolved;
         let acp_agent_profile = parse_agent_profile_from_meta(session_meta);
@@ -3661,9 +2777,6 @@ impl MvpAgent {
                     self.codebase_indexes.clone(),
                     client_code_nav_enabled,
                     fs_watch_caps,
-                    feedback_proxy_url,
-                    feedback_user_token,
-                    feedback_alpha_test_key,
                     deployment_key,
                     client_terminal,
                     client_fs_read && client_fs_write,
@@ -3759,7 +2872,6 @@ impl MvpAgent {
         tracing::debug!(session_id = %session_info.id.0, "spawn_session_on_thread complete");
         self.set_session_live_state(&session_info.id, SessionLiveState::IdleResident);
         self.ensure_session_supervisor();
-        self.heap_profile_set_session_id(&session_info.id.0);
         self.push_roster_delta_upserted(&session_info.id);
         if chat_history.is_empty() {
             let _timer = crate::instrumentation_timer!("session.system_prompt_inject");
@@ -3837,23 +2949,5 @@ impl MvpAgent {
                 .await;
         });
         Ok(())
-    }
-    /// Collects all pending permission events from a session's receiver.
-    /// Returns only the events from the current turn (since last collection).
-    pub(super) fn collect_permission_events(
-        &self,
-        session_id: &acp::SessionId,
-    ) -> Vec<PermissionEvent> {
-        let mut events = Vec::new();
-        if let Some(rx) = self
-            .permission_event_receivers
-            .borrow_mut()
-            .get_mut(session_id)
-        {
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
-            }
-        }
-        events
     }
 }

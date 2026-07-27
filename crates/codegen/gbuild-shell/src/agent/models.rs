@@ -591,7 +591,7 @@ impl ModelsManager {
     /// Respects the auth snapshot / hot-swap discipline.
     pub async fn on_auth_changed(&self) {
         let config = self.inner.cfg.read().clone();
-        crate::agent::init::update_telemetry_config(&config, &self.inner.auth_manager);
+        crate::agent::init::update_telemetry_config(&config);
         self.inner.cache.invalidate();
         let has_session = self.inner.auth_manager.current_or_expired().is_some();
         let fetch_auth = ModelFetchAuth::resolve(&config.endpoints, has_session);
@@ -1410,37 +1410,8 @@ pub(crate) fn prefetch_models_blocking(
     )
 }
 
-/// Blocking models + `/v1/settings` prefetch pair, shared by the early
-/// prefetch thread and the leader's startup phase so the settings gate lives
-/// once. The remote_fetch knob is resolved a single time so the two fetch
-/// decisions cannot disagree mid-startup.
-pub(crate) fn prefetch_models_and_settings_blocking(
-    endpoints: &config::EndpointsConfig,
-    auth: Option<&GrokAuth>,
-    fetch_auth: ModelFetchAuth,
-) -> (
-    Option<IndexMap<String, ModelEntry>>,
-    Option<crate::util::config::RemoteSettings>,
-) {
-    let remote_fetch_enabled = crate::util::config::resolve_remote_fetch_enabled();
-    let models = prefetch_models_blocking_gated(endpoints, auth, fetch_auth, remote_fetch_enabled);
-    // Settings need a grok.com session; skip for BYOK.
-    let settings = match auth {
-        Some(auth) if remote_fetch_enabled => {
-            let _timer = crate::instrumentation_timer!("startup.early_settings_fetch");
-            crate::remote::fetch_settings_blocking(
-                &endpoints.proxy_url(),
-                auth,
-                endpoints.alpha_test_key.as_deref(),
-            )
-        }
-        _ => None,
-    };
-    (models, settings)
-}
-
-/// `remote_fetch_enabled` is a parameter so the pair helper above resolves the
-/// knob once for both halves.
+/// `remote_fetch_enabled` is a parameter so the startup pair resolution above
+/// resolves the knob once for both the catalog fetch and its cache origin.
 fn prefetch_models_blocking_gated(
     endpoints: &config::EndpointsConfig,
     auth: Option<&GrokAuth>,
@@ -1491,10 +1462,9 @@ fn prefetch_models_blocking_gated(
     }
 }
 
-/// Startup prefetch result: models + remote settings.
+/// Startup prefetch result: the remote model catalog.
 pub struct EarlyPrefetchResult {
     pub models: Option<IndexMap<String, ModelEntry>>,
-    pub settings: Option<crate::util::config::RemoteSettings>,
 }
 
 /// Handle for a startup prefetch thread.
@@ -1570,56 +1540,30 @@ fn resolve_prefetch_env(grok_com_config: Option<GrokComConfig>) -> Option<Prefet
 /// credentials from disk.
 pub fn start_early_prefetch_with_auth(auth: Option<GrokAuth>) -> Option<EarlyPrefetchHandle> {
     let env = resolve_prefetch_env_with_auth(auth)?;
-    Some(spawn_prefetch_thread(env, true))
+    Some(spawn_prefetch_thread(env))
 }
 
-/// Start model + settings prefetch on a background thread.
+/// Start the model-catalog prefetch on a background thread.
 ///
 /// Convenience wrapper that reads cached auth from disk. Prefer
 /// `start_early_prefetch_with_auth` when you have pre-resolved credentials.
-/// Also runs a best-effort managed-config sync when the cache is stale.
 pub fn start_early_prefetch(grok_com_config: Option<GrokComConfig>) -> Option<EarlyPrefetchHandle> {
     let env = resolve_prefetch_env(grok_com_config)?;
-    Some(spawn_prefetch_thread(env, true))
+    Some(spawn_prefetch_thread(env))
 }
 
-/// Prefetch models + remote settings only — **no** managed-config sync.
-///
-/// Used before the managed-policy gate so a kill-switch can apply on cold start
-/// without healing a tampered on-disk policy before the fail-closed gate runs.
-pub fn start_early_prefetch_settings_only(
-    grok_com_config: Option<GrokComConfig>,
-) -> Option<EarlyPrefetchHandle> {
-    let env = resolve_prefetch_env(grok_com_config)?;
-    Some(spawn_prefetch_thread(env, false))
-}
-
-fn spawn_prefetch_thread(env: PrefetchEnv, sync_managed: bool) -> EarlyPrefetchHandle {
+fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
     std::thread::spawn(move || {
         let mut timer = crate::instrumentation_timer!("startup.early_prefetch");
         let proxy_endpoint = env.endpoints.proxy_url();
         timer.with_field("endpoint", proxy_endpoint.as_str());
-        let (models, settings) = prefetch_models_and_settings_blocking(
+        let models = prefetch_models_blocking(
             &env.endpoints,
             env.auth.as_ref(),
             env.model_fetch_auth,
         );
-        if sync_managed
-            && (env.endpoints.deployment_key.is_some()
-                || crate::managed_config::has_active_team_auth())
-            && crate::config::is_managed_config_stale_for(
-                &crate::managed_config::current_serving_identity(),
-            )
-            && crate::managed_config::is_fetch_enabled()
-            && let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-        {
-            crate::managed_config::clear_orphan();
-            let _ = rt.block_on(crate::managed_config::sync());
-        }
 
-        EarlyPrefetchResult { models, settings }
+        EarlyPrefetchResult { models }
     })
 }
 

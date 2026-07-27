@@ -106,8 +106,6 @@ pub struct AppCtx<'a> {
     pub models: &'a ModelState,
     /// Working directory of the active session (for filesystem completions).
     pub cwd: &'a std::path::Path,
-    /// Session announcements (critical or promo) exist (gates `/announcements` visibility).
-    pub has_session_announcements: bool,
     /// Consumer billing surface (`AppView::usage_visible`). Gates `/usage` subcommands.
     pub billing_surface_visible: bool,
     pub workflows_available: bool,

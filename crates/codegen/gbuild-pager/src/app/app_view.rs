@@ -103,21 +103,6 @@ impl NewWorktreeDialogState {
         }
     }
 }
-/// Per-visit announcement UI state on the welcome screen. Reset on every
-/// return-to-welcome transition (see `show_welcome`) so a previously expanded
-/// announcement can't leak into a freshly shown screen; the non-`expanded`
-/// fields are recomputed each frame, so resetting them is harmless.
-#[derive(Debug, Default)]
-pub struct WelcomeAnnouncementState {
-    /// Whether a long announcement is expanded inline (default: 2 lines + `…`).
-    pub expanded: bool,
-    /// Mouse last over the announcement block (drives hover color + redraws).
-    pub on_cta: bool,
-    /// Whether the announcement overflowed (the "expandable" signal).
-    pub truncated: bool,
-    /// Hit-test rect for the full announcement block (click anywhere to toggle).
-    pub rect: Option<ratatui::layout::Rect>,
-}
 /// Outcome of handling input in the new-worktree dialog.
 #[derive(Debug)]
 pub enum NewWorktreeDialogOutcome {
@@ -647,29 +632,12 @@ pub struct AppView {
     /// Release-safe FPS HUD (`/debug fps`; `GBUILD_FPS` env on release
     /// builds, where the dev overlay is compiled out) — see the module doc.
     pub fps_hud: crate::views::fps_hud::FpsHud,
-    pub active_announcements: Vec<gbuild_announcements::RemoteAnnouncement>,
-    /// Persisted hide keys, filtered at the banner selection gate — hiding one
-    /// critical reveals the next unhidden one, and a NEW id re-arms the banner.
-    pub hidden_announcement_ids: std::collections::BTreeSet<String>,
-    pub announcements_last_gen: u64,
-    /// Selected welcome announcement for this pager launch.
-    pub announcement: Option<gbuild_announcements::RemoteAnnouncement>,
-    /// Cached changelog markdown (for `/release-notes`). Populated by
-    /// `FetchChangelog` at startup; `None` until the fetch completes.
-    pub changelog_markdown: Option<String>,
-    /// Cached changelog bullets (for welcome screen). Populated by
-    /// `FetchChangelog` at startup; empty until the fetch completes.
-    pub changelog_bullets: Vec<String>,
     /// Resolved tip list from config layers.
     pub tips: Vec<String>,
     /// Selected tip for the current launch/session.
     pub tip: Option<String>,
     /// Whether to show the resolved model ID in /session-info output.
     pub show_resolved_model: bool,
-    /// Whether the `/share` slash command is available. Gated by
-    /// `RemoteSettings.sharing_enabled`; defaults to `false` when remote
-    /// settings are unavailable or the field is absent.
-    pub sharing_enabled: bool,
     /// Whether the plugin marketplace CTA is enabled. Env `GBUILD_PLUGIN_CTA`
     /// overrides `RemoteSettings.plugin_cta` (remote settings); defaults to `false`.
     pub plugin_cta_enabled: bool,
@@ -791,10 +759,6 @@ pub struct AppView {
     pub welcome_menu_index: Option<usize>,
     /// Hit-test rects for welcome menu items (populated during render).
     pub welcome_menu_rects: Vec<ratatui::layout::Rect>,
-    /// Whether the welcome menu currently includes a "Changelog" row (above
-    /// Quit). Set during render; the input handler uses it to size the menu and
-    /// map the extra row to the release-notes action.
-    pub welcome_show_changelog_action: bool,
     /// Hit-test rect for the import-claude banner on the welcome screen.
     pub welcome_import_banner_rect: Option<ratatui::layout::Rect>,
     /// Last known mouse position (column, row), updated on every Mouse event.
@@ -816,20 +780,12 @@ pub struct AppView {
     pub welcome_auth_url_rect: Option<ratatui::layout::Rect>,
     /// Whether the mouse pointer was last over the auth URL (for OSC 22 cursor shape).
     pub welcome_on_auth_url: bool,
-    /// Mouse last over the changelog block (drives hover color + redraws).
-    pub welcome_on_changelog_cta: bool,
-    /// Per-visit announcement UI state on the welcome screen (expansion, hover,
-    /// overflow flag, hit-rect).
-    pub welcome_announcement: WelcomeAnnouncementState,
     /// Hit-test rect for the "show full URL" fallback link.
     pub welcome_auth_fallback_rect: Option<ratatui::layout::Rect>,
     /// Hit-test rect for the "[Refresh]" button on the paywall tier line.
     pub welcome_refresh_rect: Option<ratatui::layout::Rect>,
     /// Hit-test rect for the gate URL link on the paywall CTA.
     pub welcome_gate_url_rect: Option<ratatui::layout::Rect>,
-    /// Hit-test rect for the welcome hero upgrade CTA `[label]` button
-    /// (click → `AnnouncementsOpenCta(Welcome)`).
-    pub welcome_upgrade_cta_rect: Option<ratatui::layout::Rect>,
     pub welcome_privacy_banner_accept_rect: Option<ratatui::layout::Rect>,
     pub welcome_privacy_banner_customize_rect: Option<ratatui::layout::Rect>,
     pub welcome_privacy_banner_legal_rect: Option<ratatui::layout::Rect>,
@@ -837,10 +793,6 @@ pub struct AppView {
     pub welcome_toast: Option<(String, std::time::Instant)>,
     /// Sticky hover flag for the privacy banner buttons (redraw on enter/leave).
     pub welcome_on_privacy_banner: bool,
-    /// Sticky hover flag for the welcome upgrade CTA (redraw on enter/leave).
-    pub welcome_on_upgrade_cta: bool,
-    /// Hit-test rect for the clickable changelog info block (opens release notes).
-    pub welcome_changelog_cta_rect: Option<ratatui::layout::Rect>,
     /// Show the raw auth URL with mouse capture disabled for manual copy.
     pub auth_show_raw_url: bool,
     /// Whether mouse capture is currently disabled for raw URL mode.
@@ -1046,12 +998,6 @@ pub struct AppView {
     /// `None` (default) fetches usage from the backend.
     pub usage_billing_redirect_url: Option<String>,
     pub access_gate_shown_logged: bool,
-    /// (hide-key, surface) pairs whose `AnnouncementCtaShown` impression was
-    /// already logged — once per pager process, cleared on logout. Keyed by
-    /// `announcement_hide_key` (stable even for id-less items, unlike the
-    /// event's `id`).
-    pub announcement_cta_impressions_logged:
-        std::collections::BTreeSet<(String, gbuild_telemetry::events::AnnouncementCtaSurface)>,
     /// Access gate from `gbuild_access_gate`. `Some` = blocked.
     pub gate: Option<gbuild_shell::auth::GateInfo>,
     /// User-friendly subscription tier name (e.g. "SuperGrok", "Free").
@@ -1078,10 +1024,8 @@ pub struct AppView {
     /// Latest version string from a background update check. Set when
     /// a newer version is detected; rendered as a notification on the
     /// welcome screen.
-    pub pending_update_version: Option<String>,
     /// When true, the event loop should exit so the user can relaunch
     /// to pick up the downloaded update.
-    pub quit_for_update: bool,
     /// Generation and state for the one launch-scoped foreign resume detection.
     pub(crate) foreign_resume_launch_generation: u64,
     pub(crate) foreign_resume_launch: Option<crate::app::foreign_sessions::ForeignResumeLaunch>,
@@ -1369,12 +1313,6 @@ impl AppView {
             tracing_rx: None,
             scroll_debug_hud: crate::views::scroll_debug_hud::ScrollDebugHud::new(),
             fps_hud: crate::views::fps_hud::FpsHud::new(),
-            active_announcements: Vec::new(),
-            hidden_announcement_ids: Default::default(),
-            announcements_last_gen: 0,
-            announcement: None,
-            changelog_markdown: None,
-            changelog_bullets: Vec::new(),
             tips: Vec::new(),
             tip: None,
             welcome_prompt,
@@ -1389,7 +1327,6 @@ impl AppView {
             minimal_state: crate::minimal_api::MinimalState::default(),
             welcome_menu_index: None,
             welcome_menu_rects: Vec::new(),
-            welcome_show_changelog_action: false,
             welcome_import_banner_rect: None,
             last_mouse_pos: None,
             last_scroll_pos: None,
@@ -1397,19 +1334,14 @@ impl AppView {
             welcome_prompt_rect: None,
             welcome_auth_url_rect: None,
             welcome_on_auth_url: false,
-            welcome_on_changelog_cta: false,
-            welcome_announcement: WelcomeAnnouncementState::default(),
             welcome_auth_fallback_rect: None,
             welcome_refresh_rect: None,
             welcome_gate_url_rect: None,
-            welcome_upgrade_cta_rect: None,
             welcome_privacy_banner_accept_rect: None,
             welcome_privacy_banner_customize_rect: None,
             welcome_privacy_banner_legal_rect: None,
             welcome_toast: None,
             welcome_on_privacy_banner: false,
-            welcome_on_upgrade_cta: false,
-            welcome_changelog_cta_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
             session_picker_entries: None,
@@ -1485,7 +1417,6 @@ impl AppView {
             zdr_access_enabled: false,
             usage_billing_redirect_url: None,
             access_gate_shown_logged: false,
-            announcement_cta_impressions_logged: Default::default(),
             gate: None,
             subscription_tier: None,
             paywall_check_started: None,
@@ -1496,17 +1427,14 @@ impl AppView {
             reconnect_pending: false,
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
-            pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,
-            quit_for_update: false,
             relaunch: None,
             has_claude_import: false,
             import_claude_modal: None,
             welcome_doc_viewer: None,
             screen_mode: ScreenMode::Inline,
             show_resolved_model: true,
-            sharing_enabled: false,
             plugin_cta_enabled: false,
             usage_visible: true,
             tier_restricted_commands: Vec::new(),
@@ -1641,36 +1569,6 @@ impl AppView {
     /// [`crate::app::dispatch::voice`]).
     pub fn is_voice_tier_restricted(&self) -> bool {
         self.tier_restricted_commands.iter().any(|c| c == "voice")
-    }
-    /// Draw-time expiry can flip the live-announcement predicate between
-    /// pushes; resync the slash gate only when it diverges from the stored
-    /// flags (checked per frame, fan-out runs only on change).
-    pub fn resync_announcement_slash_gate_on_divergence(&mut self) {
-        let has =
-            crate::views::announcements::has_session_announcements(&self.active_announcements);
-        if self
-            .agents
-            .values()
-            .any(|a| a.prompt.slash_controller.has_session_announcements() != has)
-        {
-            self.sync_session_announcement_slash_gate();
-        }
-    }
-    /// Offer `/announcements` only when session items (critical or promo)
-    /// exist (even if currently hidden — user may still run `/announcements
-    /// show`).
-    pub fn sync_session_announcement_slash_gate(&mut self) {
-        let has =
-            crate::views::announcements::has_session_announcements(&self.active_announcements);
-        for agent in self.agents.values_mut() {
-            agent
-                .prompt
-                .slash_controller
-                .set_has_session_announcements(has);
-            for child in agent.subagent_views.values_mut() {
-                child.set_has_session_announcements(has);
-            }
-        }
     }
     /// Mic is live (the [`VoiceState::Recording`] state).
     pub fn voice_listening(&self) -> bool {
@@ -2374,11 +2272,6 @@ impl AppView {
         }
         let zdr_blocked = self.is_zdr_blocked();
         let has_access = self.has_access();
-        let welcome_pinned_upgrade_cta = crate::views::announcements::promo_cta(
-            &self.active_announcements,
-            &self.hidden_announcement_ids,
-        )
-        .is_some_and(|(owner, _, _)| !crate::views::announcements::is_dismissible(owner));
         let has_foreign_resume = self.foreign_resume_hint().is_some();
         let sp_loading = crate::views::session_picker::loading_spinner_active(
             self.session_picker_entries.as_deref(),
@@ -2403,11 +2296,6 @@ impl AppView {
                         2
                     } else {
                         3 + if self.has_claude_import { 1 } else { 0 }
-                            + if self.welcome_show_changelog_action {
-                                1
-                            } else {
-                                0
-                            }
                     },
                     prompt_rect: self.welcome_prompt_rect.as_ref(),
                     import_banner_rect: self.welcome_import_banner_rect.as_ref(),
@@ -2415,21 +2303,12 @@ impl AppView {
                     auth_fallback_rect: self.welcome_auth_fallback_rect.as_ref(),
                     refresh_rect: self.welcome_refresh_rect.as_ref(),
                     gate_url_rect: self.welcome_gate_url_rect.as_ref(),
-                    upgrade_cta_rect: self.welcome_upgrade_cta_rect.as_ref(),
                     privacy_banner_accept_rect: self.welcome_privacy_banner_accept_rect.as_ref(),
                     privacy_banner_customize_rect: self
                         .welcome_privacy_banner_customize_rect
                         .as_ref(),
                     privacy_banner_legal_rect: self.welcome_privacy_banner_legal_rect.as_ref(),
                     on_privacy_banner: &mut self.welcome_on_privacy_banner,
-                    on_upgrade_cta: &mut self.welcome_on_upgrade_cta,
-                    upgrade_cta_keyboard: welcome_pinned_upgrade_cta,
-                    changelog_cta_rect: self.welcome_changelog_cta_rect.as_ref(),
-                    on_changelog_cta: &mut self.welcome_on_changelog_cta,
-                    announcement_truncated: self.welcome_announcement.truncated,
-                    announcement_rect: self.welcome_announcement.rect.as_ref(),
-                    on_announcement_cta: &mut self.welcome_announcement.on_cta,
-                    announcement_expanded: &mut self.welcome_announcement.expanded,
                     show_raw_url: &mut self.auth_show_raw_url,
                     has_access,
                     is_zdr_blocked: zdr_blocked,
@@ -2442,9 +2321,6 @@ impl AppView {
                     has_claude_import: self.has_claude_import,
                     import_claude_modal: &mut self.import_claude_modal,
                     welcome_doc_viewer: &mut self.welcome_doc_viewer,
-                    changelog_markdown: &self.changelog_markdown,
-                    show_changelog_action: self.welcome_show_changelog_action,
-                    has_pending_update: self.pending_update_version.is_some(),
                     has_foreign_resume,
                     cwd_has_git_ancestor: self.cwd_has_git_ancestor,
                     session_picker_grouped: self.session_picker_grouped,
@@ -3010,31 +2886,12 @@ struct WelcomeInputCtx<'a> {
     gate_url_rect: Option<&'a ratatui::layout::Rect>,
     /// Hit-test rect for the welcome hero upgrade CTA `[label]` button
     /// (click → open the promo url).
-    upgrade_cta_rect: Option<&'a ratatui::layout::Rect>,
     privacy_banner_accept_rect: Option<&'a ratatui::layout::Rect>,
     privacy_banner_customize_rect: Option<&'a ratatui::layout::Rect>,
     privacy_banner_legal_rect: Option<&'a ratatui::layout::Rect>,
     /// Sticky hover flag for the privacy banner buttons (redraw on
     /// enter/leave/crossing so they brighten/dim).
     on_privacy_banner: &'a mut bool,
-    /// Sticky hover flag for the upgrade CTA (redraw on enter/leave so the
-    /// button brightens/dims).
-    on_upgrade_cta: &'a mut bool,
-    /// A pinned (non-dismissible) promo CTA is live, so `Ctrl+O` opens it
-    /// (the welcome screen has no YOLO toggle to preserve).
-    upgrade_cta_keyboard: bool,
-    /// Hit-test rect for the clickable changelog info block (opens release notes).
-    changelog_cta_rect: Option<&'a ratatui::layout::Rect>,
-    /// Sticky hover flag for the changelog block (redraw on enter/leave).
-    on_changelog_cta: &'a mut bool,
-    /// Whether the announcement overflowed — the "expandable" signal for click-to-toggle.
-    announcement_truncated: bool,
-    /// Hit-test rect for the full announcement block (click anywhere to toggle).
-    announcement_rect: Option<&'a ratatui::layout::Rect>,
-    /// Sticky hover flag for the announcement block (redraw on enter/leave).
-    on_announcement_cta: &'a mut bool,
-    /// Whether the long announcement is currently expanded inline.
-    announcement_expanded: &'a mut bool,
     show_raw_url: &'a mut bool,
     has_access: bool,
     is_zdr_blocked: bool,
@@ -3051,11 +2908,6 @@ struct WelcomeInputCtx<'a> {
     has_claude_import: bool,
     import_claude_modal: &'a mut Option<crate::views::import_claude_modal::ImportClaudeModalState>,
     welcome_doc_viewer: &'a mut Option<crate::views::modal::ActiveModal>,
-    changelog_markdown: &'a Option<String>,
-    /// Whether the welcome menu currently includes a "Changelog" row (above
-    /// Quit), so index→action mapping accounts for it.
-    show_changelog_action: bool,
-    has_pending_update: bool,
     /// A recent foreign session is available to resume when no update is pending.
     has_foreign_resume: bool,
     cwd_has_git_ancestor: bool,
@@ -3387,19 +3239,11 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
             return InputOutcome::Action(Action::NewSession);
         }
         if matches!(ctx.auth_state, AuthState::Done) {
-            if ctx.upgrade_cta_keyboard && key!('o', CONTROL).matches(key) {
-                return InputOutcome::Action(Action::AnnouncementsOpenCta(
-                    gbuild_telemetry::events::AnnouncementCtaSurface::Keyboard,
-                ));
-            }
             if key!('w', CONTROL).matches(key) && ctx.cwd_has_git_ancestor {
                 return InputOutcome::Action(Action::OpenNewWorktreeDialog);
             }
             if key!('s', CONTROL).matches(key) {
                 return InputOutcome::Action(Action::FetchSessionList);
-            }
-            if ctx.has_pending_update && key!('u', CONTROL).matches(key) {
-                return InputOutcome::Action(Action::QuitForUpdate);
             }
             if ctx.has_foreign_resume && key!('u', CONTROL).matches(key) {
                 return InputOutcome::Action(Action::ResumeForeignSession);
@@ -3442,12 +3286,7 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
             if key!(Enter).matches(key)
                 && let Some(idx) = *ctx.menu_index
             {
-                return dispatch_menu_action(
-                    idx,
-                    ctx.has_claude_import,
-                    ctx.show_changelog_action,
-                    ctx.changelog_markdown.as_deref(),
-                );
+                return dispatch_menu_action(idx, ctx.has_claude_import);
             }
             if crate::input::key::is_text_input_key(key) {
                 *ctx.prompt_focused = true;
@@ -3584,12 +3423,7 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                         {
                             return InputOutcome::Action(Action::DismissClaudeImport);
                         }
-                        return dispatch_menu_action(
-                            i,
-                            ctx.has_claude_import,
-                            ctx.show_changelog_action,
-                            ctx.changelog_markdown.as_deref(),
-                        );
+                        return dispatch_menu_action(i, ctx.has_claude_import);
                     }
                 }
                 if let Some(rect) = ctx.refresh_rect
@@ -3601,13 +3435,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
                 {
                     return InputOutcome::Action(Action::OpenSupergrokUrl);
-                }
-                if let Some(rect) = ctx.upgrade_cta_rect
-                    && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-                {
-                    return InputOutcome::Action(Action::AnnouncementsOpenCta(
-                        gbuild_telemetry::events::AnnouncementCtaSurface::Welcome,
-                    ));
                 }
                 if let Some(rect) = ctx.privacy_banner_accept_rect
                     && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
@@ -3625,22 +3452,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     return InputOutcome::Action(Action::OpenUrl(
                         crate::views::privacy_banner::PRIVACY_BANNER_LEGAL_URL.to_string(),
                     ));
-                }
-                if let Some(rect) = ctx.changelog_cta_rect
-                    && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-                    && let Some(md) = ctx.changelog_markdown.as_deref()
-                {
-                    return InputOutcome::Action(Action::ShowReleaseNotes {
-                        title: "Release Notes".to_string(),
-                        content: md.trim().to_string(),
-                    });
-                }
-                if let Some(rect) = ctx.announcement_rect
-                    && (ctx.announcement_truncated || *ctx.announcement_expanded)
-                    && rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-                {
-                    *ctx.announcement_expanded = !*ctx.announcement_expanded;
-                    return InputOutcome::Changed;
                 }
                 if let Some(rect) = ctx.auth_url_rect
                     && matches!(ctx.auth_state, AuthState::Authenticating { .. })
@@ -3694,16 +3505,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                     return InputOutcome::Changed;
                 }
                 let pos = ratatui::layout::Position::new(mouse.column, mouse.row);
-                let over_cta = ctx.changelog_cta_rect.is_some_and(|r| r.contains(pos));
-                if over_cta != *ctx.on_changelog_cta {
-                    *ctx.on_changelog_cta = over_cta;
-                    return InputOutcome::Changed;
-                }
-                let over_upgrade = ctx.upgrade_cta_rect.is_some_and(|r| r.contains(pos));
-                if over_upgrade != *ctx.on_upgrade_cta {
-                    *ctx.on_upgrade_cta = over_upgrade;
-                    return InputOutcome::Changed;
-                }
                 let over_banner = ctx
                     .privacy_banner_accept_rect
                     .is_some_and(|r| r.contains(pos))
@@ -3715,12 +3516,6 @@ fn handle_welcome_input(ev: &Event, ctx: &mut WelcomeInputCtx<'_>) -> InputOutco
                         .is_some_and(|r| r.contains(pos));
                 if over_banner || *ctx.on_privacy_banner {
                     *ctx.on_privacy_banner = over_banner;
-                    return InputOutcome::Changed;
-                }
-                let over_ann = (ctx.announcement_truncated || *ctx.announcement_expanded)
-                    && ctx.announcement_rect.is_some_and(|r| r.contains(pos));
-                if over_ann != *ctx.on_announcement_cta {
-                    *ctx.on_announcement_cta = over_ann;
                     return InputOutcome::Changed;
                 }
                 if matches!(ctx.auth_state, AuthState::Authenticating { .. })
@@ -3814,23 +3609,12 @@ fn dispatch_access_gate_menu_action(index: usize) -> InputOutcome {
 }
 /// Dispatch an action for a welcome menu item by index.
 ///
-/// Menu order: `[Import]`, New worktree, Resume session, `[Changelog]`, Quit.
-/// `show_changelog_action` is true when the Changelog row is rendered; release
-/// notes open only once `changelog_md` is available.
-fn dispatch_menu_action(
-    index: usize,
-    has_claude_import: bool,
-    show_changelog_action: bool,
-    changelog_md: Option<&str>,
-) -> InputOutcome {
+/// Menu order: `[Import]`, New worktree, Resume session, Quit.
+fn dispatch_menu_action(index: usize, has_claude_import: bool) -> InputOutcome {
     let base = if has_claude_import { 1 } else { 0 };
     let worktree_idx = base;
     let resume_idx = base + 1;
-    let (changelog_idx, quit_idx) = if show_changelog_action {
-        (Some(base + 2), base + 3)
-    } else {
-        (None, base + 2)
-    };
+    let quit_idx = base + 2;
     if has_claude_import && index == 0 {
         return InputOutcome::Action(Action::ImportClaudeSettings);
     }
@@ -3839,15 +3623,6 @@ fn dispatch_menu_action(
     }
     if index == resume_idx {
         return InputOutcome::Action(Action::FetchSessionList);
-    }
-    if Some(index) == changelog_idx {
-        if let Some(md) = changelog_md {
-            return InputOutcome::Action(Action::ShowReleaseNotes {
-                title: "Release Notes".to_string(),
-                content: md.trim().to_string(),
-            });
-        }
-        return InputOutcome::Unchanged;
     }
     if index == quit_idx {
         return InputOutcome::Action(Action::Quit);
@@ -4022,7 +3797,6 @@ impl AppView {
         crate::memory_release::run_deferred_release();
     }
     fn draw_inner(&mut self, terminal: &mut PagerTerminal) {
-        self.resync_announcement_slash_gate_on_divergence();
         if self.screen_mode.is_minimal() {
             if let Some(hooks) = crate::minimal_hook::hooks() {
                 (hooks.draw)(self, terminal);
@@ -4092,11 +3866,7 @@ impl AppView {
         let dev_fps_rows = self.dev_fps_rows();
         let fps_overlay = self.fps_hud.overlay(dev_fps_rows);
         let foreign_resume_hint = self.foreign_resume_hint().cloned();
-        let privacy_banner_agent = self.privacy_banner_should_show()
-            && !crate::views::announcements::has_critical_session_announcement(
-                &self.active_announcements,
-                &self.hidden_announcement_ids,
-            );
+        let privacy_banner_agent = self.privacy_banner_should_show();
         let agent_mouse_pos = self.last_mouse_pos;
         let Self {
             active_view,
@@ -4170,19 +3940,6 @@ impl AppView {
                             Some(eff) => format!("{model_name_base} ({eff})"),
                             None => model_name_base,
                         };
-                        let hero_cta = crate::views::announcements::promo_cta(
-                            &self.active_announcements,
-                            &self.hidden_announcement_ids,
-                        );
-                        let hero_announcement = hero_cta
-                            .map(|(owner, _, _)| owner)
-                            .or_else(|| {
-                                crate::views::announcements::first_session_announcement(
-                                    &self.active_announcements,
-                                    &self.hidden_announcement_ids,
-                                )
-                            })
-                            .or(self.announcement.as_ref());
                         let welcome_params = crate::views::welcome::WelcomeRenderParams {
                             prompt_focus: if self.welcome_prompt_focused {
                                 WelcomePromptFocus::Focused
@@ -4196,7 +3953,6 @@ impl AppView {
                             auth_code_cursor_byte: self.auth_code_input.cursor_byte(),
                             clipboard_delivery: self.auth_clipboard_delivery,
                             show_raw_url: self.auth_show_raw_url,
-                            announcement: hero_announcement,
                             tip,
                             model_name: &model_name,
                             flags: &flags_vec,
@@ -4217,7 +3973,6 @@ impl AppView {
                             compact,
                             pending_hint,
                             startup_warnings: &self.startup_warnings,
-                            pending_update_version: self.pending_update_version.as_deref(),
                             foreign_resume_hint: foreign_resume_hint.as_ref(),
                             session_picker_content_results: self
                                 .session_picker_content_results
@@ -4236,10 +3991,6 @@ impl AppView {
                             auto_topup: self.auto_topup.as_ref(),
                             usage_visible: self.usage_visible,
                             is_api_key_auth: self.is_api_key_auth,
-                            changelog_bullets: &self.changelog_bullets,
-                            changelog_has_full_notes: self.changelog_markdown.is_some(),
-                            welcome_announcement_expanded: self.welcome_announcement.expanded,
-                            upgrade_cta: hero_cta.map(|(_owner, label, _)| label),
                             privacy_banner,
                         };
                         let result = crate::views::welcome::render_welcome(
@@ -4250,24 +4001,19 @@ impl AppView {
                             &mut self.session_picker_state,
                         );
                         self.welcome_menu_rects = result.menu_rects;
-                        self.welcome_show_changelog_action = result.changelog_action_present;
                         self.welcome_prompt_rect = result.prompt_rect;
                         self.welcome_import_banner_rect = result.import_banner_rect;
                         self.welcome_auth_url_rect = result.auth_url_rect;
                         self.welcome_auth_fallback_rect = result.auth_fallback_rect;
                         self.welcome_refresh_rect = result.refresh_rect;
                         self.welcome_gate_url_rect = result.gate_url_rect;
-                        self.welcome_upgrade_cta_rect = result.upgrade_cta_rect;
                         self.welcome_privacy_banner_accept_rect = result.privacy_banner_accept_rect;
                         self.welcome_privacy_banner_customize_rect =
                             result.privacy_banner_customize_rect;
                         self.welcome_privacy_banner_legal_rect = result.privacy_banner_legal_rect;
-                        self.welcome_changelog_cta_rect = result.changelog_cta_rect;
                         if let Some((ref msg, _)) = self.welcome_toast {
                             paint_welcome_toast(f.buffer_mut(), view_area, msg);
                         }
-                        self.welcome_announcement.truncated = result.announcement_truncated;
-                        self.welcome_announcement.rect = result.announcement_rect;
                         self.session_picker_state.hit_areas = result.session_picker_hit_areas;
                         if let Some(modal) = self.import_claude_modal.as_mut() {
                             let theme = crate::theme::Theme::current();
@@ -4438,11 +4184,6 @@ impl AppView {
                             d.restore_peek_viewport(agents);
                         }
                         if let Some(agent) = agents.get_mut(&id) {
-                            let announcement_banner_h =
-                                crate::views::announcements::session_banner_height(
-                                    &self.active_announcements,
-                                    &self.hidden_announcement_ids,
-                                );
                             let privacy_banner = privacy_banner_agent;
                             let show_session_tip =
                                 !privacy_banner && self.tip.is_some() && agent.should_show_tip();
@@ -4451,8 +4192,6 @@ impl AppView {
                                 2
                             } else if has_mode_banner {
                                 1
-                            } else if announcement_banner_h > 0 {
-                                announcement_banner_h
                             } else if show_session_tip {
                                 1
                             } else {
@@ -4467,8 +4206,6 @@ impl AppView {
                                 overlay_focused,
                                 crate::app::agent_view::BannerSlotParams {
                                     height: banner_height,
-                                    announcements: &self.active_announcements,
-                                    hidden_ids: &self.hidden_announcement_ids,
                                     privacy_banner,
                                     mouse_pos: agent_mouse_pos,
                                     tip: if show_session_tip {
@@ -4548,17 +4285,6 @@ impl AppView {
                                 } else {
                                     &self.dashboard_local_sessions
                                 };
-                            let dash_upgrade_cta = crate::views::announcements::promo_cta(
-                                &self.active_announcements,
-                                &self.hidden_announcement_ids,
-                            )
-                            .map(
-                                |(owner, label, _)| crate::views::dashboard::HeaderUpgradeCta {
-                                    label,
-                                    pinned: !crate::views::announcements::is_dismissible(owner),
-                                    caption: crate::views::announcements::usable_cta_caption(owner),
-                                },
-                            );
                             let dash_cursor = crate::views::dashboard::render_dashboard(
                                 f.buffer_mut(),
                                 view_area,
@@ -4568,7 +4294,6 @@ impl AppView {
                                 pending_hint,
                                 dashboard_roster,
                                 self.dashboard_sessions_loading,
-                                dash_upgrade_cta,
                             );
                             let (popup_cursor, popup_post_flush, drawn_popup_agent) =
                                 if let Some(agent_id) = dashboard.attached_agent {
@@ -4656,72 +4381,7 @@ impl AppView {
         if let Some(started) = fps_frame_started {
             self.fps_hud.record(started.elapsed());
         }
-        self.log_announcement_cta_impressions();
         self.maybe_evict_offscreen_caches();
-    }
-    /// Log [`gbuild_telemetry::events::AnnouncementCtaShown`] for each
-    /// surface whose CTA button is painted this frame (armed hit rect, not
-    /// covered by a frame occluder — the click/OSC 8 truth the impression
-    /// pairs with), once per (announcement, surface) per pager process
-    /// (cleared on logout). The owner resolves through the same slot gate as
-    /// the click dispatch, so a critical preempting the slot or a hidden
-    /// promo emits nothing.
-    pub(crate) fn log_announcement_cta_impressions(&mut self) {
-        use gbuild_telemetry::events::AnnouncementCtaSurface;
-        let (banner, welcome, header, dashboard) = match self.active_view {
-            ActiveView::Welcome => (false, self.welcome_upgrade_cta_rect.is_some(), false, false),
-            ActiveView::Agent(agent_id) => match self.agents.get(&agent_id) {
-                Some(a) => {
-                    let cta_rect = a.hit_announcement_cta.rect;
-                    let header_rect = a.hit_upgrade_cta.rect;
-                    (
-                        cta_rect.is_some_and(|r| !a.rect_occluded(r)),
-                        false,
-                        header_rect.is_some_and(|r| !a.rect_occluded(r)),
-                        false,
-                    )
-                }
-                None => return,
-            },
-            ActiveView::AgentDashboard => (
-                false,
-                false,
-                false,
-                self.dashboard
-                    .as_ref()
-                    .is_some_and(|d| d.upgrade_cta_hit.rect.is_some()),
-            ),
-        };
-        if !(banner || welcome || header || dashboard) {
-            return;
-        }
-        let Some((owner, _label, _url)) = crate::views::announcements::promo_cta(
-            &self.active_announcements,
-            &self.hidden_announcement_ids,
-        ) else {
-            return;
-        };
-        let key = gbuild_announcements::announcement_hide_key(owner);
-        let id = owner.id.clone();
-        let surfaces = [
-            (AnnouncementCtaSurface::Banner, banner),
-            (AnnouncementCtaSurface::Welcome, welcome),
-            (AnnouncementCtaSurface::Header, header),
-            (AnnouncementCtaSurface::Dashboard, dashboard),
-        ];
-        for (surface, _) in surfaces.into_iter().filter(|(_, painted)| *painted) {
-            if self
-                .announcement_cta_impressions_logged
-                .insert((key.clone(), surface))
-            {
-                gbuild_telemetry::session_ctx::log_event(
-                    gbuild_telemetry::events::AnnouncementCtaShown {
-                        id: id.clone(),
-                        source: surface,
-                    },
-                );
-            }
-        }
     }
     /// Interval between off-screen render-cache eviction sweeps.
     const CACHE_EVICT_INTERVAL: Duration = Duration::from_secs(5);
@@ -5584,12 +5244,6 @@ pub(crate) mod tests {
             pending_notification_escapes: None,
             deferred_notification: None,
             tracing_rx: None,
-            active_announcements: vec![],
-            hidden_announcement_ids: Default::default(),
-            announcements_last_gen: 0,
-            announcement: None,
-            changelog_markdown: None,
-            changelog_bullets: Vec::new(),
             tips: Vec::new(),
             tip: None,
             cli_model_override: None,
@@ -5646,7 +5300,6 @@ pub(crate) mod tests {
             zdr_access_enabled: false,
             usage_billing_redirect_url: None,
             access_gate_shown_logged: false,
-            announcement_cta_impressions_logged: Default::default(),
             gate: None,
             subscription_tier: None,
             paywall_check_started: None,
@@ -5668,7 +5321,6 @@ pub(crate) mod tests {
             welcome_tip_typing_dismissed: false,
             welcome_menu_index: None,
             welcome_menu_rects: Vec::new(),
-            welcome_show_changelog_action: false,
             welcome_import_banner_rect: None,
             last_mouse_pos: None,
             last_scroll_pos: None,
@@ -5676,19 +5328,14 @@ pub(crate) mod tests {
             welcome_prompt_rect: None,
             welcome_auth_url_rect: None,
             welcome_on_auth_url: false,
-            welcome_on_changelog_cta: false,
-            welcome_announcement: WelcomeAnnouncementState::default(),
             welcome_auth_fallback_rect: None,
             welcome_refresh_rect: None,
             welcome_gate_url_rect: None,
-            welcome_upgrade_cta_rect: None,
             welcome_privacy_banner_accept_rect: None,
             welcome_privacy_banner_customize_rect: None,
             welcome_privacy_banner_legal_rect: None,
             welcome_toast: None,
             welcome_on_privacy_banner: false,
-            welcome_on_upgrade_cta: false,
-            welcome_changelog_cta_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
             session_picker_entries: None,
@@ -5712,10 +5359,8 @@ pub(crate) mod tests {
             welcome_shimmer_frame: 0,
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
-            pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,
-            quit_for_update: false,
             relaunch: None,
             has_claude_import: false,
             import_claude_modal: None,
@@ -5728,7 +5373,6 @@ pub(crate) mod tests {
             minimal_state: crate::minimal_api::MinimalState::default(),
             reconnect_pending: false,
             show_resolved_model: true,
-            sharing_enabled: false,
             plugin_cta_enabled: false,
             usage_visible: true,
             tier_restricted_commands: Vec::new(),
@@ -6286,51 +5930,10 @@ pub(crate) mod tests {
             "expired mode banner must stop requesting ticks"
         );
     }
-    /// Draw-entry resync: an `expires_at` crossing between pushes must close
-    /// the `/announcements` gate on the next frame; a later live list re-opens
-    /// it through the same divergence check.
-    #[test]
-    fn slash_gate_resyncs_when_critical_expires_between_pushes() {
-        let mut app = test_app_with_agent();
-        let id = super::super::agent::AgentId(0);
-        app.agents
-            .get_mut(&id)
-            .unwrap()
-            .set_has_session_announcements(true);
-        app.active_announcements = vec![gbuild_announcements::RemoteAnnouncement {
-            id: Some("expired".into()),
-            message: Some("gone".into()),
-            severity: Some("critical".into()),
-            expires_at: Some("2000-01-01T00:00:00Z".into()),
-            ..Default::default()
-        }];
-        app.resync_announcement_slash_gate_on_divergence();
-        assert!(
-            !app.agents[&id]
-                .prompt
-                .slash_controller
-                .has_session_announcements(),
-            "expired-only list must close the gate on the next frame"
-        );
-        app.active_announcements = vec![gbuild_announcements::RemoteAnnouncement {
-            id: Some("live".into()),
-            message: Some("new outage".into()),
-            severity: Some("critical".into()),
-            ..Default::default()
-        }];
-        app.resync_announcement_slash_gate_on_divergence();
-        assert!(
-            app.agents[&id]
-                .prompt
-                .slash_controller
-                .has_session_announcements(),
-            "a live critical must re-open the gate"
-        );
-    }
     /// Critical freezes tip TTL and must not arm needs_animation for a tip
     /// that is not counting down (session-long metronome heat).
     #[test]
-    fn ephemeral_tip_frozen_under_critical_does_not_request_animation_or_burn_ttl() {
+    fn ephemeral_tip_frozen_under_banner_does_not_request_animation_or_burn_ttl() {
         use std::collections::HashMap;
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
@@ -6340,7 +5943,7 @@ pub(crate) mod tests {
                 crate::tips::EphemeralTip::new("t", ratatui::text::Line::from("TIP")),
                 &mut HashMap::new(),
             );
-            agent.session_banner_active = true;
+            agent.privacy_banner.active = true;
         }
         let before = app.agents[&id]
             .ephemeral_tip
@@ -6348,11 +5951,11 @@ pub(crate) mod tests {
             .expect("tip active");
         assert!(
             !app.agents[&id].ephemeral_tip_needs_tick(),
-            "critical must freeze tip tick policy"
+            "banner occluder must freeze tip tick policy"
         );
         assert!(
             !app.needs_animation(),
-            "frozen tip under critical must not arm the metronome on an idle agent"
+            "frozen tip under a banner must not arm the metronome on an idle agent"
         );
         for _ in 0..10 {
             app.tick();
@@ -6360,9 +5963,9 @@ pub(crate) mod tests {
         assert_eq!(
             app.agents[&id].ephemeral_tip.ticks_remaining(),
             Some(before),
-            "TTL must not burn while critical occludes"
+            "TTL must not burn while a banner occludes"
         );
-        app.agents.get_mut(&id).unwrap().session_banner_active = false;
+        app.agents.get_mut(&id).unwrap().privacy_banner.active = false;
         assert!(
             app.needs_animation(),
             "unfreezing must re-arm tip countdown ticks"
@@ -7194,11 +6797,6 @@ pub(crate) mod tests {
             app.handle_input(&key),
             InputOutcome::Action(Action::ResumeForeignSession)
         ));
-        app.pending_update_version = Some("9.9.9".into());
-        assert!(matches!(
-            app.handle_input(&key),
-            InputOutcome::Action(Action::QuitForUpdate)
-        ));
     }
     #[test]
     fn minimal_ctrl_g_edits_prompt_while_full_tui_keeps_tasks() {
@@ -7623,64 +7221,36 @@ pub(crate) mod tests {
         );
     }
     #[test]
-    fn menu_action_indices_without_changelog() {
+    fn menu_action_indices() {
         assert!(matches!(
-            dispatch_menu_action(0, false, false, None),
+            dispatch_menu_action(0, false),
             InputOutcome::Action(Action::OpenNewWorktreeDialog)
         ));
         assert!(matches!(
-            dispatch_menu_action(1, false, false, None),
+            dispatch_menu_action(1, false),
             InputOutcome::Action(Action::FetchSessionList)
         ));
         assert!(matches!(
-            dispatch_menu_action(2, false, false, None),
+            dispatch_menu_action(2, false),
             InputOutcome::Action(Action::Quit)
         ));
     }
     #[test]
-    fn menu_action_changelog_sits_above_quit() {
-        let md = Some("# notes");
+    fn menu_action_indices_with_import() {
         assert!(matches!(
-            dispatch_menu_action(1, false, true, md),
-            InputOutcome::Action(Action::FetchSessionList)
-        ));
-        assert!(matches!(
-            dispatch_menu_action(2, false, true, md),
-            InputOutcome::Action(Action::ShowReleaseNotes { .. })
-        ));
-        assert!(matches!(
-            dispatch_menu_action(3, false, true, md),
-            InputOutcome::Action(Action::Quit)
-        ));
-    }
-    #[test]
-    fn menu_action_changelog_before_fetch_is_noop() {
-        assert!(matches!(
-            dispatch_menu_action(2, false, true, None),
-            InputOutcome::Unchanged
-        ));
-    }
-    #[test]
-    fn menu_action_indices_with_import_and_changelog() {
-        let md = Some("# notes");
-        assert!(matches!(
-            dispatch_menu_action(0, true, true, md),
+            dispatch_menu_action(0, true),
             InputOutcome::Action(Action::ImportClaudeSettings)
         ));
         assert!(matches!(
-            dispatch_menu_action(1, true, true, md),
+            dispatch_menu_action(1, true),
             InputOutcome::Action(Action::OpenNewWorktreeDialog)
         ));
         assert!(matches!(
-            dispatch_menu_action(2, true, true, md),
+            dispatch_menu_action(2, true),
             InputOutcome::Action(Action::FetchSessionList)
         ));
         assert!(matches!(
-            dispatch_menu_action(3, true, true, md),
-            InputOutcome::Action(Action::ShowReleaseNotes { .. })
-        ));
-        assert!(matches!(
-            dispatch_menu_action(4, true, true, md),
+            dispatch_menu_action(3, true),
             InputOutcome::Action(Action::Quit)
         ));
     }

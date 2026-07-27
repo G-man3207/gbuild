@@ -9,7 +9,6 @@ use agent_client_protocol as acp;
 use gbuild_sampling_types::ReasoningEffort;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{mpsc, oneshot};
-use xai_file_utils::queue::UploadQueue;
 use xai_hunk_tracker::HunkTrackerHandle;
 /// Coarse lifecycle state of a session as known to the leader/agent.
 ///
@@ -92,10 +91,6 @@ pub struct SessionHandle {
     /// Feedback manager for periodic signal sync. Exposed so callers can
     /// attach GCS upload queue stats for snapshotting into signals.
     pub feedback_manager: std::sync::Arc<crate::session::feedback_manager::FeedbackManager>,
-    /// Session-scoped upload queue. Lazily initialized on the first turn that
-    /// enables trace uploads. `Arc<OnceLock<_>>` ensures all `SessionHandle`
-    /// clones share the same underlying queue instance.
-    pub(crate) upload_queue: std::sync::Arc<std::sync::OnceLock<UploadQueue>>,
     /// Consecutive upload failures with no confirmed upload in between,
     /// driving this session's upload-failure log suppression. Shared across
     /// handle clones; per-session so one session's bucket outage cannot mute

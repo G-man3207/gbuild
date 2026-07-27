@@ -483,7 +483,7 @@ fn small_screen_trigger_defers_while_banner_row_occluded() {
     {
         let agent = app.agents.get_mut(&id).unwrap();
         agent.last_terminal_size = (100, 24);
-        agent.session_banner_active = true;
+        agent.privacy_banner.active = true;
     }
 
     app.maybe_trigger_small_screen_tip();
@@ -492,7 +492,7 @@ fn small_screen_trigger_defers_while_banner_row_occluded() {
     assert!(app.tip_seen_counts.is_empty(), "no count burned");
 
     // Occluder gone: the next draw evaluates and shows.
-    app.agents.get_mut(&id).unwrap().session_banner_active = false;
+    app.agents.get_mut(&id).unwrap().privacy_banner.active = false;
     app.maybe_trigger_small_screen_tip();
     assert!(app.small_screen_tip_evaluated);
     assert!(app.agents[&id].ephemeral_tip.is_active());

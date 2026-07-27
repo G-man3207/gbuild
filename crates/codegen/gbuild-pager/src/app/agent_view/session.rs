@@ -199,10 +199,7 @@ impl AgentView {
             hit_cancel_button: Default::default(),
             hit_watching_cue: Default::default(),
             watching_cue_toast_shown: false,
-            hit_announcement_hide: Default::default(),
-            hit_announcement_cta: Default::default(),
             privacy_banner: Default::default(),
-            hit_upgrade_cta: Default::default(),
             hit_voice_stop_button: Default::default(),
             hit_scrollbar: Default::default(),
             scrollbar_dragging: false,
@@ -243,8 +240,6 @@ impl AgentView {
             last_word_select_probe: None,
             sticky_toast: None,
             mode_switch_banner: None,
-            session_banner_active: false,
-            pinned_upgrade_cta_live: false,
             block_viewer: None,
             scrollback_search: None,
             hit_sb_copy: Default::default(),
@@ -296,7 +291,6 @@ impl AgentView {
             active_subagent: None,
             is_subagent_view: false,
             hit_subagent_frame_close: Default::default(),
-            sharing_enabled: false,
             billing_surface_visible: false,
             input_log: crate::input_log::InputRingBuffer::new(),
             esc_pressed_at: None,
@@ -897,18 +891,6 @@ impl AgentView {
             textarea_changed: delta.textarea_changed,
         });
     }
-    /// Set the sharing-enabled flag on this view and propagate it to the
-    /// slash-command registry so the `/share` entry stays hidden/visible in
-    /// lockstep with `AgentView::sharing_enabled`. Use this instead of
-    /// mutating `sharing_enabled` directly when a new agent is created or a
-    /// session is loaded, so the field and registry can't drift.
-    pub fn set_sharing_enabled(&mut self, enabled: bool) {
-        self.sharing_enabled = enabled;
-        self.prompt
-            .slash_controller
-            .registry_mut()
-            .set_share_visible(enabled);
-    }
     /// Set [`Self::billing_surface_visible`] (see the field doc) and mirror it
     /// into this agent's slash controller, so the two can't drift.
     pub fn set_billing_surface_visible(&mut self, visible: bool) {
@@ -933,30 +915,18 @@ impl AgentView {
             .registry_mut()
             .set_dashboard_visible(visible);
     }
-    /// Offer `/announcements` when session announcements (critical or promo) exist.
-    pub fn set_has_session_announcements(&mut self, has: bool) {
-        self.prompt
-            .slash_controller
-            .set_has_session_announcements(has);
-    }
     /// One place for the app-scoped gates a new/adopted session inherits so the session-creation sites cannot drift.
     pub(crate) fn apply_app_scoped_gates(
         &mut self,
-        sharing_enabled: bool,
         billing_surface_visible: bool,
         chat_mode: bool,
         screen_mode: crate::app::ScreenMode,
-        announcements: &[gbuild_announcements::RemoteAnnouncement],
         restricted_commands: &[String],
     ) {
-        self.set_sharing_enabled(sharing_enabled);
         self.set_billing_surface_visible(billing_surface_visible);
         self.app_chat_mode = chat_mode;
         self.prompt.set_screen_mode(screen_mode);
         self.set_dashboard_visible(crate::views::dashboard::dashboard_enabled());
-        self.set_has_session_announcements(crate::views::announcements::has_session_announcements(
-            announcements,
-        ));
         self.set_restricted_commands(restricted_commands);
     }
     /// Show or hide the `/recap` slash command in this agent's registry.

@@ -6,7 +6,7 @@ use super::auth::{
 use super::billing::{
     PAYWALL_AUTO_CHECK_TIMEOUT, apply_auto_topup, handle_billing_fetched,
     handle_check_subscription_complete, handle_credit_limit_recheck_complete,
-    handle_gate_refreshed, handle_gate_verify_timeout,
+    handle_gate_verify_timeout,
 };
 use super::cta::{
     handle_cta_plugin_install_done, handle_cta_plugin_reload_done,
@@ -317,7 +317,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             apply_auto_topup(&mut app.auto_topup, &autotopup);
             vec![]
         }
-        TaskResult::GateRefreshed { settings } => handle_gate_refreshed(app, settings),
         TaskResult::SessionLoaded {
             agent_id,
             session_id,
@@ -543,12 +542,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
-        TaskResult::ChangelogFetched { markdown, entries } => {
-            app.changelog_markdown = markdown;
-            app.changelog_bullets =
-                gbuild_shell::util::changelog::bullets_from_entries(&entries, 3);
-            vec![]
-        }
         TaskResult::ClipboardAttachmentProbed {
             ctx,
             image,
@@ -632,12 +625,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
                 Err(error) => format!("Could not apply the fix: {error}"),
             };
             deliver_doctor_message(app, target.agent_id, message);
-            vec![]
-        }
-        TaskResult::AnnouncementsHiddenPersisted { result } => {
-            if let Err(e) = result {
-                tracing::warn!("Failed to persist announcements hidden state: {}", e);
-            }
             vec![]
         }
         TaskResult::PromptHistoryLoaded { agent_id, prompts } => {
@@ -790,29 +777,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         }
         TaskResult::SkillsToggleDone { agent_id, result } => {
             handle_skills_toggle_done(app, agent_id, result)
-        }
-        TaskResult::ShareSessionComplete {
-            agent_id,
-            share_url,
-        } => {
-            if let Some(agent) = app.agents.get_mut(&agent_id) {
-                agent
-                    .scrollback
-                    .push_block(crate::scrollback::block::RenderBlock::system(format!(
-                        "Session shared: {share_url}"
-                    )));
-            }
-            vec![]
-        }
-        TaskResult::ShareSessionFailed { agent_id, error } => {
-            if let Some(agent) = app.agents.get_mut(&agent_id) {
-                agent
-                    .scrollback
-                    .push_block(crate::scrollback::block::RenderBlock::system(format!(
-                        "Couldn't share session: {error}"
-                    )));
-            }
-            vec![]
         }
         TaskResult::SessionAgentNameResolved {
             agent_id,
@@ -1106,7 +1070,6 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         TaskResult::LogoutComplete => {
             app.auth_state = AuthState::Pending { error: None };
             app.access_gate_shown_logged = false;
-            app.announcement_cta_impressions_logged.clear();
             app.gate = None;
             app.pending_gate_verification = None;
             app.last_subscription_check_at = None;

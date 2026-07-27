@@ -81,14 +81,11 @@ impl AgentView {
     }
 
     /// Whether the ephemeral tip needs tick / animation this frame.
-    /// False when the session announcement banner occludes the tip slot so a
-    /// session-long freeze cannot keep the metronome hot.
-    /// Ambient tips extend that freeze to EVERY occluder (permission ask,
+    /// Ambient tips freeze to EVERY occluder (permission ask,
     /// modal, dropdown): their TTL burns only while the row can paint, so an
     /// occluder pauses rather than expires them off-screen.
     pub(crate) fn ephemeral_tip_needs_tick(&self) -> bool {
         self.ephemeral_tip.is_active()
-            && !self.session_banner_active
             && !self.privacy_banner.active
             && (!self.ephemeral_tip.active_is_ambient() || self.ephemeral_tip_can_render())
     }
@@ -124,7 +121,7 @@ impl AgentView {
     /// closes.
     ///
     /// Most occluders leave an edit-contextual tip active with TTL still
-    /// burning (tip may repaint on close). The announcement banner (critical
+    /// burning (tip may repaint on close).
     /// or promo) is the exception for every tip, and AMBIENT tips freeze
     /// under any occluder: paint yields **and** [`Self::tick_ephemeral_tip`]
     /// freezes TTL so a long-lived occluder cannot burn the tip off-screen
@@ -134,8 +131,7 @@ impl AgentView {
     /// row from reaching the user. The transient mode-switch banner and the
     /// inline `/btw` panel are deliberately NOT occluders: the banner owns the
     /// slot ~2 s while the tip's TTL ticks, and `/btw` has its own layout slot
-    /// above the banner. The session announcement banner IS an occluder
-    /// (long-lived; see `session_banner_active`).
+    /// above the banner.
     ///
     /// Drift warning: banner-covering views are also enumerated in two sibling
     /// hand-maintained lists — the pre-overlay inline-media clear in `draw` and
@@ -146,7 +142,7 @@ impl AgentView {
             || self.question_view.is_some()
             || self.active_modal.is_some()
             // Privacy upsell banner owns the slot until acted on — a
-            // session-long occluder like the session announcement banner.
+            // session-long occluder.
             || self.privacy_banner.active
             // Subagent fullscreen takeover: draw early-returns into
             // draw_subagent_fullscreen and never paints the parent banner.
@@ -178,8 +174,7 @@ impl AgentView {
             || self.show_workflows
             // Prompt dropdowns (@/slash/completion/history) render in the
             // row directly above the prompt — the banner row — clearing it.
-            || self.prompt.any_dropdown_open()
-            || self.session_banner_active;
+            || self.prompt.any_dropdown_open();
         !self.terminal_size_stale && crate::tips::tip_row_renderable(occluded, screen_height)
     }
 

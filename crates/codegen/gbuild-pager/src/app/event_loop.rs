@@ -60,7 +60,6 @@ pub(crate) struct TerminalState {
 /// Result of the event loop run.
 pub(crate) struct RunResult {
     pub exit_info: Option<super::ExitInfo>,
-    pub quit_for_update: bool,
     /// When set, the process should re-exec into the other screen mode after
     /// terminal restore. See `/minimal` and `/fullscreen`.
     pub relaunch: Option<super::app_view::ScreenModeRelaunch>,
@@ -680,9 +679,6 @@ pub(crate) async fn run(
     remote_settings: Option<gbuild_shell::util::config::RemoteSettings>,
     term_state: TerminalState,
     materialized: crate::app::session_startup::MaterializedStartup,
-    bg_update_rx: Option<
-        tokio::sync::oneshot::Receiver<Option<gbuild_update::auto_update::UpdateAvailable>>,
-    >,
     mut writer_event_rx: tokio::sync::mpsc::UnboundedReceiver<crate::render::draw::WriterEvent>,
 ) -> anyhow::Result<RunResult> {
     // Initialize tracing capture. The channel `rx` will be wired to a
@@ -818,10 +814,6 @@ pub(crate) async fn run(
         .as_ref()
         .and_then(|s| s.show_resolved_model)
         .unwrap_or(true);
-    app.sharing_enabled = remote_settings
-        .as_ref()
-        .and_then(|s| s.sharing_enabled)
-        .unwrap_or(false);
     app.privacy_notice_rollout = gbuild_config::env_bool("GBUILD_PRIVACY_NOTICE_ROLLOUT")
         .or_else(|| {
             remote_settings
@@ -991,10 +983,7 @@ pub(crate) async fn run(
         post_render_effects.extend(app.impose_gate(gate));
     }
 
-    // Load persisted per-ID hidden state
-    app.hidden_announcement_ids = gbuild_announcements::read_hidden_announcement_ids().await;
-
-    // Load config layers once, resolve announcements, tips, and feature flags.
+    // Load config layers once, resolve tips and feature flags.
     let requirements = gbuild_shell::config::load_merged_requirements();
     let user_config = gbuild_shell::config::load_from_disk().ok();
     let managed_config = gbuild_shell::config::load_managed_config().ok();
@@ -1089,26 +1078,7 @@ pub(crate) async fn run(
     }
 
     {
-        use gbuild_shell::util::config::{
-            resolve_announcements, resolve_slash_command_tags, resolve_tips,
-        };
-
-        let remote_announcements = remote_settings
-            .as_ref()
-            .and_then(|s| s.announcements.as_deref());
-        let announcements = resolve_announcements(
-            requirements.as_ref(),
-            user_config.as_ref(),
-            managed_config.as_ref(),
-            remote_announcements,
-        );
-        app.active_announcements = gbuild_announcements::filter_expired(announcements);
-        if !app.active_announcements.is_empty() {
-            use rand::Rng;
-            let idx = rand::rng().random_range(0..app.active_announcements.len());
-            app.announcement = app.active_announcements.get(idx).cloned();
-        }
-        app.sync_session_announcement_slash_gate();
+        use gbuild_shell::util::config::{resolve_slash_command_tags, resolve_tips};
 
         let remote_tips = remote_settings.as_ref().and_then(|s| s.tips.as_deref());
         app.tips = resolve_tips(
@@ -1471,8 +1441,6 @@ pub(crate) async fn run(
     const BILLING_POLL_INTERVAL: Duration = Duration::from_secs(30);
     let mut billing_poll_at: Option<Instant> = None;
 
-    const GATE_POLL_INTERVAL: Duration = Duration::from_secs(30);
-    let mut gate_poll_at: Option<Instant> = None;
 
     // Free→paid subscription watch (see `app::subscription`).
     let mut subscription_watch_at: Option<Instant> = if app.subscription_watch_wanted() {
@@ -1522,13 +1490,6 @@ pub(crate) async fn run(
         }
         // Fetch changelog off the render path so the welcome screen
         // can display bullets and /release-notes uses the cached result.
-        let effs = vec![super::actions::Effect::FetchChangelog];
-        if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
-            return Ok(make_run_result(&app));
-        }
-        if !app.has_access() {
-            gate_poll_at = Some(Instant::now() + GATE_POLL_INTERVAL);
-        }
     }
 
     if !post_render_effects.is_empty()
@@ -1740,10 +1701,6 @@ pub(crate) async fn run(
     // armed only when the startup query is still unanswered.
     let mut xt_filter = super::xt_filter::XtversionFilter::new();
 
-    // Background update check: resolves when the spawned update task
-    // determines whether a newer version is available.
-    let mut bg_update_rx = bg_update_rx;
-
     // `app::run` publishes the resolved theme into `theme_cache::CURRENT`
     // before `init_terminal` so `apply_cursor_color()` sees it. Pin the
     // invariant so a future refactor that drops the `theme_cache::set` call
@@ -1936,13 +1893,6 @@ pub(crate) async fn run(
             }
         };
 
-        let gate_poll = async {
-            match gate_poll_at {
-                Some(at) => sleep_until(at).await,
-                None => std::future::pending().await,
-            }
-        };
-
         let subscription_watch = async {
             match subscription_watch_at {
                 Some(at) => sleep_until(at).await,
@@ -2061,12 +2011,6 @@ pub(crate) async fn run(
                         } else if !app.billing_poll_wanted {
                             billing_poll_at = None;
                         }
-                        if !app.has_access() && gate_poll_at.is_none() {
-                            gate_poll_at = Some(Instant::now() + GATE_POLL_INTERVAL);
-                        } else if app.has_access() {
-                            gate_poll_at = None;
-                        }
-
                         presenter.request(false);
                     }
                     Err(join_err) => {
@@ -2090,32 +2034,6 @@ pub(crate) async fn run(
                     break;
                 }
                 presenter.request(false);
-            }
-
-            // Background update check completed.
-            result = async {
-                match bg_update_rx.as_mut() {
-                    Some(rx) => rx.await.ok().flatten(),
-                    None => std::future::pending().await,
-                }
-            } => {
-                // Consume the receiver so this arm becomes inert.
-                bg_update_rx = None;
-                if let Some(update) = result {
-                    tracing::info!(
-                        latest_version = %update.latest_version,
-                        "Background update check: newer version available"
-                    );
-                    let latest = update.latest_version;
-                    app.pending_update_version = Some(latest.clone());
-                    // The full TUI surfaces this on the welcome screen, which
-                    // minimal has none of — commit a one-line notice into
-                    // native scrollback instead (update notice).
-                    if term_state.screen_mode.is_minimal() {
-                        dispatch::commit_minimal_update_notice(&mut app, &latest);
-                    }
-                    presenter.request(false);
-                }
             }
 
             maybe_ev = input_rx.recv() => {
@@ -2235,17 +2153,6 @@ pub(crate) async fn run(
                 }
                 if app.billing_poll_wanted {
                     billing_poll_at = Some(Instant::now() + BILLING_POLL_INTERVAL);
-                }
-            }
-
-            _ = gate_poll => {
-                gate_poll_at = None;
-                let effs = vec![Effect::RefreshGate];
-                if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
-                    break;
-                }
-                if !app.has_access() {
-                    gate_poll_at = Some(Instant::now() + GATE_POLL_INTERVAL);
                 }
             }
 
@@ -2400,10 +2307,6 @@ pub(crate) async fn run(
                         );
                         last_leader_generation = generation;
                         app.reconnect_pending = true;
-                        // Connection-scoped: a re-elected shell reseeds its push gen from wall clock,
-                        // so a surviving higher watermark would silently drop its fresh pushes.
-                        app.announcements_last_gen = 0;
-
                         // Cancel any in-flight re-init from a previous reconnect
                         // cycle and restore those agents' stashed transcripts —
                         // their load requests rode the now-dead connection.
@@ -2858,7 +2761,6 @@ fn make_run_result(app: &AppView) -> RunResult {
     });
     RunResult {
         exit_info,
-        quit_for_update: app.quit_for_update,
         relaunch: app.relaunch.clone(),
     }
 }

@@ -23,9 +23,6 @@ Location: `~/.gbuild/config.toml`. If the file is missing, gBuild uses its built
 ### General settings
 
 ```toml
-[cli]
-auto_update = true                     # check for updates on launch
-
 [models]
 default = "grok-4.5"                   # model used for new sessions
 web_search = "grok-4.5"                # model used by the web_search tool
@@ -526,9 +523,6 @@ self-update channel. Build and install the desired source revision explicitly.
 A complete config for enterprise use:
 
 ```toml
-[cli]
-auto_update = false
-
 [auth]
 auth_provider_command = "/usr/local/bin/my-company-auth-provider"
 auth_provider_label = "Acme Corp"

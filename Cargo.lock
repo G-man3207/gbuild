@@ -1915,19 +1915,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b430743a6eb14e9764d4260d4c0d8123087d504eeb9c48f2b2a5e810dd369df4"
-dependencies = [
- "encode_unicode",
- "libc",
- "once_cell",
- "unicode-width 0.2.0",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "const-hex"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3665,19 +3652,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gbuild-announcements"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "gbuild-tools",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "ts-rs",
-]
-
-[[package]]
 name = "gbuild-auth"
 version = "0.1.0"
 dependencies = [
@@ -3732,7 +3706,6 @@ name = "gbuild-config-types"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
- "gbuild-announcements",
  "gbuild-config",
  "gbuild-mcp",
  "indexmap",
@@ -3936,7 +3909,6 @@ dependencies = [
  "enum_delegate",
  "flate2",
  "gbuild-agent",
- "gbuild-announcements",
  "gbuild-config",
  "gbuild-markdown",
  "gbuild-mermaid",
@@ -3948,7 +3920,6 @@ dependencies = [
  "gbuild-telemetry",
  "gbuild-test-support",
  "gbuild-tools",
- "gbuild-update",
  "gbuild-version",
  "gbuild-voice",
  "gbuild-workspace",
@@ -4018,7 +3989,6 @@ dependencies = [
  "gbuild-sandbox",
  "gbuild-shell",
  "gbuild-telemetry",
- "gbuild-update",
  "gbuild-version",
  "gbuild-workspace",
  "libc",
@@ -4296,7 +4266,6 @@ dependencies = [
  "futures",
  "futures-util",
  "gbuild-agent",
- "gbuild-announcements",
  "gbuild-auth",
  "gbuild-compaction",
  "gbuild-config",
@@ -4495,7 +4464,6 @@ dependencies = [
  "git2",
  "http 1.4.0",
  "mid",
- "obfstr",
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-otlp",
@@ -4521,7 +4489,6 @@ dependencies = [
  "uuid",
  "whoami",
  "xai-file-utils",
- "xai-mixpanel",
  "xai-token-estimation",
 ]
 
@@ -4642,30 +4609,6 @@ dependencies = [
  "tonic-prost",
  "xai-proto-build",
  "xai-tool-protocol",
-]
-
-[[package]]
-name = "gbuild-update"
-version = "0.1.220-alpha.4"
-dependencies = [
- "anyhow",
- "dunce",
- "futures",
- "gbuild-shell",
- "gbuild-tools",
- "gbuild-version",
- "indicatif",
- "reqwest 0.12.24",
- "semver",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tracing",
- "wiremock",
 ]
 
 [[package]]
@@ -6509,19 +6452,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indicatif"
-version = "0.18.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9375e112e4b463ec1b1c6c011953545c65a30164fbab5b581df32b3abf0dcb88"
-dependencies = [
- "console 0.16.1",
- "portable-atomic",
- "unicode-width 0.2.0",
- "unit-prefix",
- "web-time",
-]
-
-[[package]]
 name = "indoc"
 version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6584,7 +6514,7 @@ version = "1.43.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46fdb647ebde000f43b5b53f773c30cf9b0cb4300453208713fa38b2c70935a0"
 dependencies = [
- "console 0.15.11",
+ "console",
  "once_cell",
  "similar",
 ]
@@ -11439,15 +11369,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "terminfo"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12301,28 +12222,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "ts-rs"
-version = "12.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
-dependencies = [
- "thiserror 2.0.18",
- "ts-rs-macros",
-]
-
-[[package]]
-name = "ts-rs-macros"
-version = "12.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
- "termcolor",
-]
-
-[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12587,12 +12486,6 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
-
-[[package]]
-name = "unit-prefix"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323402cff2dd658f39ca17c789b502021b3f18707c91cdf22e3838e1b4023817"
 
 [[package]]
 name = "unsafe-libyaml"
@@ -14330,17 +14223,6 @@ name = "xai-interjection-core"
 version = "0.1.0"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "xai-mixpanel"
-version = "0.1.0"
-dependencies = [
- "base64",
- "gbuild-secrets",
- "reqwest 0.12.24",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

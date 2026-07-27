@@ -770,9 +770,7 @@ async fn provider_helper_env_scrubs_first_party_credentials() {
         "GBUILD_AUTH_PATH",
         "GBUILD_DEPLOYMENT_KEY",
         "GBUILD_EXTRA_AUTH_KEY",
-        "GBUILD_TRACE_UPLOAD_CREDENTIALS_FILE",
         "OTEL_EXPORTER_OTLP_HEADERS",
-        "GBUILD_INTERNAL_OTLP_HEADERS",
     ];
     assert_eq!(
         crate::agent::config::FIRST_PARTY_CREDENTIAL_ENV_VARS,
