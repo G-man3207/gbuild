@@ -1602,7 +1602,6 @@ mod tests {
             names,
             [
                 "compact",
-                "always-approve",
                 "flush",
                 "dream",
                 "memory",
@@ -1842,7 +1841,7 @@ mod tests {
             );
         }
         // Always-on commands are still present.
-        for required in ["compact", "always-approve", "context", "session-info"] {
+        for required in ["compact", "context", "session-info"] {
             assert!(
                 names.iter().any(|n| n == required),
                 "{required} should be present, got: {names:?}",
@@ -2211,7 +2210,7 @@ mod tests {
                 "{forbidden} must not be advertised under default fail-closed availability, got: {names:?}",
             );
         }
-        for required in ["compact", "always-approve", "context", "session-info"] {
+        for required in ["compact", "context", "session-info"] {
             assert!(
                 names.iter().any(|n| n == required),
                 "AlwaysOn {required} must always be advertised, got: {names:?}",
