@@ -95,7 +95,7 @@ pub(crate) const DIRECT_HUB_CLOUD_REMOVED_MSG: &str = "Direct hub cloud removed;
 pub(crate) fn reject_direct_hub_cloud_meta(
     session_meta: Option<&acp::Meta>,
 ) -> Result<(), acp::Error> {
-    if session_meta.and_then(|m| m.get("x.ai/cloud_server_id")).is_some() {
+    if session_meta.and_then(|m| m.get("gbuild/cloud_server_id")).is_some() {
         return Err(acp::Error::invalid_params().data(DIRECT_HUB_CLOUD_REMOVED_MSG));
     }
     Ok(())
@@ -222,13 +222,13 @@ impl BridgeAttach {
         !matches!(self, Self::NotAttached)
     }
 }
-/// `_meta["x.ai/session"].kind` → [`SessionKind`]; absent/unknown/malformed → `Build`.
+/// `_meta["gbuild/session"].kind` → [`SessionKind`]; absent/unknown/malformed → `Build`.
 fn parse_session_kind(
     meta: Option<&acp::Meta>,
 ) -> crate::session::unified_list::SessionKind {
     use crate::session::unified_list::SessionKind;
     use serde::Deserialize;
-    meta.and_then(|m| m.get("x.ai/session"))
+    meta.and_then(|m| m.get("gbuild/session"))
         .and_then(|s| s.get("kind"))
         .and_then(|k| SessionKind::deserialize(k).ok())
         .unwrap_or(SessionKind::Build)
@@ -266,7 +266,7 @@ fn chat_new_session_model_state(
 /// `session/new` / `session/load` `_meta` key carrying per-session plugin roots.
 pub(crate) const SESSION_PLUGIN_DIRS_META_KEY: &str = "pluginDirs";
 /// `initialize` response `_meta` key advertising [`SESSION_PLUGIN_DIRS_META_KEY`] support.
-pub(crate) const SESSION_PLUGIN_DIRS_CAPABILITY_KEY: &str = "x.ai/pluginDirs";
+pub(crate) const SESSION_PLUGIN_DIRS_CAPABILITY_KEY: &str = "gbuild/pluginDirs";
 /// Per-session plugin roots from `session/new` / `session/load` `_meta.pluginDirs`,
 /// loaded at CliOverride scope (always trusted) into this session's registry only.
 /// Paths must be absolute (the SDKs resolve before sending); anything else is
@@ -361,7 +361,7 @@ fn mark_as_replay(
     let obj = meta.get_or_insert_with(acp::Meta::new);
     obj.insert("isReplay".to_string(), is_replay);
     if let Some(persist) = persist_data {
-        obj.insert("x.ai/persist".to_string(), persist.clone());
+        obj.insert("gbuild/persist".to_string(), persist.clone());
     }
 }
 /// Resolve a session's REQUESTED auto flag from `_meta`: an explicit `autoMode`
@@ -1191,7 +1191,7 @@ impl MvpAgent {
     /// Dispatches by on-disk method name:
     /// - ACP updates (`"session/update"`) → typed `SessionNotification` for correct
     ///   TUI dispatch (direct dispatch preserves Rust types, not method strings).
-    /// - xAI updates (`"_x.ai/session/update"`) → `ExtNotification`.
+    /// - xAI updates (`"_gbuild/session/update"`) → `ExtNotification`.
     ///
     /// When `mark_replay` is true, the notification is tagged with
     /// `_meta.isReplay: true` so the client knows it's historical data.
@@ -1224,7 +1224,7 @@ impl MvpAgent {
             tracing::debug!("replay: skipping JSONL line with no params");
             return;
         };
-        let is_xai = method == "_x.ai/session/update";
+        let is_xai = method == "_gbuild/session/update";
         if is_xai {
             if target_client_id.is_none() && !mark_replay {
                 if let Ok(owned) = serde_json::value::RawValue::from_string(
@@ -1236,7 +1236,7 @@ impl MvpAgent {
                                 .gateway
                                 .forward_with_completion(
                                     acp::ExtNotification::new(
-                                        "x.ai/session/update",
+                                        "gbuild/session/update",
                                         std::sync::Arc::from(owned),
                                     ),
                                 ),
@@ -1258,10 +1258,10 @@ impl MvpAgent {
                             m.insert("isReplay".to_string(), serde_json::json!(true));
                         }
                         if let Some(pd) = persist_data {
-                            m.insert("x.ai/persist".to_string(), pd.clone());
+                            m.insert("gbuild/persist".to_string(), pd.clone());
                         }
                         if let Some(tid) = target_client_id {
-                            m.insert("x.ai/leaderClientId".to_string(), tid.clone());
+                            m.insert("gbuild/leaderClientId".to_string(), tid.clone());
                         }
                     }
                 }
@@ -1272,7 +1272,7 @@ impl MvpAgent {
                                 .gateway
                                 .forward_with_completion(
                                     acp::ExtNotification::new(
-                                        "x.ai/session/update",
+                                        "gbuild/session/update",
                                         std::sync::Arc::from(raw_val),
                                     ),
                                 ),
@@ -1325,7 +1325,7 @@ impl MvpAgent {
                 mark_as_replay(&mut notification.meta, persist_data);
             }
             if let Some(tid) = target_client_id {
-                stamp_meta_value(&mut notification.meta, "x.ai/leaderClientId", tid);
+                stamp_meta_value(&mut notification.meta, "gbuild/leaderClientId", tid);
             }
             completions.push(self.gateway.forward_with_completion(notification));
         }
@@ -1593,7 +1593,7 @@ impl MvpAgent {
                             .gateway
                             .forward_with_completion(
                                 acp::ExtNotification::new(
-                                    "x.ai/task_completed",
+                                    "gbuild/task_completed",
                                     params.into(),
                                 ),
                             ),
@@ -1938,7 +1938,7 @@ impl MvpAgent {
         if let Ok(params) = serde_json::value::to_raw_value(&payload) {
             self.gateway
                 .forward_fire_and_forget(
-                    acp::ExtNotification::new("x.ai/settings/update", params.into()),
+                    acp::ExtNotification::new("gbuild/settings/update", params.into()),
                 );
         }
     }

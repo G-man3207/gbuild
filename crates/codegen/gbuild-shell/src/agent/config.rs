@@ -108,9 +108,11 @@ impl EnvKeys {
             Self::Many(v) => v.iter().map(String::as_str).find(|s| !s.is_empty()),
         }
     }
-    /// Resolve the first set, non-blank process env value among configured names.
+    /// Resolve the first set, non-blank credential among configured names.
+    /// Stored provider keys (`/login <provider>`) are consulted before the
+    /// process environment.
     pub fn resolve_value(&self) -> Option<String> {
-        self.resolve_value_with(|name| std::env::var(name).ok())
+        self.resolve_value_with(crate::auth::provider_keys::resolve_env_or_stored)
     }
     /// Testable resolve with an injected getenv.
     pub fn resolve_value_with(

@@ -70,7 +70,7 @@ pub struct SearchSessionHit {
 /// Route `x.ai/session/search` extension method calls.
 pub async fn handle(args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/session/search" => {
+        "gbuild/session/search" => {
             let req: SearchSessionsRequest = super::parse_params(args)?;
             let internal_req = SessionSearchRequest {
                 query: req.query,

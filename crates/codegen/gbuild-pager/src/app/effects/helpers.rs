@@ -58,7 +58,7 @@ pub(super) async fn fetch_plugin_cta_mcps(
         "cache": false,
     });
     let req = acp::ExtRequest::new(
-        "x.ai/mcp/list",
+        "gbuild/mcp/list",
         serde_json::value::to_raw_value(&params)
             .expect("serialize mcp/list params")
             .into(),
@@ -153,7 +153,7 @@ pub(super) fn parse_session_load_restore_meta(
         .and_then(|v| serde_json::from_value(v).ok());
     (code_restored, restore_summary, restore_degree)
 }
-/// CANONICAL wire parser for `LoadSessionResponse._meta["x.ai/runningPromptId"]`.
+/// CANONICAL wire parser for `LoadSessionResponse._meta["gbuild/runningPromptId"]`.
 ///
 /// Returns the session's in-flight running prompt id when the session was
 /// loaded MID-turn (some other client is driving), otherwise `None`. The
@@ -164,7 +164,7 @@ pub(crate) fn parse_session_load_running_prompt_id(
     resp_meta: Option<&acp::Meta>,
 ) -> Option<String> {
     resp_meta
-        .and_then(|m| m.get("x.ai/runningPromptId"))
+        .and_then(|m| m.get("gbuild/runningPromptId"))
         .and_then(|v| v.as_str())
         .map(String::from)
 }
@@ -231,7 +231,7 @@ pub(crate) fn sanitize_user_error(raw: &str) -> String {
 /// | true  | true      | true     | `gbuild-plan`              | omitted (shell gate) |
 ///
 /// When [`Self::chat_mode`] is set (gateway light-frontend / `--chat`), Build
-/// `agentProfile` injection is omitted (K12) and `_meta["x.ai/session"].kind`
+/// `agentProfile` injection is omitted (K12) and `_meta["gbuild/session"].kind`
 /// is stamped `"chat"` so the shell takes `require_gateway` / thin profile.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SessionFlags {
@@ -307,7 +307,7 @@ impl SessionFlags {
             meta.insert("agentProfile".into(), serde_json::json!(profile));
         }
         if self.chat_mode {
-            meta.insert("x.ai/session".into(), serde_json::json!({ "kind": "chat" }));
+            meta.insert("gbuild/session".into(), serde_json::json!({ "kind": "chat" }));
         }
         if !self.ask_user {
             meta.insert("askUserQuestion".into(), serde_json::json!(false));
@@ -327,13 +327,13 @@ impl SessionFlags {
 /// workspace for `kind=chat`; the client must not bind Direct/envId/attach.
 pub(super) const CHAT_FORBIDDEN_WORKSPACE_BIND_KEYS: &[&str] = &[
     "envId",
-    "x.ai/cloud_server_id",
-    "x.ai/cloud_existing_workspace",
+    "gbuild/cloud_server_id",
+    "gbuild/cloud_existing_workspace",
 ];
-/// Stamp `_meta["x.ai/session"].kind = "chat"` and strip Build `agentProfile` (K12).
+/// Stamp `_meta["gbuild/session"].kind = "chat"` and strip Build `agentProfile` (K12).
 pub(super) fn apply_chat_kind_meta(meta: &mut Option<acp::Meta>) {
     let obj = meta.get_or_insert_with(acp::Meta::new);
-    obj.insert("x.ai/session".into(), serde_json::json!({ "kind": "chat" }));
+    obj.insert("gbuild/session".into(), serde_json::json!({ "kind": "chat" }));
     obj.remove("agentProfile");
 }
 /// Remove client workspace-bind keys from chat create/load meta (defense in depth).
@@ -425,7 +425,7 @@ pub(super) fn count_chat_history_stats(history_path: &Path) -> (usize, usize) {
     (turn_count, tool_call_count)
 }
 /// Degraded conversations lane on `x.ai/session/list`, parsed from the
-/// response's `_meta["x.ai/partial"]` envelope.
+/// response's `_meta["gbuild/partial"]` envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversationsPartial {
     NoOauth,
@@ -441,13 +441,13 @@ impl ConversationsPartial {
         }
     }
 }
-/// Read `_meta["x.ai/partial"]` from a session-list payload. `None` when the
+/// Read `_meta["gbuild/partial"]` from a session-list payload. `None` when the
 /// conversations lane completed (or was skipped); unknown reasons degrade to
 /// [`ConversationsPartial::Error`].
 pub(super) fn parse_session_list_partial(
     payload: &serde_json::Value,
 ) -> Option<ConversationsPartial> {
-    let partial = payload.get("_meta")?.get("x.ai/partial")?;
+    let partial = payload.get("_meta")?.get("gbuild/partial")?;
     if partial.get("conversations").and_then(|v| v.as_bool()) != Some(true) {
         return None;
     }
@@ -459,11 +459,11 @@ pub(super) fn parse_session_list_partial(
         },
     )
 }
-/// Reads `_meta["x.ai/listScope"]` from a session-list payload.
+/// Reads `_meta["gbuild/listScope"]` from a session-list payload.
 pub(super) fn parse_session_list_scope(payload: &serde_json::Value) -> ListScope {
     match payload
         .get("_meta")
-        .and_then(|m| m.get("x.ai/listScope"))
+        .and_then(|m| m.get("gbuild/listScope"))
         .and_then(|v| v.as_str())
     {
         Some("repo") => ListScope::Repo,
@@ -510,7 +510,7 @@ pub(super) fn parse_session_picker_entries(
                 .map(String::from);
             let is_conversation = v
                 .get("_meta")
-                .and_then(|m| m.get("x.ai/session"))
+                .and_then(|m| m.get("gbuild/session"))
                 .and_then(|s| s.get("kind"))
                 .and_then(|k| k.as_str()) == Some("chat");
             let parsed_updated: Option<chrono::DateTime<chrono::Utc>> = v
@@ -659,7 +659,7 @@ pub(super) fn session_picker_entry_to_roster(
 }
 pub(super) async fn send_logout(tx: &AcpAgentTx) {
     let req = acp::ExtRequest::new(
-        "x.ai/auth/logout",
+        "gbuild/auth/logout",
         serde_json::value::to_raw_value(&serde_json::json!({}))
             .expect("serialize auth/logout params")
             .into(),
@@ -673,7 +673,7 @@ pub(super) async fn send_logout(tx: &AcpAgentTx) {
 /// `Authenticating`. `request_seq` scopes the cancel to the abandoned attempt.
 pub(super) async fn send_auth_cancel(tx: &AcpAgentTx, request_seq: u64) -> TaskResult {
     let req = acp::ExtRequest::new(
-        "x.ai/auth/cancel",
+        "gbuild/auth/cancel",
         serde_json::value::to_raw_value(
                 &serde_json::json!({ "request_seq": request_seq }),
             )
@@ -690,7 +690,7 @@ pub(super) async fn send_check_subscription(
     verify: Option<u64>,
 ) -> TaskResult {
     let req = acp::ExtRequest::new(
-        "x.ai/auth/check_subscription",
+        "gbuild/auth/check_subscription",
         serde_json::value::to_raw_value(&serde_json::json!({}))
             .expect("serialize check_subscription params")
             .into(),
@@ -731,7 +731,7 @@ pub(super) async fn send_credit_limit_recheck(
     agent_id: AgentId,
 ) -> TaskResult {
     let req = acp::ExtRequest::new(
-        "x.ai/auth/check_subscription",
+        "gbuild/auth/check_subscription",
         serde_json::value::to_raw_value(&serde_json::json!({}))
             .expect("serialize check_subscription params")
             .into(),
@@ -1201,7 +1201,7 @@ pub(crate) async fn persist_permission_mode_and_notify(
             "permission_mode": config_str,
         });
         let notification = acp::ExtNotification::new(
-            "x.ai/yolo_mode_changed",
+            "gbuild/yolo_mode_changed",
             serde_json::value::to_raw_value(&params)
                 .expect("serialize yolo_mode_changed params")
                 .into(),
@@ -1423,7 +1423,7 @@ pub(super) async fn fetch_auto_topup_info(
 ) -> crate::views::credit_bar::AutoTopupFetch {
     use crate::views::credit_bar::AutoTopupFetch;
     let req = acp::ExtRequest::new(
-        "x.ai/auto-topup-rule",
+        "gbuild/auto-topup-rule",
         serde_json::value::to_raw_value(&serde_json::json!({}))
             .expect("serialize auto-topup params")
             .into(),

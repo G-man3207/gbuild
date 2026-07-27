@@ -144,7 +144,7 @@
             params["runningPromptId"] = serde_json::json!(r);
         }
         acp::ExtNotification::new(
-            "x.ai/queue/changed",
+            "gbuild/queue/changed",
             std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
         )
     }
@@ -339,7 +339,7 @@
             serde_json::from_str(&json_str).unwrap();
         assert_eq!(mirror.running_prompt_id.as_deref(), Some("prompt-running"));
 
-        let notif = acp::ExtNotification::new("x.ai/queue/changed", raw.into());
+        let notif = acp::ExtNotification::new("gbuild/queue/changed", raw.into());
 
         // Case 1: current_prompt_id is None -> adopt it.
         let mut app = make_app_with_agent("sess-1");
@@ -1797,7 +1797,7 @@
             "promptId": "p1",
         });
         let notif = acp::ExtNotification::new(
-            "x.ai/session/prompt_complete",
+            "gbuild/session/prompt_complete",
             serde_json::value::to_raw_value(&params).unwrap().into(),
         );
         handle_prompt_complete(&notif, &mut app);

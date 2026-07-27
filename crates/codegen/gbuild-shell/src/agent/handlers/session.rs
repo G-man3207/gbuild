@@ -34,11 +34,11 @@ pub async fn handle(
     args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
     match args.method.as_ref() {
-        "x.ai/session/info" => handle_session_info(agent, args).await,
-        "x.ai/session/close" => handle_session_close(agent, args).await,
-        "x.ai/session/list" => handle_session_list(agent, args).await,
-        "x.ai/sessions/list" => handle_roster_list(agent, args).await,
-        m if m.starts_with("x.ai/session_summaries/") => {
+        "gbuild/session/info" => handle_session_info(agent, args).await,
+        "gbuild/session/close" => handle_session_close(agent, args).await,
+        "gbuild/session/list" => handle_session_list(agent, args).await,
+        "gbuild/sessions/list" => handle_roster_list(agent, args).await,
+        m if m.starts_with("gbuild/session_summaries/") => {
             handle_session_summaries(agent, args).await
         }
         _ => Err(acp::Error::method_not_found()),
@@ -181,7 +181,7 @@ async fn handle_session_summaries(
     args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
     match args.method.as_ref() {
-        "x.ai/session_summaries/session_list" => {
+        "gbuild/session_summaries/session_list" => {
             let req = serde_json::from_str::<SessionListRequest>(args.params.get())?;
             let cwd = req.workspace_directory.to_string_lossy().to_string();
 
@@ -203,7 +203,7 @@ async fn handle_session_summaries(
 
             Ok(acp::ExtResponse::new(value))
         }
-        "x.ai/session_summaries/workspace_list" => {
+        "gbuild/session_summaries/workspace_list" => {
             tracing::debug!("xai/session_summaries/workspace_list is working");
             let _req = serde_json::from_str::<AllSessionOverviewRequest>(args.params.get())?;
 
@@ -215,7 +215,7 @@ async fn handle_session_summaries(
 
             summaries_to_overview_response(summaries)
         }
-        "x.ai/session_summaries/workspace_list_recent" => {
+        "gbuild/session_summaries/workspace_list_recent" => {
             let req = serde_json::from_str::<RecentSessionsRequest>(args.params.get())?;
 
             let _timer = crate::instrumentation_timer!("session.list_sessions_recent");

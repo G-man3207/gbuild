@@ -14,15 +14,15 @@ use crate::session::ExtMethodResult;
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/auth/getBearerToken" => handle_get_bearer_token(agent).await,
-        "x.ai/getApiKey" => handle_get_api_key(),
-        "x.ai/setApiKey" => handle_set_api_key(args),
-        "x.ai/auth/submit_code" => handle_submit_code(agent, args),
-        "x.ai/auth/get_url" => handle_get_url(agent).await,
-        "x.ai/auth/cancel" => handle_cancel(agent, args),
-        "x.ai/auth/logout" => handle_logout(agent, args).await,
-        "x.ai/auth/info" => handle_info(agent),
-        "x.ai/auth/check_subscription" => handle_check_subscription(agent).await,
+        "gbuild/auth/getBearerToken" => handle_get_bearer_token(agent).await,
+        "gbuild/getApiKey" => handle_get_api_key(),
+        "gbuild/setApiKey" => handle_set_api_key(args),
+        "gbuild/auth/submit_code" => handle_submit_code(agent, args),
+        "gbuild/auth/get_url" => handle_get_url(agent).await,
+        "gbuild/auth/cancel" => handle_cancel(agent, args),
+        "gbuild/auth/logout" => handle_logout(agent, args).await,
+        "gbuild/auth/info" => handle_info(agent),
+        "gbuild/auth/check_subscription" => handle_check_subscription(agent).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }

@@ -1,6 +1,6 @@
 //! Client-registered hooks for [`SessionActor`].
 //!
-//! Hooks registered at `session/new` (`_meta["x.ai/hooks"]`) come in two flavors,
+//! Hooks registered at `session/new` (`_meta["gbuild/hooks"]`) come in two flavors,
 //! both matched by the agent ([`gbuild_hooks::matcher::HookMatcher`], shared with
 //! file hooks):
 //! - **Gates** (awaited reverse *requests* `x.ai/hooks/run`):
@@ -30,8 +30,8 @@ use crate::extensions::hooks::{
 };
 use crate::sampling::types::ToolCallResponse;
 
-const HOOK_EVENT_METHOD: &str = "x.ai/hooks/event";
-const HOOK_RUN_METHOD: &str = "x.ai/hooks/run";
+const HOOK_EVENT_METHOD: &str = "gbuild/hooks/event";
+const HOOK_RUN_METHOD: &str = "gbuild/hooks/run";
 
 /// Default reply deadline for the `PreToolUse` client gate: short because it
 /// sits in the interactive tool hot path. On timeout the gate fails open (the
@@ -64,7 +64,7 @@ fn classify(outcome: ReverseOutcome) -> (ClientHookResponse, ClientHookGateOutco
                         ClientHookDecision::Deny => ClientHookGateOutcome::Denied,
                         ClientHookDecision::Other => {
                             tracing::warn!(
-                                "x.ai/hooks/run returned an unknown decision value; failing open"
+                                "gbuild/hooks/run returned an unknown decision value; failing open"
                             );
                             ClientHookGateOutcome::UnknownDecision
                         }
@@ -82,14 +82,14 @@ fn classify(outcome: ReverseOutcome) -> (ClientHookResponse, ClientHookGateOutco
             }
         }
         ReverseOutcome::Transport(err) => {
-            tracing::warn!(%err, "x.ai/hooks/run transport error (no client wired?); failing open");
+            tracing::warn!(%err, "gbuild/hooks/run transport error (no client wired?); failing open");
             (
                 ClientHookResponse::default(),
                 ClientHookGateOutcome::TransportError,
             )
         }
         ReverseOutcome::Timeout => {
-            tracing::warn!("x.ai/hooks/run timed out; failing open");
+            tracing::warn!("gbuild/hooks/run timed out; failing open");
             (
                 ClientHookResponse::default(),
                 ClientHookGateOutcome::TimedOut,

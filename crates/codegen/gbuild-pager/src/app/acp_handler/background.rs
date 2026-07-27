@@ -420,11 +420,11 @@ pub(super) fn handle_scheduled_task_inject_prompt(
         }
     };
     let Some(session_id) = payload["sessionId"].as_str() else {
-        tracing::warn!("x.ai/scheduled_task_inject_prompt: missing or non-string sessionId");
+        tracing::warn!("gbuild/scheduled_task_inject_prompt: missing or non-string sessionId");
         return false;
     };
     let Some(prompt) = payload["prompt"].as_str().filter(|s| !s.is_empty()) else {
-        tracing::warn!("x.ai/scheduled_task_inject_prompt: missing or empty prompt");
+        tracing::warn!("gbuild/scheduled_task_inject_prompt: missing or empty prompt");
         return false;
     };
     let task_id = payload["taskId"].as_str().unwrap_or("unknown");

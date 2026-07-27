@@ -1007,7 +1007,7 @@ async fn test_stdio_session_close() {
         // Session should be alive — session/info returns data with sessionId
         let info_resp = client
             .ext_method(
-                "x.ai/session/info",
+                "gbuild/session/info",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;
@@ -1026,7 +1026,7 @@ async fn test_stdio_session_close() {
         // Close the session
         let close_resp = client
             .ext_method(
-                "x.ai/session/close",
+                "gbuild/session/close",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;
@@ -1040,7 +1040,7 @@ async fn test_stdio_session_close() {
         // Session should be gone — session/info returns empty result (no sessionId)
         let info_after = client
             .ext_method(
-                "x.ai/session/info",
+                "gbuild/session/info",
                 serde_json::json!({ "sessionId": session_id.0.as_ref() }),
             )
             .await;

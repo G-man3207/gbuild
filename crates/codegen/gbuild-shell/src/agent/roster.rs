@@ -92,8 +92,8 @@ pub struct RosterChanged {
 }
 
 /// JSON-RPC method names for the roster API.
-pub const SESSIONS_LIST_METHOD: &str = "x.ai/sessions/list";
-pub const SESSIONS_CHANGED_METHOD: &str = "x.ai/sessions/changed";
+pub const SESSIONS_LIST_METHOD: &str = "gbuild/sessions/list";
+pub const SESSIONS_CHANGED_METHOD: &str = "gbuild/sessions/changed";
 
 /// Merge live `resident` rows with on-disk `summaries` into the sorted roster.
 /// Pure, so it is unit-testable without disk or a live actor.

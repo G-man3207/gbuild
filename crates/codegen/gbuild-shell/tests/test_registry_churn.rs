@@ -85,9 +85,9 @@ async fn ext_method(
     serde_json::from_str(resp.0.get()).unwrap_or_else(|e| panic!("{method}: bad response: {e}"))
 }
 async fn read_counts(conn: &acp::ClientSideConnection) -> Counts {
-    let resp = ext_method(conn, "x.ai/debug/agent", json!({})).await;
+    let resp = ext_method(conn, "gbuild/debug/agent", json!({})).await;
     serde_json::from_value(resp["result"]["registries"].clone())
-        .unwrap_or_else(|e| panic!("x.ai/debug/agent: bad registries payload: {e}\n{resp}"))
+        .unwrap_or_else(|e| panic!("gbuild/debug/agent: bad registries payload: {e}\n{resp}"))
 }
 async fn new_session(conn: &acp::ClientSideConnection, cwd: &std::path::Path) -> acp::SessionId {
     tokio::time::timeout(
@@ -125,14 +125,14 @@ async fn prompt_turn(conn: &acp::ClientSideConnection, session_id: &acp::Session
 async fn close_session(conn: &acp::ClientSideConnection, session_id: &acp::SessionId) {
     let resp = ext_method(
         conn,
-        "x.ai/session/close",
+        "gbuild/session/close",
         json!({ "sessionId": session_id.0.as_ref() }),
     )
     .await;
     assert_eq!(
         resp["result"]["success"],
         json!(true),
-        "x.ai/session/close on {} failed: {resp}",
+        "gbuild/session/close on {} failed: {resp}",
         session_id.0
     );
 }

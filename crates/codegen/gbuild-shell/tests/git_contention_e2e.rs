@@ -450,8 +450,8 @@ fn git_rebase_refresh_storm_e2e() {
     let on = agent_rt.block_on(run_storm(
         &server,
         Some(json!({
-            "x.ai/hunkTracker": { "mode": "agent_only" },
-            "x.ai/gitHeadChanged": true,
+            "gbuild/hunkTracker": { "mode": "agent_only" },
+            "gbuild/gitHeadChanged": true,
         })),
         &counter,
         "machinery-on",

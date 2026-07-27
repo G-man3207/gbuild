@@ -609,7 +609,7 @@ async fn open_session(
                     let mut m = acp::Meta::new();
                     m.insert("noReplay".into(), serde_json::Value::Bool(true));
                     if let Some(true) = restore_code {
-                        m.insert("x.ai/restore_code".into(), serde_json::Value::Bool(true));
+                        m.insert("gbuild/restore_code".into(), serde_json::Value::Bool(true));
                     }
                     Some(m)
                 }),
@@ -685,7 +685,7 @@ async fn fork_then_open(
     let parent_is_worktree = parent_session_is_worktree(parent_id, &write_cwd);
     let payload = fork_session_params(parent_id, &write_cwd, new_id, parent_is_worktree);
     let req = acp::ExtRequest::new(
-        "x.ai/session/fork",
+        "gbuild/session/fork",
         serde_json::value::to_raw_value(&payload)
             .expect("serialize fork params")
             .into(),
@@ -1313,13 +1313,13 @@ fn reap_request_for_key(
 ) -> serde_json::Result<acp::ExtRequest> {
     let (method, params) = match key.strip_prefix("subagent:") {
         Some(id) => (
-            "x.ai/subagent/cancel",
+            "gbuild/subagent/cancel",
             serde_json::value::to_raw_value(&CancelSubagentRequest {
                 subagent_id: id.to_string(),
             })?,
         ),
         None => (
-            "x.ai/task/kill",
+            "gbuild/task/kill",
             serde_json::value::to_raw_value(&KillTaskRequest {
                 session_id: session_id.0.to_string(),
                 task_id: key.to_string(),
@@ -1585,7 +1585,7 @@ fn handle_ext_notification(
     let method = notif.request.method.as_ref();
 
     // Background task lifecycle uses dedicated methods (not session_notification).
-    if method == "x.ai/task_backgrounded" {
+    if method == "gbuild/task_backgrounded" {
         #[derive(serde::Deserialize)]
         struct TaskBgEnvelope {
             update: TaskBgUpdate,
@@ -1615,7 +1615,7 @@ fn handle_ext_notification(
         return ExtEvent::None;
     }
 
-    if method == "x.ai/task_completed" {
+    if method == "gbuild/task_completed" {
         #[derive(serde::Deserialize)]
         struct TaskDoneEnvelope {
             update: TaskDoneUpdate,
@@ -1643,12 +1643,12 @@ fn handle_ext_notification(
         return ExtEvent::None;
     }
 
-    if method == "x.ai/monitor_event" {
+    if method == "gbuild/monitor_event" {
         return ExtEvent::MonitorEvent;
     }
 
     match method {
-        "x.ai/session_notification" | "x.ai/session/update" => {}
+        "gbuild/session_notification" | "gbuild/session/update" => {}
         _ => return ExtEvent::None,
     }
 
@@ -1828,7 +1828,7 @@ mod tests {
     fn reap_request_for_task_kills_with_session_scope() {
         let session_id = acp::SessionId::new("sess-1");
         let request = super::reap_request_for_key("task-42", &session_id).unwrap();
-        assert_eq!(request.method.as_ref(), "x.ai/task/kill");
+        assert_eq!(request.method.as_ref(), "gbuild/task/kill");
         let params: serde_json::Value = serde_json::from_str(request.params.get()).unwrap();
         assert_eq!(params["sessionId"], "sess-1");
         assert_eq!(params["taskId"], "task-42");
@@ -1838,7 +1838,7 @@ mod tests {
     fn reap_request_for_subagent_cancels_with_stripped_id() {
         let session_id = acp::SessionId::new("sess-1");
         let request = super::reap_request_for_key("subagent:sub-7", &session_id).unwrap();
-        assert_eq!(request.method.as_ref(), "x.ai/subagent/cancel");
+        assert_eq!(request.method.as_ref(), "gbuild/subagent/cancel");
         let params: serde_json::Value = serde_json::from_str(request.params.get()).unwrap();
         assert_eq!(params["subagentId"], "sub-7");
     }
@@ -2051,7 +2051,7 @@ mod tests {
         // the inner update object (matching the real `x.ai/task_backgrounded`
         // wire shape: `{ "update": { "sessionUpdate": ..., "task_id": ... } }`).
         let notif = make_ext_notif(
-            "x.ai/task_backgrounded",
+            "gbuild/task_backgrounded",
             serde_json::json!({
                 "sessionUpdate": "task_backgrounded",
                 "task_id": "task-abc",
@@ -2066,7 +2066,7 @@ mod tests {
     #[test]
     fn headless_task_backgrounded_with_monitor_description_is_monitor() {
         let notif = make_ext_notif(
-            "x.ai/task_backgrounded",
+            "gbuild/task_backgrounded",
             serde_json::json!({
                 "sessionUpdate": "task_backgrounded",
                 "task_id": "mon-1",
@@ -2087,7 +2087,7 @@ mod tests {
         // this test guards against a future `rename_all = "camelCase"` on
         // `TaskSnapshot` silently turning waiting into a no-op.
         let notif = make_ext_notif(
-            "x.ai/task_completed",
+            "gbuild/task_completed",
             serde_json::json!({
                 "sessionUpdate": "task_completed",
                 "task_snapshot": { "task_id": "task-abc" }
@@ -2102,7 +2102,7 @@ mod tests {
     #[test]
     fn headless_subagent_spawned_and_finished_parse() {
         let spawned = make_ext_notif(
-            "x.ai/session_notification",
+            "gbuild/session_notification",
             serde_json::json!({
                 "sessionUpdate": "subagent_spawned",
                 "subagent_id": "sub-1",
@@ -2117,7 +2117,7 @@ mod tests {
             ExtEvent::SubagentSpawned { subagent_id } if subagent_id == "sub-1"
         ));
         let finished = make_ext_notif(
-            "x.ai/session_notification",
+            "gbuild/session_notification",
             serde_json::json!({
                 "sessionUpdate": "subagent_finished",
                 "subagent_id": "sub-1",
@@ -2146,7 +2146,7 @@ mod tests {
         let raw = serde_json::value::to_raw_value(&payload).unwrap();
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let notif = xai_acp_lib::AcpArgs {
-            request: acp::ExtNotification::new("x.ai/other", raw.into()),
+            request: acp::ExtNotification::new("gbuild/other", raw.into()),
             response_tx: tx,
         }
         .boxed();

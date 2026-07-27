@@ -604,7 +604,7 @@ fn handle_relay_message(
                 // Register session with relay via the WebSocket connection.
                 let upsert = json!({
                     "jsonrpc": "2.0",
-                    "method": "_x.ai/session/upsert",
+                    "method": "_gbuild/session/upsert",
                     "params": {
                         "sessionId": session_id,
                         "cwd": cwd,
@@ -619,7 +619,7 @@ fn handle_relay_message(
                 tprintln!("📡 Session syncing to relay. View at: {}", share_url);
             }
         }
-        Some("_x.ai/relay/initialized") => {
+        Some("_gbuild/relay/initialized") => {
             tracing::debug!(session_id = %session_id, "RelaySync: relay confirmed TUI sync mode");
         }
         Some(other) => {

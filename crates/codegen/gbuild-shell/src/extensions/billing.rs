@@ -148,11 +148,11 @@ pub struct GetAutoTopupRuleResponse {
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/billing" => {
+        "gbuild/billing" => {
             tracing::info!("handling billing config request");
             handle_get_billing(agent).await
         }
-        "x.ai/auto-topup-rule" => {
+        "gbuild/auto-topup-rule" => {
             tracing::info!("handling auto top-up rule request");
             handle_get_auto_topup_rule(agent).await
         }

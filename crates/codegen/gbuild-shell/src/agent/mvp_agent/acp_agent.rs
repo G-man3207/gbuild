@@ -465,15 +465,15 @@ impl acp::Agent for MvpAgent {
                         .load_session(true)
                         .meta(
                             serde_json::json!({
-                    "x.ai/fs_notify": true,
+                    "gbuild/fs_notify": true,
                     // Advertised so SDKs can warn when a registration depends on
                     // hook behavior this agent doesn't honor.
-                    "x.ai/hooks": {
+                    "gbuild/hooks": {
                         "blockingEvents": crate::extensions::hooks::ADVERTISED_BLOCKING_EVENTS,
                         "decisions": crate::extensions::hooks::ADVERTISED_DECISIONS,
                         "stopSignals": crate::extensions::hooks::ADVERTISED_STOP_SIGNALS,
                     },
-                    "x.ai/capabilities": {
+                    "gbuild/capabilities": {
                         "toolOverrides": tool_overrides_capability(),
                     },
                 })
@@ -1290,8 +1290,8 @@ impl acp::Agent for MvpAgent {
             "feedbackEnabled": feedback_enabled,
         });
         if let Some(obj) = meta.as_object_mut() {
-            obj.insert("x.ai/sessionConfig".to_string(), session_config_value);
-            obj.insert("x.ai/sessionDetail".to_string(), session_detail_value);
+            obj.insert("gbuild/sessionConfig".to_string(), session_config_value);
+            obj.insert("gbuild/sessionDetail".to_string(), session_detail_value);
             insert_applied_tool_overrides(obj, applied_tool_overrides.as_ref());
         }
         Ok(
@@ -1319,12 +1319,12 @@ impl acp::Agent for MvpAgent {
         let persist_data = arguments
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/persist"))
+            .and_then(|m| m.get("gbuild/persist"))
             .cloned();
         let target_client_id = arguments
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/leaderClientId"))
+            .and_then(|m| m.get("gbuild/leaderClientId"))
             .cloned();
         let acp::LoadSessionRequest {
             session_id,
@@ -1517,7 +1517,7 @@ impl acp::Agent for MvpAgent {
         );
         let restore_code_requested = request_meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/restore_code"))
+            .and_then(|m| m.get("gbuild/restore_code"))
             .and_then(|v| v.as_bool())
             .unwrap_or(self.restore_code);
         let registry_client_for_restore = self.session_registry_client();
@@ -1585,7 +1585,7 @@ impl acp::Agent for MvpAgent {
         let load_envrc = {
             let skip_envrc = request_meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/skip_envrc"))
+                .and_then(|m| m.get("gbuild/skip_envrc"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             if skip_envrc {
@@ -1668,7 +1668,7 @@ impl acp::Agent for MvpAgent {
         );
         let prompt_display_cwd = request_meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/display_cwd"))
+            .and_then(|m| m.get("gbuild/display_cwd"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| summary.prompt_display_cwd.clone());
@@ -1973,7 +1973,7 @@ impl acp::Agent for MvpAgent {
         let mut response_meta_map = serde_json::Map::new();
         response_meta_map.insert("sessionId".to_string(), serde_json::json!(session_id));
         if let Some(persist) = persist_data {
-            response_meta_map.insert("x.ai/persist".to_string(), persist);
+            response_meta_map.insert("gbuild/persist".to_string(), persist);
         }
         let session_cwd = self
             .sessions
@@ -2028,7 +2028,7 @@ impl acp::Agent for MvpAgent {
         {
             response_meta_map
                 .insert(
-                    "x.ai/runningPromptId".to_string(),
+                    "gbuild/runningPromptId".to_string(),
                     serde_json::json!(running_prompt_id),
                 );
         }
@@ -2040,8 +2040,8 @@ impl acp::Agent for MvpAgent {
                 summary.display_title_opt(),
                 &model_state,
             );
-        response_meta_map.insert("x.ai/sessionConfig".to_string(), session_config_value);
-        response_meta_map.insert("x.ai/sessionDetail".to_string(), session_detail_value);
+        response_meta_map.insert("gbuild/sessionConfig".to_string(), session_config_value);
+        response_meta_map.insert("gbuild/sessionDetail".to_string(), session_detail_value);
         let applied_tool_overrides = {
             let cmd_tx = self
                 .sessions
@@ -2418,7 +2418,7 @@ impl acp::Agent for MvpAgent {
             self.gateway
                 .forward_fire_and_forget(
                     acp::ExtNotification::new(
-                        "x.ai/session/prompt_complete",
+                        "gbuild/session/prompt_complete",
                         params.into(),
                     ),
                 );
@@ -2824,62 +2824,62 @@ impl acp::Agent for MvpAgent {
         let mut backend_no_bridge_err: Option<acp::Error> = None;
         let method = args.method.clone();
         let result = match method.as_ref() {
-            "x.ai/getApiKey" | "x.ai/setApiKey" => {
+            "gbuild/getApiKey" | "gbuild/setApiKey" => {
                 crate::extensions::auth::handle(self, &args).await
             }
-            "x.ai/session/info" | "x.ai/session/close" | "x.ai/session/list"
-            | "x.ai/sessions/list" => {
+            "gbuild/session/info" | "gbuild/session/close" | "gbuild/session/list"
+            | "gbuild/sessions/list" => {
                 crate::agent::handlers::session::handle(self, &args).await
             }
-            "x.ai/workspaces/list" => {
+            "gbuild/workspaces/list" => {
                 crate::agent::handlers::workspaces::handle(self, &args).await
             }
-            "x.ai/session/updates" => {
+            "gbuild/session/updates" => {
                 crate::extensions::session_updates::handle(&args, &self.gateway).await
             }
-            "x.ai/session/state" => {
+            "gbuild/session/state" => {
                 crate::extensions::session_state::handle_state(&args).await
             }
-            "x.ai/session/import" => {
+            "gbuild/session/import" => {
                 crate::extensions::session_state::handle_import(&args).await
             }
-            "x.ai/session/load_history" => {
+            "gbuild/session/load_history" => {
                 crate::extensions::chat_conversation_history::handle(self, &args).await
             }
-            "x.ai/session/search" => {
+            "gbuild/session/search" => {
                 crate::extensions::session_search::handle(&args).await
             }
-            "x.ai/session/resolve_local_for_worktree_resume"
-            | "x.ai/session/rehydrate" => {
+            "gbuild/session/resolve_local_for_worktree_resume"
+            | "gbuild/session/rehydrate" => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::worktree::handle(self, &ops, &args).await
             }
-            "x.ai/session/rename" | "x.ai/session/delete"
-            | "x.ai/session/update_mcp_servers" | "x.ai/session/fork"
-            | "x.ai/internal/reload_all_mcp_servers"
-            | "x.ai/internal/reload_project_mcp_servers" | "x.ai/internal/reload_skills"
-            | "x.ai/internal/reload_workflows" | "x.ai/internal/reload_models"
-            | "x.ai/internal/reload_models_cache" | "x.ai/internal/auth_cleared"
-            | "x.ai/plugins/reload" | "x.ai/commands/list" => {
+            "gbuild/session/rename" | "gbuild/session/delete"
+            | "gbuild/session/update_mcp_servers" | "gbuild/session/fork"
+            | "gbuild/internal/reload_all_mcp_servers"
+            | "gbuild/internal/reload_project_mcp_servers" | "gbuild/internal/reload_skills"
+            | "gbuild/internal/reload_workflows" | "gbuild/internal/reload_models"
+            | "gbuild/internal/reload_models_cache" | "gbuild/internal/auth_cleared"
+            | "gbuild/plugins/reload" | "gbuild/commands/list" => {
                 crate::extensions::session_admin::handle(self, &args).await
             }
-            "x.ai/session/repair" => crate::extensions::repair::handle(self, &args).await,
-            "x.ai/session/usage" => crate::extensions::usage::handle(self, &args).await,
-            "x.ai/memory/flush" | "x.ai/memory/rewrite" => {
+            "gbuild/session/repair" => crate::extensions::repair::handle(self, &args).await,
+            "gbuild/session/usage" => crate::extensions::usage::handle(self, &args).await,
+            "gbuild/memory/flush" | "gbuild/memory/rewrite" => {
                 crate::extensions::memory::handle(self, &args).await
             }
-            "x.ai/skills/refresh-baseline" => {
+            "gbuild/skills/refresh-baseline" => {
                 self.refresh_skill_baseline_for_all_sessions();
                 crate::extensions::to_ext_response(
                     Ok(serde_json::json!({"ok": true})),
                 )
             }
-            "x.ai/interject" => crate::extensions::interject::handle(self, &args).await,
-            "x.ai/feedback" | "x.ai/feedback/dismiss" | "x.ai/btw" => {
+            "gbuild/interject" => crate::extensions::interject::handle(self, &args).await,
+            "gbuild/feedback" | "gbuild/feedback/dismiss" | "gbuild/btw" => {
                 crate::extensions::feedback::handle(self, &args).await
             }
-            "x.ai/recap" => crate::extensions::recap::handle(self, &args).await,
-            "x.ai/cloud/terminate" => {
+            "gbuild/recap" => crate::extensions::recap::handle(self, &args).await,
+            "gbuild/cloud/terminate" => {
                 crate::extensions::auth_gate::require_xai_auth(
                     &self.auth_manager,
                     "Authentication required",
@@ -2911,7 +2911,7 @@ impl acp::Agent for MvpAgent {
                     })?;
                 crate::extensions::to_raw_response(&serde_json::json!({ "ok": true }))
             }
-            "x.ai/cloud/env/list" => {
+            "gbuild/cloud/env/list" => {
                 crate::extensions::auth_gate::require_xai_auth(
                     &self.auth_manager,
                     "Authentication required",
@@ -2936,7 +2936,7 @@ impl acp::Agent for MvpAgent {
                 }),
                 )
             }
-            "x.ai/cloud/env/create" => {
+            "gbuild/cloud/env/create" => {
                 crate::extensions::auth_gate::require_xai_auth(
                     &self.auth_manager,
                     "Authentication required",
@@ -2993,7 +2993,7 @@ impl acp::Agent for MvpAgent {
                 }),
                 )
             }
-            "x.ai/cloud/env/update" => {
+            "gbuild/cloud/env/update" => {
                 crate::extensions::auth_gate::require_xai_auth(
                     &self.auth_manager,
                     "Authentication required",
@@ -3053,7 +3053,7 @@ impl acp::Agent for MvpAgent {
                 }),
                 )
             }
-            "x.ai/cloud/env/delete" => {
+            "gbuild/cloud/env/delete" => {
                 crate::extensions::auth_gate::require_xai_auth(
                     &self.auth_manager,
                     "Authentication required",
@@ -3080,83 +3080,83 @@ impl acp::Agent for MvpAgent {
                     })?;
                 crate::extensions::to_raw_response(&serde_json::json!({ "ok": true }))
             }
-            "x.ai/billing" => crate::extensions::billing::handle(self, &args).await,
-            "x.ai/auto-topup-rule" => {
+            "gbuild/billing" => crate::extensions::billing::handle(self, &args).await,
+            "gbuild/auto-topup-rule" => {
                 crate::extensions::billing::handle(self, &args).await
             }
-            "x.ai/privacy/setCodingDataRetention" => {
+            "gbuild/privacy/setCodingDataRetention" => {
                 crate::extensions::privacy::handle(self, &args).await
             }
-            "x.ai/rollout/survey" => {
+            "gbuild/rollout/survey" => {
                 crate::extensions::rollout::handle(self, &args).await
             }
-            "x.ai/prompt_history" => {
+            "gbuild/prompt_history" => {
                 crate::extensions::prompt_history::handle(self, &args).await
             }
-            "x.ai/suggest" => crate::extensions::suggest::handle(self, &args).await,
-            "x.ai/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
-            s if s.starts_with("x.ai/auth/") => {
+            "gbuild/suggest" => crate::extensions::suggest::handle(self, &args).await,
+            "gbuild/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
+            s if s.starts_with("gbuild/auth/") => {
                 crate::extensions::auth::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/session_summaries/") => {
+            s if s.starts_with("gbuild/session_summaries/") => {
                 crate::agent::handlers::session::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/git/worktree/") => {
+            s if s.starts_with("gbuild/git/worktree/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::worktree::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/git/") => {
+            s if s.starts_with("gbuild/git/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::git::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/compact_conversation") => {
+            s if s.starts_with("gbuild/compact_conversation") => {
                 crate::extensions::memory::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/plugins/") => {
+            s if s.starts_with("gbuild/plugins/") => {
                 crate::extensions::plugins::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/marketplace/") => {
+            s if s.starts_with("gbuild/marketplace/") => {
                 crate::extensions::marketplace::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/hooks/") => {
+            s if s.starts_with("gbuild/hooks/") => {
                 crate::extensions::hooks::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/hunk-tracker/") => {
+            s if s.starts_with("gbuild/hunk-tracker/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::hunk_tracker::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/pr/") => {
+            s if s.starts_with("gbuild/pr/") => {
                 crate::extensions::pr::handle(self, &args).await
             }
             s if s.starts_with(crate::extensions::mcp::mcp_methods::PREFIX) => {
                 crate::extensions::mcp::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/task/") => {
+            s if s.starts_with("gbuild/task/") => {
                 crate::extensions::task::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/scheduler/") => {
+            s if s.starts_with("gbuild/scheduler/") => {
                 crate::extensions::task::handle_scheduler(self, &args).await
             }
-            s if s.starts_with("x.ai/subagent/") => {
+            s if s.starts_with("gbuild/subagent/") => {
                 crate::extensions::task::handle_subagent(self, &args).await
             }
-            s if s.starts_with("x.ai/terminal/") => {
+            s if s.starts_with("gbuild/terminal/") => {
                 crate::extensions::terminal::handle(self, &args).await
             }
             s if crate::extensions::fs::is_fs_method(s) => {
                 crate::extensions::fs::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/search/") => {
+            s if s.starts_with("gbuild/search/") => {
                 crate::extensions::search::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/bundle/") => {
+            s if s.starts_with("gbuild/bundle/") => {
                 crate::extensions::bundle::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/code/") => {
+            s if s.starts_with("gbuild/code/") => {
                 let ops = self.resolve_workspace_ops()?;
                 crate::extensions::code_nav::handle(self, &ops, &args).await
             }
-            s if s.starts_with("x.ai/skills/") || s == "x.ai/workflows/list" => {
+            s if s.starts_with("gbuild/skills/") || s == "gbuild/workflows/list" => {
                 let compat = self.cfg.borrow().compat_resolved;
                 crate::extensions::skills::handle(
                         self,
@@ -3166,13 +3166,13 @@ impl acp::Agent for MvpAgent {
                     )
                     .await
             }
-            s if s.starts_with("x.ai/review") => {
+            s if s.starts_with("gbuild/review") => {
                 crate::extensions::feedback::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/debug/") => {
+            s if s.starts_with("gbuild/debug/") => {
                 crate::extensions::debug::handle(self, &args).await
             }
-            s if s.starts_with("x.ai/rewind") => {
+            s if s.starts_with("gbuild/rewind") => {
                 crate::extensions::rewind::handle(self, &args).await
             }
             other => {
@@ -3194,7 +3194,7 @@ impl acp::Agent for MvpAgent {
         args: acp::ExtNotification,
     ) -> Result<(), acp::Error> {
         tracing::info!("Received extension notification: method={}", args.method);
-        if args.method.as_ref() == "x.ai/yolo_mode_changed"
+        if args.method.as_ref() == "gbuild/yolo_mode_changed"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
@@ -3263,7 +3263,7 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        if args.method.as_ref() == "x.ai/permissions/reset" {
+        if args.method.as_ref() == "gbuild/permissions/reset" {
             let sessions = self.sessions.borrow();
             let updated = sessions
                 .values()
@@ -3280,10 +3280,10 @@ impl acp::Agent for MvpAgent {
                 "Permission state reset for matching sessions"
             );
         }
-        if args.method.as_ref() == "x.ai/internal/evict_sessions" {
+        if args.method.as_ref() == "gbuild/internal/evict_sessions" {
             self.handle_evict_sessions(&args.params).await;
         }
-        if args.method.as_ref() == "x.ai/toggle_plan_mode"
+        if args.method.as_ref() == "gbuild/toggle_plan_mode"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
@@ -3327,11 +3327,11 @@ impl acp::Agent for MvpAgent {
         }
         if matches!(
             args.method.as_ref(),
-            "x.ai/queue/remove"
-                | "x.ai/queue/reorder"
-                | "x.ai/queue/clear"
-                | "x.ai/queue/edit"
-                | "x.ai/queue/interject"
+            "gbuild/queue/remove"
+                | "gbuild/queue/reorder"
+                | "gbuild/queue/clear"
+                | "gbuild/queue/edit"
+                | "gbuild/queue/interject"
         )
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
@@ -3373,14 +3373,14 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        if args.method.as_ref() == "x.ai/terminal/pty/input"
+        if args.method.as_ref() == "gbuild/terminal/pty/input"
             && let Ok(params) = serde_json::from_str::<
                 serde_json::Value,
             >(args.params.get())
         {
             crate::extensions::terminal::handle_pty_input(&params).await;
         }
-        if args.method.as_ref() == "_x.ai/session/update" {
+        if args.method.as_ref() == "_gbuild/session/update" {
             if let Ok(notification) = serde_json::from_str::<
                 SessionNotification,
             >(args.params.get()) {
@@ -3408,7 +3408,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse xAI session notification params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/non_git_decision" {
+        if args.method.as_ref() == "gbuild/telemetry/non_git_decision" {
             #[derive(serde::Deserialize)]
             struct NonGitDecisionParams {
                 decision: String,
@@ -3434,7 +3434,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse non_git_decision telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_followup" {
+        if args.method.as_ref() == "gbuild/telemetry/multi_agent_followup" {
             #[derive(serde::Deserialize)]
             struct MultiAgentFollowupParams {
                 preferred_agent_label: char,
@@ -3470,7 +3470,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse multi-agent followup telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_apply" {
+        if args.method.as_ref() == "gbuild/telemetry/multi_agent_apply" {
             #[derive(serde::Deserialize)]
             struct MultiAgentApplyParams {
                 applied_agent_label: char,
@@ -3506,7 +3506,7 @@ impl acp::Agent for MvpAgent {
                 tracing::warn!("Failed to parse multi-agent apply telemetry params");
             }
         }
-        if args.method.as_ref() == "x.ai/telemetry/multi_agent_discard" {
+        if args.method.as_ref() == "gbuild/telemetry/multi_agent_discard" {
             #[derive(serde::Deserialize)]
             struct MultiAgentDiscardParams {
                 /// (label, session_id, model_id)

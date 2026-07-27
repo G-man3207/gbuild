@@ -2317,7 +2317,7 @@ impl WorkspaceHandle {
                     "targetClientId": serde_json::to_value(&target_client_id).unwrap_or_default(),
                 });
             }
-            self.emit_client_ext("x.ai/search/fuzzy/status".to_string(), params);
+            self.emit_client_ext("gbuild/search/fuzzy/status".to_string(), params);
             if data.done {
                 break;
             }
@@ -2344,7 +2344,7 @@ impl WorkspaceHandle {
                 "done": batch.done,
                 "truncated": batch.truncated,
             });
-            handle.emit_client_ext("x.ai/search/content/status".to_string(), params);
+            handle.emit_client_ext("gbuild/search/content/status".to_string(), params);
         })
         .await
         .map_err(|e| WorkspaceError::HubError(e.to_string()))
@@ -6149,7 +6149,7 @@ pub(crate) mod tests {
     async fn client_ext_sink_receives_emitted_notification() {
         let handle = make_handle();
         assert!(!handle.has_client_ext_sink());
-        handle.emit_client_ext("x.ai/noop".to_string(), serde_json::json!({}));
+        handle.emit_client_ext("gbuild/noop".to_string(), serde_json::json!({}));
         let captured = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let sink_captured = captured.clone();
         handle.set_client_ext_sink(Arc::new(move |method, params| {
@@ -6157,12 +6157,12 @@ pub(crate) mod tests {
         }));
         assert!(handle.has_client_ext_sink());
         handle.emit_client_ext(
-            "x.ai/search/fuzzy/status".to_string(),
+            "gbuild/search/fuzzy/status".to_string(),
             serde_json::json!({"a": 1}),
         );
         let got = captured.lock();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].0, "x.ai/search/fuzzy/status");
+        assert_eq!(got[0].0, "gbuild/search/fuzzy/status");
         assert_eq!(got[0].1, serde_json::json!({"a": 1}));
     }
     /// End-to-end local streaming: open + change a fuzzy search over real files,
@@ -6178,7 +6178,7 @@ pub(crate) mod tests {
         let captured = Arc::new(parking_lot::Mutex::new(Vec::<serde_json::Value>::new()));
         let sink_captured = captured.clone();
         handle.set_client_ext_sink(Arc::new(move |method, params| {
-            if method == "x.ai/search/fuzzy/status" {
+            if method == "gbuild/search/fuzzy/status" {
                 sink_captured.lock().push(params);
             }
         }));

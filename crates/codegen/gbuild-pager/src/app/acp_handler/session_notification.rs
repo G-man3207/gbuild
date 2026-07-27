@@ -159,7 +159,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
         agent,
         &meta,
         session_notif.session_id.0.as_ref(),
-        "x.ai/session/update",
+        "gbuild/session/update",
     ) {
         return false;
     }
@@ -179,7 +179,7 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
             session_id = session_notif.session_id.0.as_ref(),
             event_seq = meta.event_seq,
             last_applied = agent.last_applied_xai_event_seq,
-            "x.ai/session update DROPPED by dedup highwater (event_seq <= last_applied)"
+            "gbuild/session update DROPPED by dedup highwater (event_seq <= last_applied)"
         );
         return false;
     }

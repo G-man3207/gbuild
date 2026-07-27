@@ -27,7 +27,8 @@ pub const XAI_API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 
 /// Read the API key from the environment.
 pub fn read_xai_api_key_env() -> Result<String, std::env::VarError> {
-    std::env::var(XAI_API_KEY_ENV_VAR)
+    crate::auth::provider_keys::resolve_env_or_stored(XAI_API_KEY_ENV_VAR)
+        .ok_or(std::env::VarError::NotPresent)
 }
 
 /// Returns `true` if `XAI_API_KEY` is set.

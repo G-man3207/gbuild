@@ -92,7 +92,7 @@
     fn inject_prompt_malformed_json_returns_false() {
         let mut app = make_app_with_agent("sess-1");
         let raw = serde_json::value::to_raw_value(&"not a json object").unwrap();
-        let notif = acp::ExtNotification::new("x.ai/scheduled_task_inject_prompt", raw.into());
+        let notif = acp::ExtNotification::new("gbuild/scheduled_task_inject_prompt", raw.into());
 
         // The JSON is valid (a string), but sessionId/prompt fields won't exist.
         let result = handle_scheduled_task_inject_prompt(&notif, &mut app);

@@ -181,7 +181,7 @@ pub async fn handle(
     use gbuild_workspace::workspace_ops::*;
 
     match args.method.as_ref() {
-        "x.ai/code/goto-definition" => {
+        "gbuild/code/goto-definition" => {
             let req: GotoRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -209,7 +209,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/goto-references" => {
+        "gbuild/code/goto-references" => {
             let req: GotoRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -238,7 +238,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/find-definitions" => {
+        "gbuild/code/find-definitions" => {
             let req: FindSymbolRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -268,7 +268,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/find-references" => {
+        "gbuild/code/find-references" => {
             let req: FindSymbolRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;
@@ -298,7 +298,7 @@ pub async fn handle(
             );
             to_code_nav_ext_response(result)
         }
-        "x.ai/code/status" => {
+        "gbuild/code/status" => {
             let req: StatusRequest = serde_json::from_str(args.params.get())
                 .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
             let cwd = resolve_cwd(agent, req.cwd.clone(), req.session_id.as_ref())?;

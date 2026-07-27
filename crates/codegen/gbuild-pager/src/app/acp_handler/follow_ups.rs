@@ -32,7 +32,7 @@ pub(super) struct FollowUpsParams {
     prompt_id: Option<String>,
     /// Reserved replay marker carrier. Absent in v1 (the shell never sets
     /// it); honored from day one so future replay producers need no pager
-    /// change. Parsed loosely as a JSON value to read the `"x.ai/replayed"`
+    /// change. Parsed loosely as a JSON value to read the `"gbuild/replayed"`
     /// key (a slash-bearing key prost cannot model as a field).
     #[serde(default, rename = "_meta")]
     meta: Option<serde_json::Value>,
@@ -64,7 +64,7 @@ pub(super) fn sanitize_suggestion(label: &str) -> String {
 /// latest assistant response.
 ///
 /// Newest-response-wins keying lives in [`AgentView::apply_follow_ups`]. The
-/// reserved `_meta["x.ai/replayed"] == true` marker suppresses rendering (it
+/// reserved `_meta["gbuild/replayed"] == true` marker suppresses rendering (it
 /// is absent today and treated as optional). The params carry no session id,
 /// so chips target the active agent; a background agent's follow-ups would
 /// mis-route — a forwarding obligation for the shell to add a session id.
@@ -77,7 +77,7 @@ pub(super) fn handle_follow_ups(notif: &acp::ExtNotification, app: &mut AppView)
     if params
         .meta
         .as_ref()
-        .and_then(|m| m.get("x.ai/replayed"))
+        .and_then(|m| m.get("gbuild/replayed"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
     {

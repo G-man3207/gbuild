@@ -32,21 +32,21 @@ use super::{ExtResult, parse_params, to_ext_response};
 /// same string literal across dispatch and notification send sites.
 pub mod mcp_methods {
     /// Shared prefix that routes every MCP ext method to this module's dispatcher.
-    pub const PREFIX: &str = "x.ai/mcp/";
+    pub const PREFIX: &str = "gbuild/mcp/";
 
-    pub const LIST: &str = "x.ai/mcp/list";
-    pub const READ_RESOURCE: &str = "x.ai/mcp/read_resource";
-    pub const AUTH_STATUS: &str = "x.ai/mcp/auth_status";
-    pub const AUTH_TRIGGER: &str = "x.ai/mcp/auth_trigger";
-    pub const SETUP: &str = "x.ai/mcp/setup";
-    pub const TOGGLE: &str = "x.ai/mcp/toggle";
-    pub const TOGGLE_TOOL: &str = "x.ai/mcp/toggle_tool";
-    pub const UPSERT: &str = "x.ai/mcp/upsert";
-    pub const DELETE: &str = "x.ai/mcp/delete";
+    pub const LIST: &str = "gbuild/mcp/list";
+    pub const READ_RESOURCE: &str = "gbuild/mcp/read_resource";
+    pub const AUTH_STATUS: &str = "gbuild/mcp/auth_status";
+    pub const AUTH_TRIGGER: &str = "gbuild/mcp/auth_trigger";
+    pub const SETUP: &str = "gbuild/mcp/setup";
+    pub const TOGGLE: &str = "gbuild/mcp/toggle";
+    pub const TOGGLE_TOOL: &str = "gbuild/mcp/toggle_tool";
+    pub const UPSERT: &str = "gbuild/mcp/upsert";
+    pub const DELETE: &str = "gbuild/mcp/delete";
 
-    pub const SERVERS_UPDATED: &str = "x.ai/mcp/servers_updated";
-    pub const TOOLS_CHANGED: &str = "x.ai/mcp/tools_changed";
-    pub const INIT_PROGRESS: &str = "x.ai/mcp/init_progress";
+    pub const SERVERS_UPDATED: &str = "gbuild/mcp/servers_updated";
+    pub const TOOLS_CHANGED: &str = "gbuild/mcp/tools_changed";
+    pub const INIT_PROGRESS: &str = "gbuild/mcp/init_progress";
 }
 use crate::agent::MvpAgent;
 use crate::session::managed_mcp::MANAGED_MCP_PREFIX;

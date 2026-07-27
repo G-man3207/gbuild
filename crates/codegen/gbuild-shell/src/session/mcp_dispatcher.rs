@@ -56,7 +56,7 @@ use crate::session::managed_mcp::MANAGED_MCP_PREFIX;
 pub const COALESCE_WINDOW: Duration = Duration::from_millis(50);
 
 /// Method name for the ACP push.
-pub const SERVER_STATUS_METHOD: &str = "x.ai/mcp/server_status";
+pub const SERVER_STATUS_METHOD: &str = "gbuild/mcp/server_status";
 
 /// JSON payload pushed over ACP. Fields written in camelCase per ACP
 /// convention.

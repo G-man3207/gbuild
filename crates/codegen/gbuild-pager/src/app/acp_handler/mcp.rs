@@ -119,7 +119,7 @@ pub(super) fn handle_mcp_tools_changed(notif: &acp::ExtNotification, app: &mut A
     let mut redraw = false;
 
     // `mcp_initialized` clears the matched agent's connecting indicator.
-    if method == "x.ai/mcp_initialized"
+    if method == "gbuild/mcp_initialized"
         && let Some(agent) = app.agents.get_mut(&id)
         && agent.mcp_init_progress.take().is_some()
     {
@@ -263,7 +263,7 @@ pub(super) fn handle_mcp_server_status(notif: &acp::ExtNotification, app: &mut A
                 tracing::warn!(
                     server = %payload.name,
                     error = %e,
-                    "x.ai/mcp/server_status: tools field present but not Vec<McpToolEntry>; status still applied"
+                    "gbuild/mcp/server_status: tools field present but not Vec<McpToolEntry>; status still applied"
                 );
                 None
             }

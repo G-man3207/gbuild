@@ -73,7 +73,7 @@ pub struct ListReq {
     pub cursor: Option<String>,
     /// Opt in to relaxing past the cwd when it has no session with messages:
     /// include the repo's other directories, or all directories when the cwd is
-    /// not a git repo. Relaxed responses set `_meta["x.ai/listScope"]`.
+    /// not a git repo. Relaxed responses set `_meta["gbuild/listScope"]`.
     /// Re-evaluated per page.
     #[serde(default)]
     pub allow_relax: bool,
@@ -125,7 +125,7 @@ impl ParsedMeta {
             return Self::default();
         };
         let facet_filters = meta
-            .get("x.ai/facetFilters")
+            .get("gbuild/facetFilters")
             .and_then(|v| v.as_object())
             .map(|obj| {
                 obj.iter()
@@ -134,11 +134,11 @@ impl ParsedMeta {
             })
             .unwrap_or_default();
         let query = meta
-            .get("x.ai/query")
+            .get("gbuild/query")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
         let limit = meta
-            .get("x.ai/limit")
+            .get("gbuild/limit")
             .and_then(serde_json::Value::as_u64)
             .map(|n| n as usize);
         Self {
@@ -164,7 +164,7 @@ pub fn force_kind_chat(req: &mut ListReq) {
         Some(serde_json::Value::Object(map)) => map,
         _ => serde_json::Map::new(),
     };
-    let mut filters = match meta.remove("x.ai/facetFilters") {
+    let mut filters = match meta.remove("gbuild/facetFilters") {
         Some(serde_json::Value::Object(map)) => map,
         _ => serde_json::Map::new(),
     };
@@ -173,7 +173,7 @@ pub fn force_kind_chat(req: &mut ListReq) {
         serde_json::json!([SessionKind::Chat.as_str()]),
     );
     meta.insert(
-        "x.ai/facetFilters".to_owned(),
+        "gbuild/facetFilters".to_owned(),
         serde_json::Value::Object(filters),
     );
     req.meta = Some(serde_json::Value::Object(meta));
@@ -440,12 +440,12 @@ pub struct ExtListResponse {
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ExtListResponseMeta {
-    #[serde(rename = "x.ai/facets")]
+    #[serde(rename = "gbuild/facets")]
     pub facets: FacetSummary,
-    #[serde(rename = "x.ai/partial")]
+    #[serde(rename = "gbuild/partial")]
     pub partial: PartialInfo,
     /// Present only when the listing relaxed beyond the cwd.
-    #[serde(rename = "x.ai/listScope", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "gbuild/listScope", skip_serializing_if = "Option::is_none")]
     pub list_scope: Option<&'static str>,
 }
 #[derive(Debug, Clone, Serialize)]
@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(value["source"], "local");
         assert_eq!(value["numMessages"], 7);
         assert_eq!(value["title"], "a summary");
-        assert_eq!(value["_meta"]["x.ai/session"]["kind"], "build");
+        assert_eq!(value["_meta"]["gbuild/session"]["kind"], "build");
         assert_eq!(value["gitRootDir"], "/Users/me/xai");
         assert_eq!(value["gitRemotes"][0], "git@github.com:example/repo.git");
         assert_eq!(value["sourceWorkspaceDir"], "/Users/me/xai-src");
@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(value["sessionId"], "s1");
         assert_eq!(value["cwd"], "/Users/me/xai");
         assert_eq!(value["title"], "a summary");
-        assert_eq!(value["_meta"]["x.ai/session"]["kind"], "build");
+        assert_eq!(value["_meta"]["gbuild/session"]["kind"], "build");
         assert!(value.get("summary").is_none());
         assert!(value.get("source").is_none());
     }
@@ -615,9 +615,9 @@ mod tests {
     #[test]
     fn parsed_meta_reads_facet_filters_query_and_limit() {
         let meta = serde_json::json!({
-            "x.ai/facetFilters": { "kind": ["build"], "starred": true },
-            "x.ai/query": "antelope",
-            "x.ai/limit": 5,
+            "gbuild/facetFilters": { "kind": ["build"], "starred": true },
+            "gbuild/query": "antelope",
+            "gbuild/limit": 5,
         });
         let parsed = ParsedMeta::parse(Some(&meta));
         assert_eq!(parsed.query.as_deref(), Some("antelope"));
@@ -658,7 +658,7 @@ mod tests {
     fn forced_kind_replaces_client_build_filter() {
         let mut req = ListReq {
             meta: Some(serde_json::json!({
-                "x.ai/facetFilters": { "kind": ["build"] },
+                "gbuild/facetFilters": { "kind": ["build"] },
             })),
             ..ListReq::default()
         };
@@ -676,9 +676,9 @@ mod tests {
     fn forced_kind_preserves_other_facets() {
         let mut req = ListReq {
             meta: Some(serde_json::json!({
-                "x.ai/facetFilters": { "kind": ["build"], "starred": [true], "workspace": ["w1"] },
-                "x.ai/query": "antelope",
-                "x.ai/limit": 5,
+                "gbuild/facetFilters": { "kind": ["build"], "starred": [true], "workspace": ["w1"] },
+                "gbuild/query": "antelope",
+                "gbuild/limit": 5,
             })),
             ..ListReq::default()
         };
@@ -769,7 +769,7 @@ mod tests {
         let client = ConversationsClient::new(xai_auth_manager(home.path()));
         let mut req = ListReq {
             meta: Some(serde_json::json!({
-                "x.ai/facetFilters": { "kind": ["build"] },
+                "gbuild/facetFilters": { "kind": ["build"] },
             })),
             ..ListReq::default()
         };
@@ -874,7 +874,7 @@ mod tests {
     fn parse_list_req_forces_kind_under_process_chat_mode_only() {
         use crate::agent::chat_modes::GBUILD_CHAT_MODE_ENV;
         let raw = serde_json::json!({
-            "_meta": { "x.ai/facetFilters": { "kind": ["build"], "starred": [true] } },
+            "_meta": { "gbuild/facetFilters": { "kind": ["build"], "starred": [true] } },
         })
         .to_string();
         {
@@ -922,7 +922,7 @@ mod tests {
             }))
             .expect("serialize");
             assert_eq!(
-                value["_meta"]["x.ai/partial"],
+                value["_meta"]["gbuild/partial"],
                 serde_json::json!({ "conversations": true, "reason": wire })
             );
         }
@@ -935,7 +935,7 @@ mod tests {
         }))
         .expect("serialize");
         assert_eq!(
-            healthy["_meta"]["x.ai/partial"],
+            healthy["_meta"]["gbuild/partial"],
             serde_json::json!({ "conversations": false })
         );
     }
@@ -1006,9 +1006,9 @@ mod tests {
         };
         let with =
             serde_json::to_value(ext_list_response(result(ListScope::Repo))).expect("serialize");
-        assert_eq!(with["_meta"]["x.ai/listScope"], serde_json::json!("repo"));
+        assert_eq!(with["_meta"]["gbuild/listScope"], serde_json::json!("repo"));
         let without =
             serde_json::to_value(ext_list_response(result(ListScope::Cwd))).expect("serialize");
-        assert!(without["_meta"].get("x.ai/listScope").is_none());
+        assert!(without["_meta"].get("gbuild/listScope").is_none());
     }
 }

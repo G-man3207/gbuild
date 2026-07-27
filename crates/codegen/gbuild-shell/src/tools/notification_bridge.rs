@@ -100,8 +100,8 @@ fn stamp_scheduler_meta(
 ) {
     stamp_event_id(config, meta);
     let meta = meta.get_or_insert_with(acp::Meta::new);
-    meta.insert("x.ai/schedulerGeneration".to_owned(), generation.into());
-    meta.insert("x.ai/schedulerRevision".to_owned(), revision.into());
+    meta.insert("gbuild/schedulerGeneration".to_owned(), generation.into());
+    meta.insert("gbuild/schedulerRevision".to_owned(), revision.into());
 }
 fn durable_append_landed(result: Result<(), DurableAppendError>) -> Result<(), String> {
     match result {
@@ -158,7 +158,7 @@ async fn handle_scheduled_task_removed(
             config
                 .gateway
                 .forward_fire_and_forget(acp::ExtNotification::new(
-                    "x.ai/scheduled_task_deleted",
+                    "gbuild/scheduled_task_deleted",
                     params.into(),
                 ));
             Ok(())
@@ -335,7 +335,7 @@ async fn handle_notification(
                 .ok();
             if let Some(params) = params {
                 let ext_notification =
-                    acp::ExtNotification::new("x.ai/task_backgrounded", params.into());
+                    acp::ExtNotification::new("gbuild/task_backgrounded", params.into());
                 config.gateway.forward_fire_and_forget(ext_notification);
             }
         }
@@ -540,7 +540,7 @@ async fn handle_notification(
                 .ok();
             if let Some(params) = params {
                 let notification: acp::ExtNotification =
-                    acp::ExtNotification::new("x.ai/task_completed", params.into());
+                    acp::ExtNotification::new("gbuild/task_completed", params.into());
                 config.gateway.forward_fire_and_forget(notification);
             }
             let _ = config
@@ -646,7 +646,7 @@ async fn handle_notification(
                     config
                         .gateway
                         .forward_fire_and_forget(acp::ExtNotification::new(
-                            "x.ai/scheduled_task_inject_prompt",
+                            "gbuild/scheduled_task_inject_prompt",
                             params.into(),
                         ));
                 }
@@ -670,7 +670,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_fired",
+                        "gbuild/scheduled_task_fired",
                         params.into(),
                     ));
             }
@@ -710,7 +710,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/monitor_event",
+                        "gbuild/monitor_event",
                         params.into(),
                     ));
             }
@@ -764,7 +764,7 @@ async fn handle_notification(
                 config
                     .gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/scheduled_task_created",
+                        "gbuild/scheduled_task_created",
                         params.into(),
                     ));
             }
@@ -984,14 +984,14 @@ mod tests {
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "gbuild/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "gbuild/task_completed ExtNotification must still be sent for UI"
         );
     }
     /// Gap 1 (preserve non-goal behavior): with the goal loop inactive — the
@@ -1033,7 +1033,7 @@ mod tests {
     ) -> Option<bool> {
         while let Ok(msg) = gateway_rx.try_recv() {
             if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "gbuild/task_completed"
             {
                 let v: serde_json::Value = serde_json::from_str(args.request.params.get()).ok()?;
                 return v["update"]["will_wake"].as_bool();
@@ -1501,8 +1501,8 @@ mod tests {
                     crate::extensions::notification::SessionUpdate::ScheduledTaskCreated { .. }
                 ));
                 let meta = notif.meta.as_ref().expect("scheduler metadata");
-                assert_eq!(meta["x.ai/schedulerGeneration"], "generation-a");
-                assert_eq!(meta["x.ai/schedulerRevision"], 1);
+                assert_eq!(meta["gbuild/schedulerGeneration"], "generation-a");
+                assert_eq!(meta["gbuild/schedulerRevision"], 1);
                 assert!(
                     notif
                         .meta
@@ -1585,8 +1585,8 @@ mod tests {
                     "the persisted deletion line must be stamped"
                 );
                 let meta = notif.meta.as_ref().expect("scheduler metadata");
-                assert_eq!(meta["x.ai/schedulerGeneration"], "generation-a");
-                assert_eq!(meta["x.ai/schedulerRevision"], 2);
+                assert_eq!(meta["gbuild/schedulerGeneration"], "generation-a");
+                assert_eq!(meta["gbuild/schedulerRevision"], 2);
             }
             _ => panic!("expected PersistenceMsg::Update(Xai(ScheduledTaskDeleted))"),
         }
@@ -1608,7 +1608,7 @@ mod tests {
             else {
                 panic!("expected durable scheduler tombstone");
             };
-            assert_eq!(notification.meta.unwrap()["x.ai/schedulerRevision"], 17);
+            assert_eq!(notification.meta.unwrap()["gbuild/schedulerRevision"], 17);
             assert!(gateway_rx.try_recv().is_err());
             assert!(matches!(
                 receipt.try_recv(),
@@ -1752,8 +1752,8 @@ mod tests {
             panic!("expected scheduler fire notification");
         };
         let value: serde_json::Value = serde_json::from_str(fired.request.params.get()).unwrap();
-        assert_eq!(value["_meta"]["x.ai/schedulerGeneration"], "generation-a");
-        assert_eq!(value["_meta"]["x.ai/schedulerRevision"], 3);
+        assert_eq!(value["_meta"]["gbuild/schedulerGeneration"], "generation-a");
+        assert_eq!(value["_meta"]["gbuild/schedulerRevision"], 3);
     }
     fn make_monitor_event_notification(task_id: &str, owner: Option<&str>) -> ToolNotification {
         ToolNotification::MonitorEvent(gbuild_tools::notification::types::MonitorEvent {
@@ -1778,7 +1778,7 @@ mod tests {
             if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg {
                 assert_ne!(
                     args.request.method.as_ref(),
-                    "x.ai/monitor_event",
+                    "gbuild/monitor_event",
                     "cross-session monitor event must not be forwarded to the pager"
                 );
             }
@@ -1848,14 +1848,14 @@ mod tests {
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "gbuild/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "gbuild/task_completed ExtNotification must still be sent for UI"
         );
     }
     #[tokio::test]
@@ -1884,14 +1884,14 @@ mod tests {
         let mut found_ext = false;
         while let Ok(msg) = gateway_rx.try_recv() {
             if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                && args.request.method.as_ref() == "x.ai/task_completed"
+                && args.request.method.as_ref() == "gbuild/task_completed"
             {
                 found_ext = true;
             }
         }
         assert!(
             found_ext,
-            "x.ai/task_completed ExtNotification must still be sent for UI"
+            "gbuild/task_completed ExtNotification must still be sent for UI"
         );
     }
     #[tokio::test]

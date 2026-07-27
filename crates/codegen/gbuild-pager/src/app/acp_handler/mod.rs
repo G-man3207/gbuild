@@ -664,31 +664,31 @@ fn queue_open_workflows_modal_refresh(app: &mut AppView, agent_id: AgentId) {
 /// Handle an xAI extension notification.
 fn handle_ext_notification(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
     match notif.method.as_ref() {
-        "x.ai/session_notification" | "x.ai/session/update" => {
+        "gbuild/session_notification" | "gbuild/session/update" => {
             handle_session_notification(notif, app)
         }
-        "x.ai/follow_ups" => handle_follow_ups(notif, app),
-        "x.ai/task_backgrounded" => handle_task_backgrounded(notif, app),
-        "x.ai/task_completed" => handle_task_completed(notif, app),
-        "x.ai/models/update" => handle_models_update(notif, app),
-        "x.ai/settings/update" => handle_settings_update(notif, app),
-        "x.ai/sessions/changed" => handle_sessions_changed(notif, app),
-        "x.ai/queue/changed" => handle_queue_changed(notif, app),
+        "gbuild/follow_ups" => handle_follow_ups(notif, app),
+        "gbuild/task_backgrounded" => handle_task_backgrounded(notif, app),
+        "gbuild/task_completed" => handle_task_completed(notif, app),
+        "gbuild/models/update" => handle_models_update(notif, app),
+        "gbuild/settings/update" => handle_settings_update(notif, app),
+        "gbuild/sessions/changed" => handle_sessions_changed(notif, app),
+        "gbuild/queue/changed" => handle_queue_changed(notif, app),
         // TODO(prompt_complete-deprecation): Legacy removal (gated): durable turn_completed is already consumed via finalize_turn_from_terminal; keep & re-point the lost-RPC reconcile to the durable rail before deleting.
-        "x.ai/session/prompt_complete" => handle_prompt_complete(notif, app),
-        "x.ai/session/interjection" => handle_interjection(notif, app),
-        "x.ai/monitor_event" => handle_monitor_event(notif, app),
-        "x.ai/scheduled_task_created" => handle_scheduled_task_created(notif, app),
-        "x.ai/scheduled_task_fired" => handle_scheduled_task_fired(notif, app),
-        "x.ai/scheduled_task_deleted" => handle_scheduled_task_deleted(notif, app),
-        "x.ai/scheduled_task_inject_prompt" => handle_scheduled_task_inject_prompt(notif, app),
-        "x.ai/git_head_changed" => handle_git_head_changed(notif, app),
-        "x.ai/mcp/init_progress" => handle_mcp_init_progress(notif, app),
-        "x.ai/mcp/tools_changed" | "x.ai/mcp_initialized" => handle_mcp_tools_changed(notif, app),
-        "x.ai/mcp/server_status" if push_server_status_enabled() => {
+        "gbuild/session/prompt_complete" => handle_prompt_complete(notif, app),
+        "gbuild/session/interjection" => handle_interjection(notif, app),
+        "gbuild/monitor_event" => handle_monitor_event(notif, app),
+        "gbuild/scheduled_task_created" => handle_scheduled_task_created(notif, app),
+        "gbuild/scheduled_task_fired" => handle_scheduled_task_fired(notif, app),
+        "gbuild/scheduled_task_deleted" => handle_scheduled_task_deleted(notif, app),
+        "gbuild/scheduled_task_inject_prompt" => handle_scheduled_task_inject_prompt(notif, app),
+        "gbuild/git_head_changed" => handle_git_head_changed(notif, app),
+        "gbuild/mcp/init_progress" => handle_mcp_init_progress(notif, app),
+        "gbuild/mcp/tools_changed" | "gbuild/mcp_initialized" => handle_mcp_tools_changed(notif, app),
+        "gbuild/mcp/server_status" if push_server_status_enabled() => {
             handle_mcp_server_status(notif, app)
         }
-        "x.ai/mcp/servers_updated" => handle_mcp_servers_updated(notif, app),
+        "gbuild/mcp/servers_updated" => handle_mcp_servers_updated(notif, app),
         _ => false,
     }
 }
@@ -749,8 +749,8 @@ fn handle_interjection(notif: &acp::ExtNotification, app: &mut AppView) -> bool 
 /// immediately (for unknown methods).
 fn handle_ext_method(ext: xai_acp_lib::AcpArgs<acp::ExtRequest>, app: &mut AppView) -> bool {
     match ext.request.method.as_ref() {
-        "x.ai/ask_user_question" => handle_ask_user_question(ext, app),
-        "x.ai/exit_plan_mode" => handle_exit_plan_mode(ext, app),
+        "gbuild/ask_user_question" => handle_ask_user_question(ext, app),
+        "gbuild/exit_plan_mode" => handle_exit_plan_mode(ext, app),
         unknown => {
             tracing::warn!("Unknown ext_method: {unknown}");
             ext.response_tx

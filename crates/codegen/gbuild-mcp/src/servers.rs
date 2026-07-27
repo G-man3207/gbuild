@@ -313,7 +313,7 @@ impl InitProgress {
 /// SDK-side id echoed back in `x.ai/mcp/sdk_call`. A named struct (rather than a
 /// `(String, String)` tuple) so callers can't transpose the two strings.
 ///
-/// `Deserialize`d straight from a `_meta["x.ai/mcp/servers"]` entry, so the
+/// `Deserialize`d straight from a `_meta["gbuild/mcp/servers"]` entry, so the
 /// `serverId` wire field name is declared (and serde-checked) exactly once here.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct AcpServerEntry {
@@ -322,7 +322,7 @@ pub struct AcpServerEntry {
     pub server_id: String,
 }
 
-/// The session's in-process SDK MCP servers (declared via `_meta["x.ai/mcp/servers"]`,
+/// The session's in-process SDK MCP servers (declared via `_meta["gbuild/mcp/servers"]`,
 /// reached over the ACP reverse channel), bundled with the shared reverse-RPC invoker.
 /// Held as `McpState::acp_mcp: Option<_>` so the set is one atom — present together or
 /// absent, never "servers without an invoker" — and survives `update_configs` clears

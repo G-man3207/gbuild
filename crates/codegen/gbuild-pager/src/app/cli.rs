@@ -20,7 +20,11 @@ pub enum Command {
     /// Manage running leader processes
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
-    Logout,
+    Logout {
+        /// Clear only one provider's stored API key instead of the xAI session.
+        #[arg(long = "provider", value_name = "ID")]
+        provider: Option<String>,
+    },
     /// Sign in to gBuild
     Login {
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
@@ -36,6 +40,13 @@ pub enum Command {
             conflicts_with_all = ["oauth"]
         )]
         device_auth: bool,
+        /// Store an API key for a provider (anthropic, openai, google,
+        /// openrouter, opencode, kimi, zai, xai) instead of an xAI session login.
+        #[arg(long = "provider", value_name = "ID", conflicts_with_all = ["oauth", "device_auth"])]
+        provider: Option<String>,
+        /// The API key for --provider. When omitted, you are prompted (hidden input).
+        #[arg(long = "api-key", value_name = "KEY", requires = "provider")]
+        api_key: Option<String>,
         /// Authenticate for remote development environments (hidden).
         ///
         /// Field is always present so match arms stay feature-unification-safe
@@ -1302,7 +1313,7 @@ mod tests {
     #[test]
     fn subcommand_takes_precedence_over_positional_prompt() {
         let args = PagerArgs::try_parse_from(["gbuild", "logout"]).expect("subcommand parses");
-        assert!(matches!(args.command, Some(Command::Logout)));
+        assert!(matches!(args.command, Some(Command::Logout { provider: None })));
         assert!(args.prompt.is_none());
     }
     #[test]

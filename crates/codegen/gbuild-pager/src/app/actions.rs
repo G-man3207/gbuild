@@ -2176,7 +2176,7 @@ pub enum TaskResult {
         restore_summary: Option<String>,
         restore_degree: Option<gbuild_workspace::session::git::RestoreDegree>,
         /// The session's in-flight running prompt id (from the load response
-        /// `_meta["x.ai/runningPromptId"]`), present only when the session was
+        /// `_meta["gbuild/runningPromptId"]`), present only when the session was
         /// loaded MID-turn (another client is driving). The loader adopts it to
         /// pass the live `session/update` gate without re-rendering the user
         /// block (replay already rendered it).
@@ -2199,7 +2199,7 @@ pub enum TaskResult {
     /// Session list fetched for the welcome screen picker.
     SessionListLoaded {
         sessions: Vec<crate::app::app_view::SessionPickerEntry>,
-        /// Degraded conversations lane (`_meta["x.ai/partial"]`), surfaced
+        /// Degraded conversations lane (`_meta["gbuild/partial"]`), surfaced
         /// as an actionable picker notice instead of a silent empty list.
         partial: Option<crate::app::effects::ConversationsPartial>,
         /// Directory scope `sessions` were drawn from (`x.ai/listScope`).

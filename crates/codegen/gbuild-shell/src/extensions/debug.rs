@@ -18,12 +18,12 @@ use crate::session::{ExtMethodResult, SessionCommand};
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/debug/trigger_feedback" => {
+        "gbuild/debug/trigger_feedback" => {
             tracing::info!("debug: triggering test feedback request");
             handle_trigger_feedback(agent, args).await
         }
-        "x.ai/debug/arm_auto_compact" => handle_arm_auto_compact(agent, args),
-        "x.ai/debug/agent" => handle_agent(agent).await,
+        "gbuild/debug/arm_auto_compact" => handle_arm_auto_compact(agent, args),
+        "gbuild/debug/agent" => handle_agent(agent).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }

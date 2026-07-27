@@ -96,7 +96,7 @@ impl acp::Client for LeaderAcpClient {
     }
 
     async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
-        if &*args.method == "x.ai/leader_reconnected" {
+        if &*args.method == "gbuild/leader_reconnected" {
             self.capture
                 .reconnected_count
                 .fetch_add(1, Ordering::SeqCst);

@@ -162,17 +162,17 @@ where
             let (id, method) = match change {
                 crate::config::watcher::DiscoveryChange::Skills if !created_discovery_dir => {
                     info!("Skill directory changed on disk, reloading skills for all sessions");
-                    ("skills-reload", "x.ai/internal/reload_skills")
+                    ("skills-reload", "gbuild/internal/reload_skills")
                 }
                 crate::config::watcher::DiscoveryChange::Skills => {
                     info!("Discovery directory created on disk, reloading skills and workflows");
-                    ("skills-reload", "x.ai/internal/reload_skills")
+                    ("skills-reload", "gbuild/internal/reload_skills")
                 }
                 crate::config::watcher::DiscoveryChange::Workflows => {
                     info!(
                         "Workflow directory changed on disk, re-advertising commands for all sessions"
                     );
-                    ("workflows-reload", "x.ai/internal/reload_workflows")
+                    ("workflows-reload", "gbuild/internal/reload_workflows")
                 }
             };
             let line = internal_reload_request_line(id, method, serde_json::json!({}));
@@ -1467,7 +1467,7 @@ pub async fn run_leader(
                             models_manager_for_config.on_auth_changed().await;
                             let line = internal_reload_request_line(
                                 "config-auth-reloaded",
-                                "x.ai/internal/reload_all_mcp_servers",
+                                "gbuild/internal/reload_all_mcp_servers",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1479,7 +1479,7 @@ pub async fn run_leader(
                             auth_manager_for_config.clear_in_memory();
                             let line = internal_reload_request_line(
                                 "config-auth-cleared",
-                                "x.ai/internal/auth_cleared",
+                                "gbuild/internal/auth_cleared",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1498,7 +1498,7 @@ pub async fn run_leader(
                             info!("MCP server config change detected — reloading active sessions");
                             let line = internal_reload_request_line(
                                 "config-reload-mcp",
-                                "x.ai/internal/reload_all_mcp_servers",
+                                "gbuild/internal/reload_all_mcp_servers",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1521,7 +1521,7 @@ pub async fn run_leader(
                             );
                             let line = internal_reload_request_line(
                                 "config-reload-project-mcp",
-                                "x.ai/internal/reload_project_mcp_servers",
+                                "gbuild/internal/reload_project_mcp_servers",
                                 serde_json::json!({ "cwd": cwd.to_string_lossy() }),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1536,7 +1536,7 @@ pub async fn run_leader(
                             info!("Model config change detected — reloading agent model list");
                             let line = internal_reload_request_line(
                                 "config-reload-models",
-                                "x.ai/internal/reload_models",
+                                "gbuild/internal/reload_models",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1562,7 +1562,7 @@ pub async fn run_leader(
                             info!("Models cache change detected — reloading agent model catalog");
                             let line = internal_reload_request_line(
                                 "config-reload-models-cache",
-                                "x.ai/internal/reload_models_cache",
+                                "gbuild/internal/reload_models_cache",
                                 serde_json::json!({}),
                             );
                             let mut tx = acp_tx_for_config.lock().await;
@@ -1599,7 +1599,7 @@ pub async fn run_leader(
                             info!("UI config change detected by watcher");
                             let notification = serde_json::json!({
                                 "jsonrpc": "2.0",
-                                "method": "x.ai/config_changed",
+                                "method": "gbuild/config_changed",
                                 "params": {
                                     "section": "ui",
                                     "changes": {
@@ -1933,13 +1933,13 @@ mod tests {
     fn internal_reload_request_line_uses_wire_ext_prefix() {
         let line = internal_reload_request_line(
             "config-reload-models",
-            "x.ai/internal/reload_models",
+            "gbuild/internal/reload_models",
             serde_json::json!({}),
         );
         assert!(line.ends_with('\n'), "must be a newline-terminated line");
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
         assert_eq!(
-            msg["method"], "_x.ai/internal/reload_models",
+            msg["method"], "_gbuild/internal/reload_models",
             "wire method must carry the `_` ext prefix or the ACP decoder \
              rejects it with method_not_found"
         );
@@ -1949,7 +1949,7 @@ mod tests {
         // Params must pass through verbatim (project-MCP reload carries cwd).
         let line = internal_reload_request_line(
             "config-reload-project-mcp",
-            "x.ai/internal/reload_project_mcp_servers",
+            "gbuild/internal/reload_project_mcp_servers",
             serde_json::json!({ "cwd": "/repo/x" }),
         );
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
@@ -1957,10 +1957,10 @@ mod tests {
 
         let line = internal_reload_request_line(
             "config-auth-cleared",
-            "x.ai/internal/auth_cleared",
+            "gbuild/internal/auth_cleared",
             serde_json::json!({}),
         );
         let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
-        assert_eq!(msg["method"], "_x.ai/internal/auth_cleared");
+        assert_eq!(msg["method"], "_gbuild/internal/auth_cleared");
     }
 }

@@ -166,7 +166,7 @@ impl SessionActor {
             self.notifications
                 .gateway
                 .forward_fire_and_forget(acp::ExtNotification::new(
-                    "x.ai/session/interjection",
+                    "gbuild/session/interjection",
                     params.into(),
                 ));
         }

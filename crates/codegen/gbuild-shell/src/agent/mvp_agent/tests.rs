@@ -1233,7 +1233,7 @@ async fn drain_respects_deadline() {
 fn parse_code_nav_capability_present_and_true() {
     let mut meta = serde_json::Map::new();
     meta.insert(
-        "x.ai/codeNavigation".to_string(),
+        "gbuild/codeNavigation".to_string(),
         serde_json::json!({ "enabled": true }),
     );
     let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_capabilities(
@@ -1257,7 +1257,7 @@ fn parse_code_nav_capability_absent_returns_false() {
 fn parse_code_nav_capability_false_returns_false() {
     let mut meta = serde_json::Map::new();
     meta.insert(
-        "x.ai/codeNavigation".to_string(),
+        "gbuild/codeNavigation".to_string(),
         serde_json::json!({ "enabled": false }),
     );
     let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_capabilities(
@@ -1354,7 +1354,7 @@ async fn ext_method_routes_auth_cleared_and_refreshes_resident_sessions() {
             let params = serde_json::json!({});
             agent
                 .ext_method(acp::ExtRequest::new(
-                    "x.ai/internal/auth_cleared",
+                    "gbuild/internal/auth_cleared",
                     std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
                 ))
                 .await
@@ -1453,7 +1453,7 @@ fn build_minimal_agent_for_tests() -> MvpAgent {
 }
 fn session_usage_request(session_id: &str) -> acp::ExtRequest {
     acp::ExtRequest::new(
-        "x.ai/session/usage",
+        "gbuild/session/usage",
         serde_json::value::to_raw_value(&serde_json::json!({ "sessionId": session_id }))
             .unwrap()
             .into(),
@@ -2012,12 +2012,12 @@ fn write_updates(dir: &std::path::Path, lines: &[&str]) -> PathBuf {
 }
 fn bg_line(task_id: &str) -> String {
     format!(
-        r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_backgrounded","task_id":"{task_id}","command":"sleep 99","cwd":"/tmp"}}}}}}"#
+        r#"{{"timestamp":1,"method":"_gbuild/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_backgrounded","task_id":"{task_id}","command":"sleep 99","cwd":"/tmp"}}}}}}"#
     )
 }
 fn completed_line(task_id: &str) -> String {
     format!(
-        r#"{{"timestamp":2,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_completed","task_snapshot":{{"task_id":"{task_id}","completed":true}}}}}}}}"#
+        r#"{{"timestamp":2,"method":"_gbuild/session/update","params":{{"sessionId":"s","update":{{"sessionUpdate":"task_completed","task_snapshot":{{"task_id":"{task_id}","completed":true}}}}}}}}"#
     )
 }
 fn orphaned_ids(tasks: &[OrphanedTask]) -> std::collections::HashSet<&str> {
@@ -2091,7 +2091,7 @@ fn orphaned_tasks_skips_malformed_lines() {
 fn orphaned_tasks_ignores_unrelated_updates() {
     let tmp = tempfile::tempdir().unwrap();
     let bg = bg_line("t1");
-    let unrelated = r#"{"timestamp":1,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"auto_compact_started","percentage":80}}}"#;
+    let unrelated = r#"{"timestamp":1,"method":"_gbuild/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"auto_compact_started","percentage":80}}}"#;
     let path = write_updates(tmp.path(), &[&bg, unrelated]);
     let result = MvpAgent::find_orphaned_background_tasks(&Some(path));
     assert_eq!(result.len(), 1);
@@ -2101,7 +2101,7 @@ fn orphaned_tasks_filters_rewind_dead_branches() {
     let tmp = tempfile::tempdir().unwrap();
     let user_msg = r#"{"timestamp":0,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"hello"}}}}"#;
     let bg_before_rewind = bg_line("t-dead");
-    let rewind = r#"{"timestamp":3,"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":0,"created_at":"2025-01-01T00:00:00Z"}}}"#;
+    let rewind = r#"{"timestamp":3,"method":"_gbuild/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":0,"created_at":"2025-01-01T00:00:00Z"}}}"#;
     let user_msg2 = r#"{"timestamp":4,"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"retry"}}}}"#;
     let bg_after_rewind = bg_line("t-alive");
     let path = write_updates(
@@ -2364,7 +2364,7 @@ async fn auth_info_returns_profile_when_token_expired() {
     let resp = crate::extensions::auth::handle(
         &agent,
         &acp::ExtRequest::new(
-            "x.ai/auth/info",
+            "gbuild/auth/info",
             std::sync::Arc::from(serde_json::value::to_raw_value(&serde_json::json!({})).unwrap()),
         ),
     )
@@ -2484,22 +2484,22 @@ fn parse_session_kind_matrix() {
     let cases: &[(&str, serde_json::Value, SessionKind)] = &[
         (
             "chat",
-            json!({"x.ai/session": {"kind": "chat"}}),
+            json!({"gbuild/session": {"kind": "chat"}}),
             SessionKind::Chat,
         ),
         (
             "build",
-            json!({"x.ai/session": {"kind": "build"}}),
+            json!({"gbuild/session": {"kind": "build"}}),
             SessionKind::Build,
         ),
         (
             "chat_malformed_sibling",
-            json!({"x.ai/session": {"kind": "chat", "facets": "not-a-map"}}),
+            json!({"gbuild/session": {"kind": "chat", "facets": "not-a-map"}}),
             SessionKind::Chat,
         ),
         (
             "unknown_kind",
-            json!({"x.ai/session": {"kind": "frob"}}),
+            json!({"gbuild/session": {"kind": "frob"}}),
             SessionKind::Build,
         ),
         ("absent", json!({}), SessionKind::Build),
@@ -2677,7 +2677,7 @@ fn ext_method_rewind_uses_local_dispatch_without_bridge() {
         let params = serde_json::json!({ "sessionId": "sess-local" });
         let err = agent
             .ext_method(acp::ExtRequest::new(
-                "x.ai/rewind/points",
+                "gbuild/rewind/points",
                 std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
             ))
             .await
@@ -2826,7 +2826,7 @@ async fn drive_disconnect_many(agent: &MvpAgent, sids: &[&acp::SessionId]) {
     let raw = serde_json::value::to_raw_value(&params).unwrap();
     agent
         .ext_notification(acp::ExtNotification::new(
-            "x.ai/internal/evict_sessions",
+            "gbuild/internal/evict_sessions",
             raw.into(),
         ))
         .await
@@ -2841,7 +2841,7 @@ async fn drive_close(agent: &MvpAgent, session_id: &str) -> Result<acp::ExtRespo
     let raw = serde_json::value::to_raw_value(&params).unwrap();
     agent
         .ext_method(acp::ExtRequest::new(
-            "x.ai/session/close",
+            "gbuild/session/close",
             std::sync::Arc::from(raw),
         ))
         .await
@@ -3418,22 +3418,22 @@ mod direct_hub_cloud_removed {
     }
     #[test]
     fn cloud_server_id_meta_is_hard_error() {
-        let meta = serde_json::json!({ "x.ai/cloud_server_id": "srv-123" });
+        let meta = serde_json::json!({ "gbuild/cloud_server_id": "srv-123" });
         let err = reject_direct_hub_cloud_meta(meta.as_object()).expect_err("must reject");
         assert_direct_hub_error(err);
     }
     #[test]
     fn cloud_server_id_null_still_present_is_hard_error() {
-        let meta = serde_json::json!({ "x.ai/cloud_server_id": null });
+        let meta = serde_json::json!({ "gbuild/cloud_server_id": null });
         let err = reject_direct_hub_cloud_meta(meta.as_object()).expect_err("must reject");
         assert_direct_hub_error(err);
     }
     #[test]
     fn cloud_server_id_with_gateway_meta_still_hard_error() {
         let meta = serde_json::json!({
-            "x.ai/cloud_server_id": "srv-legacy",
+            "gbuild/cloud_server_id": "srv-legacy",
             "envId": "env-1",
-            "x.ai/cloud_existing_workspace": {
+            "gbuild/cloud_existing_workspace": {
                 "server_id": "ws-1",
                 "cwd": "/workspace"
             }
@@ -3457,7 +3457,7 @@ mod direct_hub_cloud_removed {
         assert!(
             reject_direct_hub_cloud_meta(
                 serde_json::json!({
-                    "x.ai/cloud_existing_workspace": {
+                    "gbuild/cloud_existing_workspace": {
                         "server_id": "ws-1",
                         "cwd": "/workspace"
                     }
@@ -3537,7 +3537,7 @@ mod soft_default_settings_emit {
                 let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg else {
                     panic!("expected ExtNotification, got {msg:?}");
                 };
-                assert_eq!(args.request.method.as_ref(), "x.ai/settings/update");
+                assert_eq!(args.request.method.as_ref(), "gbuild/settings/update");
                 let params: serde_json::Value =
                     serde_json::from_str(args.request.params.get()).expect("parse params");
                 assert_eq!(

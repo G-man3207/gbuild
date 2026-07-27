@@ -346,7 +346,7 @@ fn respond<T: Serialize>(result: Result<T, impl std::fmt::Display>) -> ExtResult
 
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/task/kill" => {
+        "gbuild/task/kill" => {
             let req: KillTaskRequest = parse(args)?;
             let result = agent
                 .kill_background_task(&req.session_id, &req.task_id)
@@ -357,7 +357,7 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                 });
             respond(result)
         }
-        "x.ai/task/list" => {
+        "gbuild/task/list" => {
             let req: ListTasksRequest = parse(args)?;
             let result = agent
                 .list_tasks(&req.session_id)
@@ -389,7 +389,7 @@ struct DeleteScheduledTaskResponse {
 /// Handle `x.ai/scheduler/*` extension methods.
 pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/scheduler/delete" => {
+        "gbuild/scheduler/delete" => {
             let req: DeleteScheduledTaskRequest = parse(args)?;
             let result = agent
                 .delete_scheduled_task(&req.session_id, &req.task_id)
@@ -407,7 +407,7 @@ pub async fn handle_scheduler(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRe
 /// Handle `x.ai/subagent/*` extension methods.
 pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/subagent/cancel" => {
+        "gbuild/subagent/cancel" => {
             let req: CancelSubagentRequest = parse(args)?;
             tracing::info!(subagent_id = %req.subagent_id, "Cancelling subagent via ext method");
             let outcome =
@@ -418,7 +418,7 @@ pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRes
                 outcome: Some(outcome),
             }))
         }
-        "x.ai/subagent/get" => {
+        "gbuild/subagent/get" => {
             let req: GetSubagentRequest = parse(args)?;
             let block = req.block.unwrap_or(false);
             let timeout_ms = req.timeout_ms.unwrap_or(30_000);
@@ -450,7 +450,7 @@ pub async fn handle_subagent(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtRes
                 }),
             }))
         }
-        "x.ai/subagent/list_running" => {
+        "gbuild/subagent/list_running" => {
             let req: ListRunningSubagentsRequest = parse(args)?;
             let subagents = agent
                 .list_running_subagents(&req.session_id)

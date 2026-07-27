@@ -17,9 +17,9 @@ use crate::session::{CompactConversationRequest, CompactConversationResponse, Se
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        m if m.starts_with("x.ai/compact_conversation") => handle_compact(agent, args).await,
-        "x.ai/memory/flush" => handle_flush(agent, args).await,
-        "x.ai/memory/rewrite" => handle_rewrite(agent, args).await,
+        m if m.starts_with("gbuild/compact_conversation") => handle_compact(agent, args).await,
+        "gbuild/memory/flush" => handle_flush(agent, args).await,
+        "gbuild/memory/rewrite" => handle_rewrite(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }

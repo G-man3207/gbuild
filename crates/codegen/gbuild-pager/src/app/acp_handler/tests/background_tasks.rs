@@ -24,7 +24,7 @@
             description: None,
         };
         handle(
-            make_ext_session_notification_with_method("sess-1", "x.ai/session/update", update),
+            make_ext_session_notification_with_method("sess-1", "gbuild/session/update", update),
             &mut app,
         );
 
@@ -51,7 +51,7 @@
         handle(
             make_ext_session_notification_with_method(
                 "sess-1",
-                "x.ai/session/update",
+                "gbuild/session/update",
                 XaiSessionUpdate::ScheduledTaskCreated {
                     task_id: "loop-1".into(),
                     prompt: "check deploy".into(),
@@ -72,7 +72,7 @@
         handle(
             make_ext_session_notification_with_method(
                 "sess-1",
-                "x.ai/session/update",
+                "gbuild/session/update",
                 XaiSessionUpdate::ScheduledTaskDeleted {
                     task_id: "loop-1".into(),
                 },
@@ -177,7 +177,7 @@
             meta: None,
         };
         let raw = serde_json::value::to_raw_value(&notif).unwrap();
-        let notif = acp::ExtNotification::new("x.ai/task_backgrounded", raw.into());
+        let notif = acp::ExtNotification::new("gbuild/task_backgrounded", raw.into());
         assert!(handle_task_backgrounded(&notif, &mut app));
 
         let agent = app.agents.get(&AgentId(0)).unwrap();
@@ -232,7 +232,7 @@
             meta: None,
         };
         let raw = serde_json::value::to_raw_value(&notif).unwrap();
-        let notif = acp::ExtNotification::new("x.ai/task_backgrounded", raw.into());
+        let notif = acp::ExtNotification::new("gbuild/task_backgrounded", raw.into());
         assert!(handle_task_backgrounded(&notif, &mut app));
 
         let agent = app.agents.get(&AgentId(0)).unwrap();

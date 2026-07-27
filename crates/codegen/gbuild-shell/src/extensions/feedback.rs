@@ -20,11 +20,11 @@ use crate::session::{
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/btw" => {
+        "gbuild/btw" => {
             tracing::info!("handling /btw side question");
             handle_btw(agent, args).await
         }
-        "x.ai/feedback" | "x.ai/feedback/dismiss" => {
+        "gbuild/feedback" | "gbuild/feedback/dismiss" => {
             tracing::info!("handling user feedback");
             handle_feedback(agent, args).await
         }
@@ -77,7 +77,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
     }
 
     match args.method.as_ref() {
-        "x.ai/feedback" => {
+        "gbuild/feedback" => {
             // Parse the input -- try the full ClientFeedbackInput first,
             // then fall back to the simple FeedbackRequest (from /feedback slash command)
             // which only has {session_id, feedback_text} and no client_type.
@@ -224,7 +224,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                 .expect("to work");
             Ok(acp::ExtResponse::new(value))
         }
-        "x.ai/feedback/dismiss" => {
+        "gbuild/feedback/dismiss" => {
             let dismiss_input: FeedbackRequestDismiss = parse_params(args)?;
 
             tracing::info!(

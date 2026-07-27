@@ -45,7 +45,7 @@ struct PromptHistoryResponse {
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(_agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/prompt_history" => handle_prompt_history(args).await,
+        "gbuild/prompt_history" => handle_prompt_history(args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }

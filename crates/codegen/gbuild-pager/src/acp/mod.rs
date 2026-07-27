@@ -462,10 +462,10 @@ fn client_capabilities_meta(flags: &ConnectFlags) -> serde_json::Value {
     let hunk_mode =
         crate::settings::canonical_hunk_tracker_mode(flags.hunk_tracker_mode.as_deref());
     serde_json::json!({
-        "x.ai/incrementalBashOutput": true,
-        "x.ai/hunkTracker": { "mode": hunk_mode },
-        "x.ai/bashOutputNoColor": true,
-        "x.ai/gitHeadChanged": true,
+        "gbuild/incrementalBashOutput": true,
+        "gbuild/hunkTracker": { "mode": hunk_mode },
+        "gbuild/bashOutputNoColor": true,
+        "gbuild/gitHeadChanged": true,
     })
 }
 
@@ -1060,12 +1060,12 @@ mod tests {
         // Rows 1 & 2 of the truth table: nothing set, and a set-but-blank value,
         // both advertise the `agent_only` default (never `""` → AllDirty).
         let absent = client_capabilities_meta(&ConnectFlags::default());
-        assert_eq!(absent["x.ai/hunkTracker"]["mode"], "agent_only");
+        assert_eq!(absent["gbuild/hunkTracker"]["mode"], "agent_only");
         let blank = client_capabilities_meta(&ConnectFlags {
             hunk_tracker_mode: Some("   ".into()),
             ..Default::default()
         });
-        assert_eq!(blank["x.ai/hunkTracker"]["mode"], "agent_only");
+        assert_eq!(blank["gbuild/hunkTracker"]["mode"], "agent_only");
     }
 
     #[test]
@@ -1077,7 +1077,7 @@ mod tests {
                 hunk_tracker_mode: Some(raw.into()),
                 ..Default::default()
             });
-            assert_eq!(meta["x.ai/hunkTracker"]["mode"], "off", "raw={raw}");
+            assert_eq!(meta["gbuild/hunkTracker"]["mode"], "off", "raw={raw}");
         }
     }
 }

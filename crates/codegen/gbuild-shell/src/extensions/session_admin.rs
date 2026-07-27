@@ -36,21 +36,21 @@ use gbuild_telemetry::id::agent_id;
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/session/rename" => handle_session_rename(agent, args).await,
-        "x.ai/session/delete" => handle_session_delete(agent, args).await,
-        "x.ai/session/update_mcp_servers" => handle_update_mcp_servers(agent, args).await,
-        "x.ai/session/fork" => handle_session_fork(agent, args).await,
-        "x.ai/internal/reload_all_mcp_servers" => handle_reload_all_mcp_servers(agent).await,
-        "x.ai/internal/reload_project_mcp_servers" => {
+        "gbuild/session/rename" => handle_session_rename(agent, args).await,
+        "gbuild/session/delete" => handle_session_delete(agent, args).await,
+        "gbuild/session/update_mcp_servers" => handle_update_mcp_servers(agent, args).await,
+        "gbuild/session/fork" => handle_session_fork(agent, args).await,
+        "gbuild/internal/reload_all_mcp_servers" => handle_reload_all_mcp_servers(agent).await,
+        "gbuild/internal/reload_project_mcp_servers" => {
             handle_reload_project_mcp_servers(agent, args).await
         }
-        "x.ai/internal/reload_skills" => handle_reload_skills(agent),
-        "x.ai/internal/reload_workflows" => handle_reload_workflows(agent),
-        "x.ai/internal/reload_models" => handle_reload_models(agent),
-        "x.ai/internal/reload_models_cache" => handle_reload_models_cache(agent),
-        "x.ai/internal/auth_cleared" => handle_auth_cleared(agent),
-        "x.ai/plugins/reload" => handle_plugins_reload(agent).await,
-        "x.ai/commands/list" => handle_commands_list(agent, args).await,
+        "gbuild/internal/reload_skills" => handle_reload_skills(agent),
+        "gbuild/internal/reload_workflows" => handle_reload_workflows(agent),
+        "gbuild/internal/reload_models" => handle_reload_models(agent),
+        "gbuild/internal/reload_models_cache" => handle_reload_models_cache(agent),
+        "gbuild/internal/auth_cleared" => handle_auth_cleared(agent),
+        "gbuild/plugins/reload" => handle_plugins_reload(agent).await,
+        "gbuild/commands/list" => handle_commands_list(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }
@@ -177,7 +177,7 @@ async fn notify_session_title(agent: &MvpAgent, session_id: acp::SessionId, titl
     };
     if let Ok(params) = serde_json::value::to_raw_value(&notification) {
         let ext_notification =
-            acp::ExtNotification::new("x.ai/session_notification", params.into());
+            acp::ExtNotification::new("gbuild/session_notification", params.into());
         let _ = agent.gateway.ext_notification(ext_notification).await;
     }
 }

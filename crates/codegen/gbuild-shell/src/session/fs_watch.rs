@@ -335,7 +335,7 @@ impl ClientNotify {
                 if let Ok(raw) = to_raw_value(&params) {
                     self.gateway
                         .forward_fire_and_forget(acp::ExtNotification::new(
-                            "x.ai/fs_notify",
+                            "gbuild/fs_notify",
                             raw.into(),
                         ));
                 }
@@ -361,7 +361,7 @@ impl ClientNotify {
                 if let Ok(raw) = to_raw_value(&params) {
                     self.gateway
                         .forward_fire_and_forget(acp::ExtNotification::new(
-                            "x.ai/fs/index/delta",
+                            "gbuild/fs/index/delta",
                             raw.into(),
                         ));
                 }
@@ -421,7 +421,7 @@ impl ClientNotify {
                 if let Ok(raw) = serde_json::value::to_raw_value(&params) {
                     self.gateway
                         .forward_fire_and_forget(acp::ExtNotification::new(
-                            "x.ai/fs/index",
+                            "gbuild/fs/index",
                             raw.into(),
                         ));
                 }
@@ -522,7 +522,7 @@ impl GitHead {
             if let Ok(raw) = serde_json::value::to_raw_value(&params) {
                 self.gateway
                     .forward_fire_and_forget(acp::ExtNotification::new(
-                        "x.ai/git_head_changed",
+                        "gbuild/git_head_changed",
                         raw.into(),
                     ));
             }

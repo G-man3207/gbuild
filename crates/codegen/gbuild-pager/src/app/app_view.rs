@@ -876,7 +876,7 @@ pub struct AppView {
     /// Automatically enabled by `plan_mode`.
     pub ask_user: bool,
     /// Process-wide gateway light-frontend from CLI `--chat` only.
-    /// Stamps `_meta["x.ai/session"].kind = "chat"` and omits Build agent
+    /// Stamps `_meta["gbuild/session"].kind = "chat"` and omits Build agent
     /// profiles on create/load while set. `/chat` does **not** set this
     /// (uses [`Self::deferred_startup`] one-shot state instead).
     pub chat_mode: bool,

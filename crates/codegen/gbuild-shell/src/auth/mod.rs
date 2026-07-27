@@ -12,6 +12,8 @@ mod jwt;
 pub(crate) mod manager;
 mod model;
 pub mod oidc;
+pub mod openrouter;
+pub mod provider_keys;
 pub(crate) mod recovery;
 pub(crate) mod refresh;
 pub(crate) mod single_flight;

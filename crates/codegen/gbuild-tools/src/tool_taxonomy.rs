@@ -24,7 +24,7 @@ pub mod field {
 /// The single `_meta` key holding the canonical tool identity as one nested
 /// object (mirroring `x.ai/mcp_tool`). Consumers deserialize it into
 /// [`CanonicalToolMeta`].
-pub const TOOL_META_KEY: &str = "x.ai/tool";
+pub const TOOL_META_KEY: &str = "gbuild/tool";
 /// Version of the canonical tool `_meta` contract. Bump on any breaking change
 /// to keys or value shapes so consumers can adapt.
 pub const TOOL_META_VERSION: u32 = 1;
@@ -151,7 +151,7 @@ pub struct ToolIdentity {
 /// as one nested object under [`TOOL_META_KEY`].
 ///
 /// ```json
-/// "x.ai/tool": {
+/// "gbuild/tool": {
 ///   "version": 1,
 ///   "name": "read_file",
 ///   "kind": "read",

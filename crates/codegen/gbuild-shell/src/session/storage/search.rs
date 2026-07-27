@@ -938,7 +938,7 @@ fn collect_all_indexable_content_single_pass(updates_path: &Path) -> io::Result<
         // Content events (user messages, assistant responses, tool calls,
         // thoughts) come from the standard ACP protocol ("session/update").
         // Control events (rewind markers) come from xAI extensions
-        // ("_x.ai/session/update"). Dispatch on source first, then tag.
+        // ("_gbuild/session/update"). Dispatch on source first, then tag.
         if !is_xai {
             // ── ACP content events ──────────────────────────────────
             match tag {
@@ -1403,7 +1403,7 @@ mod tests {
 
     fn xai_update(session_update_json: &str) -> String {
         format!(
-            r#"{{"timestamp":1,"method":"_x.ai/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
+            r#"{{"timestamp":1,"method":"_gbuild/session/update","params":{{"sessionId":"s","update":{session_update_json}}}}}"#
         )
     }
 

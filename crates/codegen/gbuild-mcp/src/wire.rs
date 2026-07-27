@@ -9,7 +9,7 @@
 ///
 /// The pager/client asks the agent to invoke an MCP tool on a server the agent is
 /// connected to, outside the LLM loop. See `extensions::mcp::handle_call`.
-pub const MCP_CALL: &str = "x.ai/mcp/call";
+pub const MCP_CALL: &str = "gbuild/mcp/call";
 
 /// Reverse zero-IPC tool-invocation method (agent -> client): `x.ai/mcp/sdk_call`.
 ///
@@ -17,11 +17,11 @@ pub const MCP_CALL: &str = "x.ai/mcp/call";
 /// the MCP JSON-RPC message back to the client over the ACP reverse channel. Distinct
 /// from [`MCP_CALL`] so the two disjoint schemas don't share a method string for
 /// metrics/tracing. See the agent-side ACP invoker that handles this method.
-pub const MCP_SDK_CALL: &str = "x.ai/mcp/sdk_call";
+pub const MCP_SDK_CALL: &str = "gbuild/mcp/sdk_call";
 
 /// `session/new` `_meta` key listing in-process SDK MCP servers: `x.ai/mcp/servers`.
-pub const MCP_SERVERS: &str = "x.ai/mcp/servers";
+pub const MCP_SERVERS: &str = "gbuild/mcp/servers";
 
 /// `initialize` `_meta` capability flag advertising in-process SDK MCP support
 /// (enables the SDK's `transport="acp"`): `x.ai/mcp/sdk`.
-pub const MCP_SDK: &str = "x.ai/mcp/sdk";
+pub const MCP_SDK: &str = "gbuild/mcp/sdk";

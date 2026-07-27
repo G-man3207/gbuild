@@ -3068,7 +3068,7 @@ pub(crate) mod test_fixtures {
     /// distinguished from the new turn's first follow_ups, so it follows the
     /// legacy newest-wins (renders). This path is not reachable for current
     /// shells (which always stamp `promptId`) or for buffer-replays (suppressed
-    /// upstream by the `_meta["x.ai/replayed"]` gate); it is pinned here so the
+    /// upstream by the `_meta["gbuild/replayed"]` gate); it is pinned here so the
     /// stamped-path fix above is understood to be the deterministic guard.
     #[test]
     fn apply_follow_ups_none_prompt_first_time_follows_legacy_newest_wins() {

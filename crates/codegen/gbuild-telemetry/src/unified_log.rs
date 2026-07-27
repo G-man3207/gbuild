@@ -29,7 +29,7 @@ const LOG_FILE: &str = "unified.jsonl";
 pub const MAX_SIZE: u64 = 5 * 1024 * 1024; // 5 MB
 
 /// ACP method name for unified log notifications.
-pub const LOG_METHOD: &str = "x.ai/log";
+pub const LOG_METHOD: &str = "gbuild/log";
 
 // ---------------------------------------------------------------------------
 // Log entry types

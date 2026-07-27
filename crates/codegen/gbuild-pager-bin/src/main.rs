@@ -644,7 +644,7 @@ fn cache_outgoing_acp_state(msg: &str, state: &std::sync::Mutex<StdioReplayState
                     .and_then(|m| serde_json::to_string(m).ok()),
             });
         }
-        "x.ai/session/close" | "_x.ai/session/close" => {
+        "gbuild/session/close" | "_gbuild/session/close" => {
             if let Some(sid) = json
                 .get("params")
                 .and_then(|p| p.get("sessionId").or_else(|| p.get("session_id")))
@@ -676,7 +676,7 @@ fn cache_incoming_session_id(msg: &str, state: &std::sync::Mutex<StdioReplayStat
 /// Synthetic JSON-RPC id for the `session/load` the bridge constructs itself
 /// (when the external client only ever sent `session/new`). A string id can
 /// never collide with a numeric id the external client may have in flight.
-const REPLAY_LOAD_REQUEST_ID: &str = "x.ai/leader-replay/session-load";
+const REPLAY_LOAD_REQUEST_ID: &str = "gbuild/leader-replay/session-load";
 /// Max silence between two messages from the leader during a replayed request.
 /// A `session/load` streams replay notifications continuously once it starts,
 /// but the pre-replay phase (MCP resolution, session file reads) can be quiet
@@ -1144,7 +1144,7 @@ async fn run_agent_command(
                                             None => "{}".to_string(),
                                         };
                                         let notification = format!(
-                                            r#"{{"jsonrpc":"2.0","method":"x.ai/leader_reconnected","params":{params}}}"#
+                                            r#"{{"jsonrpc":"2.0","method":"gbuild/leader_reconnected","params":{params}}}"#
                                         );
                                         let _ = stdout.write_all(notification.as_bytes()).await;
                                         let _ = stdout.write_all(b"\n").await;
@@ -1726,10 +1726,45 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 legacy: _,
                 oauth,
                 device_auth,
+                provider,
+                api_key,
                 devbox,
             } => {
                 init_tracing_simple("cli");
                 let _otel_guard = gbuild_telemetry::otel_layer::otel_guard();
+                if let Some(provider) = provider {
+                    let spec = gbuild_shell::auth::provider_keys::spec_by_id(&provider)
+                        .ok_or_else(|| {
+                            let known = gbuild_shell::auth::provider_keys::PROVIDER_KEY_SPECS
+                                .iter()
+                                .map(|s| s.id)
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            anyhow::anyhow!("unknown provider '{provider}' (expected one of: {known})")
+                        })?;
+                    if api_key.is_none() && spec.id == "openrouter" {
+                        // No inline key: run the browser sign-in, which mints
+                        // and stores an OpenRouter API key.
+                        gbuild_shell::auth::openrouter::run_openrouter_login().await?;
+                        gbuild_shell::instrumentation::finalize_and_exit(0);
+                    }
+                    let key = match api_key {
+                        Some(k) if !k.trim().is_empty() => k,
+                        _ => rpassword::prompt_password(format!("{} API key: ", spec.display))
+                            .map_err(|e| anyhow::anyhow!("failed to read API key: {e}"))?,
+                    };
+                    if key.trim().is_empty() {
+                        anyhow::bail!("empty API key");
+                    }
+                    let home = gbuild_shell::util::gbuild_home::gbuild_home();
+                    gbuild_shell::auth::provider_keys::store_provider_key(
+                        &home,
+                        spec.id,
+                        key.trim(),
+                    )?;
+                    println!("Stored {} API key in {}/auth.json", spec.display, home.display());
+                    gbuild_shell::instrumentation::finalize_and_exit(0);
+                }
                 let config = gbuild_shell::config::load_effective_config_disk_only()
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
@@ -1738,8 +1773,16 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 println!();
                 gbuild_shell::instrumentation::finalize_and_exit(0);
             }
-            Command::Logout => {
+            Command::Logout { provider } => {
                 init_tracing_simple("cli");
+                if let Some(provider) = provider {
+                    let spec = gbuild_shell::auth::provider_keys::spec_by_id(&provider)
+                        .ok_or_else(|| anyhow::anyhow!("unknown provider '{provider}'"))?;
+                    let home = gbuild_shell::util::gbuild_home::gbuild_home();
+                    gbuild_shell::auth::provider_keys::clear_provider_key(&home, spec.id)?;
+                    println!("Cleared {} API key", spec.display);
+                    gbuild_shell::instrumentation::finalize_and_exit(0);
+                }
                 let config = gbuild_shell::config::load_effective_config_disk_only()
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
@@ -2162,7 +2205,7 @@ mod tests {
             &state,
         );
         cache_outgoing_acp_state(
-            r#"{"jsonrpc":"2.0","id":3,"method":"_x.ai/session/close","params":{"sessionId":"s1"}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"_gbuild/session/close","params":{"sessionId":"s1"}}"#,
             &state,
         );
         let s = state.lock().unwrap();
@@ -2421,7 +2464,7 @@ mod tests {
             let _init = leader_rx.recv().await.unwrap();
             response_tx
                 .send(
-                    r#"{"jsonrpc":"2.0","method":"x.ai/leader/version_mismatch","params":{}}"#
+                    r#"{"jsonrpc":"2.0","method":"gbuild/leader/version_mismatch","params":{}}"#
                         .to_string(),
                 )
                 .unwrap();

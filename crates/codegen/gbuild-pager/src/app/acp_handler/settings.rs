@@ -348,7 +348,7 @@ pub(super) fn notify_sessions_leave_auto(app: &AppView, session_ids: &[acp::Sess
         "permission_mode": "ask",
     });
     let notification = acp::ExtNotification::new(
-        "x.ai/yolo_mode_changed",
+        "gbuild/yolo_mode_changed",
         serde_json::value::to_raw_value(&params)
             .expect("serialize yolo_mode_changed params")
             .into(),

@@ -17,7 +17,7 @@ pub(super) fn parse_queue_edit_command(
     owner: Option<String>,
 ) -> Option<SessionCommand> {
     match method {
-        "x.ai/queue/remove" => {
+        "gbuild/queue/remove" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             // The client supplies the version it last saw; the handler removes
             // only on an exact match (stale = benign no-op + rebroadcast).
@@ -32,7 +32,7 @@ pub(super) fn parse_queue_edit_command(
                 owner,
             })
         }
-        "x.ai/queue/reorder" => {
+        "gbuild/queue/reorder" => {
             let ordered_ids = params
                 .get("orderedIds")
                 .and_then(|v| v.as_array())
@@ -44,8 +44,8 @@ pub(super) fn parse_queue_edit_command(
                 .unwrap_or_default();
             Some(SessionCommand::ReorderQueue { ordered_ids })
         }
-        "x.ai/queue/clear" => Some(SessionCommand::ClearQueue { owner }),
-        "x.ai/queue/interject" => {
+        "gbuild/queue/clear" => Some(SessionCommand::ClearQueue { owner }),
+        "gbuild/queue/interject" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             // The client supplies the version it last saw; the handler acts
             // only on an exact match (stale = benign no-op + rebroadcast).
@@ -68,7 +68,7 @@ pub(super) fn parse_queue_edit_command(
                 new_text,
             })
         }
-        "x.ai/queue/edit" => {
+        "gbuild/queue/edit" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             let new_text = params.get("newText").and_then(|v| v.as_str())?.to_string();
             // `owner` is the resolved attribution; for edit it represents the
@@ -80,11 +80,11 @@ pub(super) fn parse_queue_edit_command(
                 editor: owner,
             })
         }
-        "x.ai/queue/hold_edit" => {
+        "gbuild/queue/hold_edit" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             Some(SessionCommand::HoldCombineEdit { id })
         }
-        "x.ai/queue/release_edit" => {
+        "gbuild/queue/release_edit" => {
             let id = params.get("id").and_then(|v| v.as_str())?.to_string();
             Some(SessionCommand::ReleaseCombineEdit { id })
         }
@@ -104,7 +104,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p7", "expectedVersion": 3
         });
-        match parse_queue_edit_command("x.ai/queue/remove", &p, Some("gbuild-tui".into())) {
+        match parse_queue_edit_command("gbuild/queue/remove", &p, Some("gbuild-tui".into())) {
             Some(SessionCommand::RemoveQueuedPrompt {
                 id,
                 expected_version,
@@ -119,7 +119,7 @@ mod tests {
 
         // remove without expectedVersion defaults to 0.
         let p = serde_json::json!({ "sessionId": "s1", "id": "p8" });
-        match parse_queue_edit_command("x.ai/queue/remove", &p, None) {
+        match parse_queue_edit_command("gbuild/queue/remove", &p, None) {
             Some(SessionCommand::RemoveQueuedPrompt {
                 expected_version, ..
             }) => assert_eq!(expected_version, 0),
@@ -128,7 +128,7 @@ mod tests {
 
         // reorder: orderedIds array.
         let p = serde_json::json!({ "sessionId": "s1", "orderedIds": ["a", "b", "c"] });
-        match parse_queue_edit_command("x.ai/queue/reorder", &p, None) {
+        match parse_queue_edit_command("gbuild/queue/reorder", &p, None) {
             Some(SessionCommand::ReorderQueue { ordered_ids }) => {
                 assert_eq!(ordered_ids, vec!["a", "b", "c"]);
             }
@@ -137,7 +137,7 @@ mod tests {
 
         // clear: owner-scoped.
         match parse_queue_edit_command(
-            "x.ai/queue/clear",
+            "gbuild/queue/clear",
             &serde_json::json!({ "sessionId": "s1" }),
             Some("gbuild-tui".into()),
         ) {
@@ -151,7 +151,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p9", "newText": "replacement text"
         });
-        match parse_queue_edit_command("x.ai/queue/edit", &p, Some("grok-vscode".into())) {
+        match parse_queue_edit_command("gbuild/queue/edit", &p, Some("grok-vscode".into())) {
             Some(SessionCommand::EditQueuedPrompt {
                 id,
                 new_text,
@@ -166,7 +166,7 @@ mod tests {
 
         // edit without editor (no owner/clientIdentifier) → editor: None.
         match parse_queue_edit_command(
-            "x.ai/queue/edit",
+            "gbuild/queue/edit",
             &serde_json::json!({ "sessionId": "s1", "id": "p9", "newText": "x" }),
             None,
         ) {
@@ -179,7 +179,7 @@ mod tests {
         // edit without newText → None (can't replace text we don't have).
         assert!(
             parse_queue_edit_command(
-                "x.ai/queue/edit",
+                "gbuild/queue/edit",
                 &serde_json::json!({ "sessionId": "s1", "id": "p9" }),
                 None,
             )
@@ -189,7 +189,7 @@ mod tests {
         // edit without id → None (can't target an entry).
         assert!(
             parse_queue_edit_command(
-                "x.ai/queue/edit",
+                "gbuild/queue/edit",
                 &serde_json::json!({ "sessionId": "s1", "newText": "x" }),
                 None,
             )
@@ -200,7 +200,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, Some("gbuild-tui".into())) {
+        match parse_queue_edit_command("gbuild/queue/interject", &p, Some("gbuild-tui".into())) {
             Some(SessionCommand::InterjectQueuedPrompt {
                 id,
                 expected_version,
@@ -219,7 +219,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2, "newText": "edited"
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, None) {
+        match parse_queue_edit_command("gbuild/queue/interject", &p, None) {
             Some(SessionCommand::InterjectQueuedPrompt { new_text, .. }) => {
                 assert_eq!(new_text.as_deref(), Some("edited"));
             }
@@ -230,7 +230,7 @@ mod tests {
         let p = serde_json::json!({
             "sessionId": "s1", "id": "p10", "expectedVersion": 2, "newText": "   "
         });
-        match parse_queue_edit_command("x.ai/queue/interject", &p, None) {
+        match parse_queue_edit_command("gbuild/queue/interject", &p, None) {
             Some(SessionCommand::InterjectQueuedPrompt { new_text, .. }) => {
                 assert_eq!(new_text, None, "blank override must be dropped");
             }
@@ -239,7 +239,7 @@ mod tests {
 
         // interject without expectedVersion defaults to 0.
         match parse_queue_edit_command(
-            "x.ai/queue/interject",
+            "gbuild/queue/interject",
             &serde_json::json!({ "sessionId": "s1", "id": "p11" }),
             None,
         ) {
@@ -251,17 +251,17 @@ mod tests {
 
         // interject without id → None (can't target an entry).
         assert!(
-            parse_queue_edit_command("x.ai/queue/interject", &serde_json::json!({}), None)
+            parse_queue_edit_command("gbuild/queue/interject", &serde_json::json!({}), None)
                 .is_none()
         );
 
         // unknown method → None.
         assert!(
-            parse_queue_edit_command("x.ai/queue/bogus", &serde_json::json!({}), None).is_none()
+            parse_queue_edit_command("gbuild/queue/bogus", &serde_json::json!({}), None).is_none()
         );
         // remove without id → None (can't target an entry).
         assert!(
-            parse_queue_edit_command("x.ai/queue/remove", &serde_json::json!({}), None).is_none()
+            parse_queue_edit_command("gbuild/queue/remove", &serde_json::json!({}), None).is_none()
         );
     }
 }

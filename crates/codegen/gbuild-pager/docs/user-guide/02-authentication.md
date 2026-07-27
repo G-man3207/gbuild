@@ -1,12 +1,19 @@
 # Authentication
 
-gBuild supports several authentication methods, including interactive browser login, enterprise single sign-on (SSO), and headless CI/CD runners.
+gBuild is provider-neutral: most users only need a provider API key (see
+[Providers](25-providers.md)). This page covers the xAI session sign-in
+methods — interactive browser login, enterprise single sign-on (SSO), and
+headless CI/CD runners — plus the external auth-provider contract.
+
+> You only need this page for xAI. For Anthropic, OpenAI, Google, OpenRouter,
+> OpenCode, Kimi, or GLM, set the provider's environment variable or store a
+> key with `gbuild login --provider <id>` — see [Providers](25-providers.md).
 
 ---
 
-## Browser Login (Default)
+## Browser Login (Default for xAI)
 
-On first launch, gBuild opens your browser to authenticate with grok.com:
+On first launch with no credentials configured, gBuild opens your browser to authenticate with grok.com:
 
 ```bash
 gbuild
@@ -37,7 +44,16 @@ Running `gbuild login` starts the sign-in flow again, replacing your cached sess
 | `--oauth` | Sign in through SpaceXAI OAuth at `auth.x.ai`. This is the default, so the flag is optional. |
 | `--device-auth` (alias `--device-code`) | Sign in with the device-code flow for headless or remote environments. |
 
-To sign out, run `gbuild logout`. It takes no flags and clears your cached credentials.
+To sign out, run `gbuild logout` — it clears your cached xAI session. To remove one stored provider key, run `gbuild logout --provider <id>`.
+
+### Storing provider API keys
+
+`gbuild login --provider <id>` stores a third-party provider's API key in
+`~/.gbuild/auth.json` (prompted with hidden input; `--api-key` to pass it
+directly). Supported ids: `anthropic`, `openai`, `google`, `openrouter`,
+`opencode`, `kimi`, `zai`, `xai`. Stored keys behave like the matching
+environment variables and take precedence over them. See
+[Providers](25-providers.md).
 
 ---
 

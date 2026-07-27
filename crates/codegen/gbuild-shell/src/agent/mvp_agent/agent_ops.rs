@@ -800,7 +800,7 @@ impl MvpAgent {
             let _ = self
                 .gateway
                 .ext_notification(
-                    acp::ExtNotification::new("x.ai/session_notification", params.into()),
+                    acp::ExtNotification::new("gbuild/session_notification", params.into()),
                 )
                 .await;
         }
@@ -1978,7 +1978,7 @@ impl MvpAgent {
                 };
                 if let Ok(params) = serde_json::value::to_raw_value(&notification) {
                     let ext_notification = acp::ExtNotification::new(
-                        "x.ai/session_notification",
+                        "gbuild/session_notification",
                         params.into(),
                     );
                     let _ = gateway.ext_notification(ext_notification).await;
@@ -2199,7 +2199,7 @@ impl MvpAgent {
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/fs_notify"))
+            .and_then(|m| m.get("gbuild/fs_notify"))
             .and_then(|v| {
                 use crate::session::{ClientFsConfig, ClientFsMode};
                 use xai_fsnotify::FsConfig;
@@ -2273,7 +2273,7 @@ impl MvpAgent {
                 .client_capabilities
                 .meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/hunkTracker"))
+                .and_then(|m| m.get("gbuild/hunkTracker"))
                 .and_then(|v| v.get("mode"))
                 .and_then(|v| v.as_str()),
         );
@@ -2281,14 +2281,14 @@ impl MvpAgent {
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/incrementalBashOutput"))
+            .and_then(|m| m.get("gbuild/incrementalBashOutput"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let no_color = init
             .client_capabilities
             .meta
             .as_ref()
-            .and_then(|m| m.get("x.ai/bashOutputNoColor"))
+            .and_then(|m| m.get("gbuild/bashOutputNoColor"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let hunk_tracking_enabled = hunk_plan.enabled();
@@ -2761,7 +2761,7 @@ impl MvpAgent {
                 .client_capabilities
                 .meta
                 .as_ref()
-                .and_then(|m| m.get("x.ai/gitHeadChanged"))
+                .and_then(|m| m.get("gbuild/gitHeadChanged"))
                 .and_then(|v| v.as_bool());
             let session_cwd = std::path::Path::new(&session_info.cwd);
             let fs_watch_caps = crate::session::fs_watch::FsWatchCapabilities::resolve(crate::session::fs_watch::CapabilityInputs {

@@ -176,8 +176,8 @@ fn splice_token_into_line(results: &mut [RankedSuggestion], text: &str, range: (
 #[tracing::instrument(skip_all, fields(method = %args.method))]
 pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     match args.method.as_ref() {
-        "x.ai/suggest" => handle_suggest(agent, args).await,
-        "x.ai/suggestPrompt" => handle_suggest_prompt(agent, args).await,
+        "gbuild/suggest" => handle_suggest(agent, args).await,
+        "gbuild/suggestPrompt" => handle_suggest_prompt(agent, args).await,
         _ => Err(acp::Error::method_not_found()),
     }
 }

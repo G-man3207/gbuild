@@ -913,7 +913,7 @@ pub(crate) struct SessionActor {
     /// Safe: session actor is single-threaded (LocalSet), no concurrent access.
     pub(crate) hook_registry:
         std::cell::RefCell<Option<Arc<gbuild_hooks::discovery::HookRegistry>>>,
-    /// Client hooks from `session/new` `_meta["x.ai/hooks"]`; gated in
+    /// Client hooks from `session/new` `_meta["gbuild/hooks"]`; gated in
     /// [`crate::session::acp_session::hooks`]. `RefCell` so `load_session` reconnect can
     /// replace the set on the live actor (see `SessionCommand::SetClientHooks`).
     pub(crate) client_hooks: std::cell::RefCell<crate::extensions::hooks::ClientHooks>,
