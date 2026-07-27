@@ -14,8 +14,9 @@ endpoint on top.
 | xAI | Grok 4.5 | `XAI_API_KEY`, or browser sign-in (`/login grok`) |
 | Anthropic | Claude Sonnet 4.6, Claude Opus 4.6 | `ANTHROPIC_API_KEY` |
 | OpenAI | GPT-5.5 | `OPENAI_API_KEY` |
+| ChatGPT Codex | GPT-5.3 Codex, GPT-5.2 Codex | browser sign-in (`gbuild login --provider codex`) |
 | Google | Gemini 3.1 Pro | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
-| OpenRouter | OpenRouter Auto (add specific slugs via config) | `OPENROUTER_API_KEY` |
+| OpenRouter | OpenRouter Auto (add specific slugs via config) | `OPENROUTER_API_KEY` or browser sign-in (`gbuild login --provider openrouter`) |
 | OpenCode Go | GLM 5.1 | `OPENCODE_API_KEY` |
 | Kimi (Moonshot) | Kimi K2.7 Code | `KIMI_API_KEY` |
 | GLM (Z.AI) | GLM 5.1 (coding plan) | `ZHIPU_API_KEY` or `ZAI_API_KEY` |
@@ -49,12 +50,21 @@ stores a key; `/logout <provider>` clears one (`gbuild logout --provider <id>`
 on the CLI). Stored keys behave exactly like the corresponding environment
 variables and take precedence over them.
 
-xAI is the one provider with a browser sign-in (`/login grok`,
+xAI is one provider with a browser sign-in (`/login grok`,
 `gbuild login`, or `gbuild login --device-auth` for headless machines).
-OpenRouter also has a browser sign-in (`gbuild login --provider openrouter`),
-which mints an API key billed from your OpenRouter credits. Stored keys and
-environment variables satisfy the startup gate, so the login screen only
-appears when nothing at all is configured.
+Two more browser sign-ins exist for subscription accounts:
+
+- **OpenRouter** (`gbuild login --provider openrouter`) mints an API key
+  billed from your OpenRouter credits.
+- **ChatGPT Codex** (`gbuild login --provider codex`) signs in with your
+  ChatGPT subscription via OpenAI OAuth and unlocks the `gpt-5.3-codex` /
+  `gpt-5.2-codex` models. The sign-in opens a browser (loopback port 1455,
+  with a paste-the-URL fallback for remote machines); the access token,
+  refresh token, and account id are stored in `~/.gbuild/auth.json` and
+  refreshed automatically at the start of each turn.
+
+Stored keys and environment variables satisfy the startup gate, so the login
+screen only appears when nothing at all is configured.
 
 ## Custom providers
 

@@ -4291,9 +4291,26 @@ pub(crate) fn first_own_credential(
 }
 /// Priority: model api_key/env_key > cached auth-provider token > first-party
 /// xAI session token > first-party XAI_API_KEY. Ambient xAI credentials are
-/// never attached to a custom origin.
+/// never attached to a custom origin. Codex-subscription models resolve their
+/// bearer from the stored `provider::codex` OAuth credential.
 pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> ResolvedCredentials {
     let info = model.info();
+    if info.base_url.starts_with(crate::auth::codex::CODEX_BACKEND_BASE_URL) {
+        let home = crate::util::gbuild_home::gbuild_home();
+        let auth = crate::auth::codex::load_codex_auth(&home);
+        if auth.is_none() {
+            tracing::info!(
+                model = %info.model,
+                "codex model selected without a ChatGPT sign-in; run `gbuild login --provider codex`"
+            );
+        }
+        return ResolvedCredentials {
+            api_key: auth.as_ref().map(|a| a.key.clone()),
+            base_url: info.base_url.clone(),
+            auth_type: xai_chat_state::AuthType::ApiKey,
+            auth_scheme: info.auth_scheme,
+        };
+    }
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
             Some(key),
@@ -4680,6 +4697,20 @@ pub fn sampling_config_for_model(
         alpha_test_key.as_deref(),
         &credentials.base_url,
     );
+    if credentials
+        .base_url
+        .starts_with(crate::auth::codex::CODEX_BACKEND_BASE_URL)
+    {
+        let home = crate::util::gbuild_home::gbuild_home();
+        if let Some(account_id) = crate::auth::codex::load_codex_auth(&home)
+            .and_then(|a| a.organization_id)
+            .filter(|id| !id.is_empty())
+        {
+            extra_headers
+                .entry("chatgpt-account-id".to_string())
+                .or_insert(account_id);
+        }
+    }
     let api_backend = info.api_backend.clone();
     SamplerConfig {
         api_key: credentials.api_key,

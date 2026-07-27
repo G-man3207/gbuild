@@ -446,7 +446,18 @@ impl SessionActor {
         if use_bearer_resolver && let Some(am) = self.auth_manager.as_ref() {
             let _ = am.auth().await;
         }
-        let api_key = if use_bearer_resolver {
+        let is_codex_backend = cfg
+            .base_url
+            .starts_with(crate::auth::codex::CODEX_BACKEND_BASE_URL);
+        let codex_fresh = if is_codex_backend {
+            // Eager per-turn refresh for the ChatGPT subscription token.
+            crate::auth::codex::ensure_fresh_codex(&crate::util::gbuild_home::gbuild_home()).await
+        } else {
+            None
+        };
+        let api_key = if let Some((token, _)) = &codex_fresh {
+            Some(token.clone())
+        } else if use_bearer_resolver {
             self.auth_manager
                 .as_ref()
                 .and_then(|am| am.current_wire_valid().map(|a| a.key))
@@ -455,6 +466,9 @@ impl SessionActor {
         };
         let auth_scheme = model_facts.auth_scheme;
         let mut extra_headers = cfg.extra_headers;
+        if let Some((_, Some(account_id))) = &codex_fresh {
+            extra_headers.insert("chatgpt-account-id".to_string(), account_id.clone());
+        }
         crate::agent::config::inject_url_derived_headers(
             &mut extra_headers,
             creds.alpha_test_key.as_deref(),

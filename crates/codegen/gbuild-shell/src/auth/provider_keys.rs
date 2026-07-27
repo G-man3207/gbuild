@@ -41,6 +41,11 @@ pub const PROVIDER_KEY_SPECS: &[ProviderKeySpec] = &[
         env_vars: &["OPENAI_API_KEY"],
     },
     ProviderKeySpec {
+        id: "codex",
+        display: "ChatGPT Codex (subscription)",
+        env_vars: &[],
+    },
+    ProviderKeySpec {
         id: "google",
         display: "Google Gemini",
         env_vars: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
