@@ -44,14 +44,16 @@ Start gBuild by running:
 gbuild
 ```
 
-On first launch, gBuild opens your browser to authenticate with grok.com. After you sign in, gBuild stores your credentials in `~/.gbuild/auth.json`, where they persist across sessions. gBuild refreshes your credentials automatically and prompts you to sign in again when they can no longer be renewed.
+On first launch, gBuild lands on the welcome screen — no login flow is forced. Type `/login` and choose a provider to sign in: xAI browser sign-in, a ChatGPT Codex or GitHub Copilot subscription, an OpenRouter account, or an API key for Anthropic, OpenAI, Google, OpenCode, Kimi, or GLM. See [Providers](25-providers.md) for the full list and headless options.
 
-If you prefer API key authentication (e.g., for CI/CD or environments without a browser), set the `XAI_API_KEY` environment variable instead:
+The quickest start is an environment variable:
 
 ```bash
-export XAI_API_KEY="xai-..."
+export ANTHROPIC_API_KEY="sk-ant-..."   # or OPENAI_API_KEY, XAI_API_KEY, ...
 gbuild
 ```
+
+gBuild stores credentials in `~/.gbuild/auth.json`, refreshes session tokens automatically, and only prompts you to sign in again when a session token can no longer be renewed.
 
 See [Authentication](02-authentication.md) for the full set of auth options including OIDC, external auth providers, and device code flow.
 

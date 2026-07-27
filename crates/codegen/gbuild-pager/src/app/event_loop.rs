@@ -867,8 +867,12 @@ pub(crate) async fn run(
 
     // Seed auth state from ACP connection metadata.
     // --force-login overrides: show the login screen even when credentials exist.
+    // NOTE: `connection.needs_login` (no usable credentials) no longer hijacks
+    // the startup flow into a login screen — gBuild always lands on the
+    // welcome screen and sign-in happens explicitly via /login. Only the
+    // hidden --force-login flag still forces the login UI.
     let force_login = args.force_login && !connection.auth_methods.is_empty();
-    let needs_interactive_login = connection.needs_login || force_login;
+    let needs_interactive_login = force_login;
     if needs_interactive_login {
         app.welcome_prompt_focused = false;
 
@@ -920,9 +924,9 @@ pub(crate) async fn run(
             "auto-triggering login at startup"
         );
     }
-    // else: auth_state defaults to Done (already authenticated eagerly)
-    // Effects stashed until after the initial render, so the user sees the
-    // welcome/auth UI right away.
+    // else: auth_state defaults to Done — the welcome screen is always the
+    // landing screen, credentialed or not. When nothing is configured, hint
+    // at /login instead of forcing a flow.
     let mut post_render_effects = if needs_interactive_login {
         if connection.auth_methods.is_empty() {
             // preferred_method pin unavailable — no advertised method to start.
@@ -1198,6 +1202,16 @@ pub(crate) async fn run(
                 .into_iter()
                 .collect(),
         );
+        if connection.needs_login {
+            app.startup_warnings.push(crate::startup::StartupWarning {
+                severity: crate::startup::WarningSeverity::Info,
+                message: "No provider configured yet.".to_string(),
+                action: Some(
+                    "Type /login and choose a provider, or set an API key (see /docs providers)."
+                        .to_string(),
+                ),
+            });
+        }
     }
 
     // Apply initial config (may come from existing ~/.gbuild/pager.toml).
